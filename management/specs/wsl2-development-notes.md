@@ -446,15 +446,22 @@ npm pack
 # Terminal 1: WSL2
 # Navigate to project directory
 cd graphone
-npm install          # Fast on Linux FS
-npm run tauri dev    # Opens GUI via WSLg, builds pi-mono automatically
+npm install              # Fast on Linux FS
+npm run dev:linux        # Opens GUI via WSLg, builds pi-mono automatically
 ```
 
 ### 6.2 Testing Windows Build
 ```bash
-# Cross-compile from WSL2
-# Navigate to project directory
+# Cross-compile from WSL2 using npm scripts
 cd graphone
+
+# Quick Windows build
+npm run build:windows
+
+# Or build both Linux and Windows
+npm run build:all
+
+# Legacy command:
 npm run tauri build -- --target x86_64-pc-windows-msvc
 
 # Run the Windows binary from Windows side

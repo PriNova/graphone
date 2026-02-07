@@ -9,7 +9,12 @@
     "preview": "vite preview",
     "check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",
     "check:watch": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json --watch",
-    "tauri": "tauri"
+    "tauri": "tauri",
+    "dev:linux": "tauri dev",
+    "dev:windows": "tauri dev --target x86_64-pc-windows-msvc",
+    "build:linux": "tauri build",
+    "build:windows": "tauri build --target x86_64-pc-windows-msvc",
+    "build:all": "npm run build:linux && npm run build:windows"
   },
   "license": "MIT",
   "dependencies": {

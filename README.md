@@ -132,15 +132,31 @@ bun build --compile ./dist/cli.js --outfile dist/pi
 ### 3. Run Development Server
 
 ```bash
-# Desktop (Linux)
-npm run tauri dev
+# Desktop (Linux) - recommended shorthand
+npm run dev:linux
 
-# With specific target
-npm run tauri dev -- --target x86_64-unknown-linux-gnu
+# Desktop (Windows cross-compile from WSL2)
+npm run dev:windows
+
+# Legacy command
+npm run tauri dev
 ```
 
 ### 4. Build for Production
 
+**Quick Build Commands:**
+```bash
+# Linux only
+npm run build:linux
+
+# Windows only (cross-compile from WSL2)
+npm run build:windows
+
+# Both platforms
+npm run build:all
+```
+
+**Legacy commands (equivalent):**
 ```bash
 # Linux
 npm run tauri build
@@ -212,6 +228,29 @@ The sidecar binary is built automatically via `src-tauri/build.rs`:
 - **Backend**: Rust, Tauri 2.0
 - **Agent**: pi-mono SDK (`@mariozechner/pi-coding-agent`)
 - **Sidecar Build**: bun (compiles TypeScript to standalone binary)
+
+---
+
+## Build Scripts
+
+Convenience npm scripts for cross-platform builds:
+
+| Script | Platform | Description |
+|--------|----------|-------------|
+| `npm run dev:linux` | Linux | Run dev server (native) |
+| `npm run dev:windows` | Windows | Run dev server (cross-compile) |
+| `npm run build:linux` | Linux | Build AppImage/Deb packages |
+| `npm run build:windows` | Windows | Build MSI/NSIS installer (cross-compile) |
+| `npm run build:all` | Both | Build Linux + Windows packages |
+
+**Examples:**
+```bash
+# Quick development - Linux
+npm run dev:linux
+
+# Build for both platforms from WSL2
+npm run build:all
+```
 
 ---
 

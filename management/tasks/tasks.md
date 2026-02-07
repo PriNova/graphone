@@ -303,6 +303,70 @@ npm run tauri build -- --target x86_64-pc-windows-msvc
 
 ---
 
+## Phase 7: Cross-Platform Build Scripts
+
+### 7.1 npm Scripts for Platform Builds
+**Status:** ✅ CONFIGURED
+
+The following npm scripts have been added to `package.json`:
+
+| Script | Description |
+|--------|-------------|
+| `dev` | Run Vite dev server (frontend only) |
+| `dev:linux` | Run Tauri dev mode for Linux (native) |
+| `dev:windows` | Run Tauri dev mode for Windows (cross-compile) |
+| `build:linux` | Build Linux AppImage/Deb packages |
+| `build:windows` | Build Windows MSI/NSIS installer (cross-compile) |
+| `build:all` | Build both Linux and Windows packages |
+
+**Usage:**
+```bash
+# Development - Linux (native)
+npm run dev:linux
+
+# Development - Windows (cross-compile from WSL2)
+npm run dev:windows
+
+# Production build - Linux only
+npm run build:linux
+
+# Production build - Windows only (cross-compile)
+npm run build:windows
+
+# Production build - Both platforms
+npm run build:all
+```
+
+### 7.2 Windows Build Requirements
+**Prerequisites:**
+- `cargo-xwin` installed: `cargo install cargo-xwin`
+- `lld` linker installed: `sudo apt install lld`
+- Windows target added: `rustup target add x86_64-pc-windows-msvc`
+
+**Build Output Locations:**
+| Platform | Output Path |
+|----------|-------------|
+| Linux | `src-tauri/target/release/bundle/appimage/graphone_*.AppImage` |
+| Linux | `src-tauri/target/release/bundle/deb/graphone_*.deb` |
+| Windows | `src-tauri/target/x86_64-pc-windows-msvc/release/bundle/msi/graphone_*.msi` |
+| Windows | `src-tauri/target/x86_64-pc-windows-msvc/release/bundle/nsis/graphone_*.exe` |
+
+### 7.3 Running Windows Builds
+**From WSL2:**
+```bash
+# Build Windows installer
+npm run build:windows
+
+# The MSI/EXE can be run directly from Windows
+# Access via: \\wsl$\<distro-name>\home\<username>\...
+# Or copy to Windows filesystem:
+cp src-tauri/target/x86_64-pc-windows-msvc/release/bundle/msi/*.msi /mnt/c/Users/<username>/Desktop/
+```
+
+**Note:** Windows builds created in WSL2 run natively on Windows - no WSL2 required to execute them.
+
+---
+
 ## Phase 7: Android Development Setup (Optional)
 
 ### 7.1 Install Android SDK
@@ -439,6 +503,8 @@ adb devices
 | **Setup automatic pi-mono sidecar build** | **✅ COMPLETED** |
 | Configure desktop capabilities (shell plugin) | ✅ COMPLETED |
 | Configure mobile capabilities (HTTP plugin) | ✅ COMPLETED |
+| **Add npm scripts for Linux builds** | **✅ COMPLETED** |
+| **Add npm scripts for Windows cross-compilation** | **✅ COMPLETED** |
 | Test Tauri dev server | 🔄 READY TO TEST |
 | Test Linux build | 🔄 READY TO TEST |
 | Test Windows cross-compilation | 🔄 READY TO TEST |
@@ -449,20 +515,35 @@ adb devices
 
 ## Next Steps
 
-1. **Test development server:**
+1. **Test development server (Linux):**
    ```bash
-   npm run tauri dev
+   npm run dev:linux
    ```
 
-2. **Verify sidecar binary is built:**
+2. **Test development server (Windows cross-compile):**
+   ```bash
+   npm run dev:windows
+   ```
+
+3. **Verify sidecar binary is built:**
    ```bash
    ls -la src-tauri/target/debug/binaries/
    # Should show: pi-agent-x86_64-unknown-linux-gnu
    ```
 
-3. **Test production build:**
+4. **Test production build (Linux):**
    ```bash
-   npm run tauri build
+   npm run build:linux
    ```
 
-4. **(Optional) Setup Android SDK** for mobile development
+5. **Test production build (Windows cross-compile):**
+   ```bash
+   npm run build:windows
+   ```
+
+6. **Build both platforms at once:**
+   ```bash
+   npm run build:all
+   ```
+
+7. **(Optional) Setup Android SDK** for mobile development
