@@ -7,17 +7,28 @@ fn main() {
     // Tell Cargo to rerun this script if build.rs itself changes
     println!("cargo:rerun-if-changed=build.rs");
     
-    // Only build sidecar for desktop platforms
+    // Get target information
     let target_os = env::var("CARGO_CFG_TARGET_OS").unwrap();
+    let target_triple = env::var("TARGET").unwrap();
     
+    // Run tauri_build with Windows manifest if building for Windows
+    if target_os == "windows" {
+        let manifest = include_str!("windows-app.manifest");
+        let windows = tauri_build::WindowsAttributes::new()
+            .app_manifest(manifest);
+        tauri_build::try_build(
+            tauri_build::Attributes::new().windows_attributes(windows)
+        ).expect("failed to run tauri build");
+    } else {
+        tauri_build::build();
+    }
+    
+    // Only build sidecar for desktop platforms
     // Skip for mobile builds
     if target_os == "android" || target_os == "ios" {
         println!("cargo:warning=Skipping pi-agent build for mobile target");
         return;
     }
-    
-    // Determine target triple
-    let target_triple = env::var("TARGET").unwrap();
     
     // Path to pi-mono coding-agent package
     let manifest_dir = env::var("CARGO_MANIFEST_DIR").unwrap();

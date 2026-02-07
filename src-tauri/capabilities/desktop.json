@@ -10,6 +10,6 @@
     "shell:allow-spawn",
     "shell:allow-execute",
     "shell:allow-kill",
-    "shell:allow-write-stdin"
+    "shell:allow-stdin-write"
   ]
 }
