@@ -1,0 +1,35 @@
+[build]
+# Default linker settings - uses system defaults
+# lld is configured per-target below for better cross-compilation support
+
+[profile.dev]
+# Faster debug builds with incremental compilation
+incremental = true
+codegen-units = 16
+
+[profile.release]
+# Optimized release builds
+lto = "thin"
+codegen-units = 1
+opt-level = 3
+
+# Linux x86_64: Use lld for faster linking (host target)
+[target.x86_64-unknown-linux-gnu]
+linker = "clang"
+rustflags = ["-C", "link-arg=-fuse-ld=lld"]
+
+# Windows x86_64: Use cargo-xwin (handles linker internally)
+# Note: cargo-xwin uses lld internally via the xwin toolchain
+[target.x86_64-pc-windows-msvc]
+linker = "lld-link"
+
+# Alternative: For GNU Windows targets (if needed in future)
+# [target.x86_64-pc-windows-gnu]
+# linker = "x86_64-w64-mingw32-gcc"
+
+# Android targets: Use lld (Android NDK uses lld by default)
+[target.aarch64-linux-android]
+linker = "lld"
+
+[target.x86_64-linux-android]
+linker = "lld"
