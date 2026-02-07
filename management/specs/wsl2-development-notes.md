@@ -584,6 +584,31 @@ sudo apt install nsis
 # If you only need the .exe, use: --no-bundle flag
 ```
 
+**Error:** Windows app doesn't open / crashes immediately
+```bash
+# Most likely cause: Missing WebView2 Runtime
+# Solution: Install WebView2 on Windows
+# Download from: https://developer.microsoft.com/en-us/microsoft-edge/webview2/
+
+# Other checks:
+# 1. Antivirus might be blocking - check Windows Defender
+# 2. Run from CMD to see errors: C:\Windows\Temp\graphone\graphone.exe
+# 3. Check sidecar is present: pi-agent-x86_64-pc-windows-msvc.exe
+```
+
+**Error:** "TaskDialogIndirect could not be located" (cross-compile issue)
+```bash
+# This is a known limitation when cross-compiling from Linux to Windows
+# The issue is with COMCTL32.dll manifest handling
+
+# Solutions:
+# 1. For production releases: Use GitHub Actions with Windows runners
+# 2. For development: Use Linux builds (npm run dev:linux)
+# 3. Build natively on Windows if possible
+
+# The Linux cross-compile is best for quick testing only
+```
+
 **Error:** `pi-mono not found` during build
 ```bash
 # Verify directory structure

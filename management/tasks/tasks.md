@@ -383,6 +383,13 @@ This tells Tauri to use `cargo-xwin` instead of `cargo` for the build, which aut
 
 **Note:** MSI installers can only be created on Windows (requires WiX). Cross-compilation from Linux creates NSIS installers only.
 
+**Cross-Compilation Limitations:**
+Windows executables built from Linux may have compatibility issues:
+- **TaskDialogIndirect error:** COMCTL32.dll manifest handling issues
+- This is a known limitation with cross-compilation
+- **For production releases:** Use GitHub Actions with Windows runners instead
+- **For development:** Linux builds or native Windows builds recommended
+
 ### 7.3 Running Windows Builds
 
 **Quick Launch (Recommended):**

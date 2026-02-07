@@ -412,6 +412,49 @@ npm run build:windows  # Now creates both exe and installer
 - The standalone `.exe` works fine without any installer
 - Use `npm run build:windows:exe` to build just the exe without bundling
 
+### Windows app doesn't open / crashes immediately
+
+**Most likely cause: Missing WebView2 Runtime**
+
+Tauri apps require Microsoft Edge WebView2 Runtime to be installed on Windows. 
+
+**Check if WebView2 is installed:**
+1. Open PowerShell on Windows
+2. Run: `Get-ItemProperty -Path 'HKLM:\SOFTWARE\WOW6432Node\Microsoft\EdgeUpdate\Clients\{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}' -Name 'pv' -ErrorAction SilentlyContinue`
+3. If nothing is returned, WebView2 is not installed
+
+**Install WebView2:**
+- Download from: https://developer.microsoft.com/en-us/microsoft-edge/webview2/
+- Or use the Evergreen Bootstrapper (recommended)
+
+### "TaskDialogIndirect could not be located" Error
+
+**This is a known issue with cross-compilation from Linux to Windows.**
+
+The error occurs because cross-compiled Windows executables may have issues with:
+- COMCTL32.dll version 6+ (required for TaskDialogIndirect)
+- Application manifest handling
+- Windows Common Controls
+
+**Solutions:**
+1. **For development/testing:** Build and run on Linux using `npm run dev:linux`
+2. **For Windows releases:** Use GitHub Actions (recommended) or build natively on Windows
+3. **Quick workaround:** The error may not affect actual functionality - try clicking OK and see if the app still runs
+
+**Recommended Approach for Windows Distribution:**
+Use GitHub Actions to build on actual Windows runners (see `.github/workflows/` for examples).
+
+**Other possible causes:**
+- **Antivirus/Windows Defender**: The app might be blocked. Check Windows Defender history.
+- **Missing sidecar**: Ensure `pi-agent-x86_64-pc-windows-msvc.exe` is in the same folder as `graphone.exe`
+- **Run from CMD**: Open Command Prompt and run `C:\Windows\Temp\graphone\graphone.exe` to see error messages
+
+**Launch issues from WSL2:**
+If you get "Windows cannot find..." errors when running `npm run run:windows`:
+1. Manually navigate to `C:\Windows\Temp\graphone\` in Windows Explorer
+2. Double-click `graphone.exe` to run it
+3. Or open PowerShell and run: `C:\Windows\Temp\graphone\graphone.exe`
+
 ---
 
 ## Documentation

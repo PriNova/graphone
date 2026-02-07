@@ -13,7 +13,8 @@ TARGET_TRIPLE="x86_64-pc-windows-msvc"
 BUILD_DIR="src-tauri/target/${TARGET_TRIPLE}/release"
 EXE_PATH="${BUILD_DIR}/${EXE_NAME}"
 WIN_TEMP_DIR="/mnt/c/Windows/Temp"
-WIN_TEMP_EXE="${WIN_TEMP_DIR}/${EXE_NAME}"
+WIN_APP_DIR="${WIN_TEMP_DIR}/graphone"
+WIN_TEMP_EXE="${WIN_APP_DIR}/${EXE_NAME}"
 
 # Colors for output
 RED='\033[0;31m'
@@ -24,6 +25,12 @@ NC='\033[0m' # No Color
 echo "=========================================="
 echo "  Graphone Windows Launcher (WSL2)"
 echo "=========================================="
+echo ""
+echo -e "${YELLOW}NOTE:${NC} Cross-compiled Windows apps may have compatibility issues."
+echo "If you see 'TaskDialogIndirect' errors, the app was built but"
+echo "may not run correctly. For production releases, use GitHub Actions"
+echo "or build natively on Windows."
+echo ""
 
 # Check if NSIS is installed (optional, but needed for bundling)
 if ! command -v makensis &> /dev/null; then
@@ -69,40 +76,56 @@ else
     echo ""
 fi
 
-# Copy to Windows temp for execution
-echo "Copying to Windows temp directory..."
+# Create app directory in Windows temp
+echo "Creating app directory in Windows temp..."
+mkdir -p "$WIN_APP_DIR"
+
+# Copy the executable
+echo "Copying executable..."
 cp "$EXE_PATH" "$WIN_TEMP_EXE"
-echo -e "${GREEN}Copied to:${NC} C:\\Windows\\Temp\\${EXE_NAME}"
-echo ""
+echo -e "${GREEN}Copied exe to:${NC} C:\\Windows\\Temp\\graphone\\${EXE_NAME}"
+
+# Copy all DLL files if they exist
+if ls "${BUILD_DIR}"/*.dll 1> /dev/null 2>&1; then
+    echo "Copying DLL files..."
+    cp "${BUILD_DIR}"/*.dll "$WIN_APP_DIR/"
+    echo -e "${GREEN}Copied DLL files${NC}"
+fi
 
 # Also copy sidecar binary if it exists
 SIDECAR_NAME="pi-agent-${TARGET_TRIPLE}.exe"
 SIDECAR_SOURCE="src-tauri/binaries/${SIDECAR_NAME}"
-SIDECAR_DEST="${WIN_TEMP_DIR}/${SIDECAR_NAME}"
+SIDECAR_DEST="${WIN_APP_DIR}/${SIDECAR_NAME}"
 
 if [ -f "$SIDECAR_SOURCE" ]; then
     echo "Copying sidecar binary..."
     cp "$SIDECAR_SOURCE" "$SIDECAR_DEST"
     echo -e "${GREEN}Copied sidecar:${NC} ${SIDECAR_NAME}"
-    echo ""
 else
     echo -e "${YELLOW}WARNING: Sidecar binary not found at:${NC}"
     echo "  ${SIDECAR_SOURCE}"
     echo "The app may not work correctly without the sidecar."
-    echo ""
 fi
+
+echo ""
 
 # Launch the application
 echo -e "${GREEN}Starting Windows app...${NC}"
 echo ""
-cmd.exe /c start "" "C:\\Windows\\Temp\\${EXE_NAME}"
+echo "Note: If the app doesn't open, check:"
+echo "  1. WebView2 Runtime is installed on Windows"
+echo "  2. Windows Defender/antivirus isn't blocking it"
+echo "  3. Run directly: C:\\Windows\\Temp\\graphone\\graphone.exe"
+echo ""
+
+# Convert WSL path to Windows path and launch via PowerShell
+WIN_PATH=$(wslpath -w "$WIN_APP_DIR")
+powershell.exe -Command "Start-Process -FilePath '$WIN_PATH\\graphone.exe' -WorkingDirectory '$WIN_PATH'"
 
 echo -e "${GREEN}App launched!${NC}"
 echo ""
-echo "Note: The app is running from C:\\Windows\\Temp\\"
 
 if [ -n "$NO_BUNDLE" ]; then
-    echo ""
     echo -e "${YELLOW}Note: To create Windows installers (.exe), install NSIS:${NC}"
     echo "  sudo apt install nsis"
     echo "  npm run build:windows"
