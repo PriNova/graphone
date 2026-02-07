@@ -2,7 +2,7 @@
 
 **Date:** February 7, 2026  
 **Environment:** WSL2 on Windows 11, Ubuntu 24.04.3 LTS  
-**Project Location:** `/home/prinova/CodeProjects/graphone` (Linux filesystem ✅)
+**Project Location:** Project directory (Linux filesystem ✅)
 
 ---
 
@@ -140,20 +140,20 @@ npm --version   # 10.9.4
 **Status:** NOT INITIALIZED ❌  
 
 ```bash
-cd /home/prinova/CodeProjects/graphone
+cd <project-directory>
 npm install
 ```
 
 ### 4.2 Link Local pi-mono (Development Mode)
 **Status:** NOT CONFIGURED ❌  
-**Local pi-mono exists at:** `/home/prinova/CodeProjects/pi-mono` ✅
+**Local pi-mono exists at:** `../pi-mono` (relative to this project) ✅
 
 ```bash
 # Option 1: npm link (for active development)
-cd /home/prinova/CodeProjects/pi-mono/packages/coding-agent
+cd ../pi-mono/packages/coding-agent
 npm link
 
-cd /home/prinova/CodeProjects/graphone
+cd ../graphone
 npm link @mariozechner/pi-coding-agent
 
 # Option 2: Use local path in package.json
@@ -227,7 +227,7 @@ xclock  # Test GUI app
 ### 6.2 Test Tauri Dev Server
 **Command:**
 ```bash
-cd /home/prinova/CodeProjects/graphone
+cd <project-directory>
 npm run tauri dev
 ```
 
@@ -302,7 +302,7 @@ For the fastest path to a working development environment, install in this order
 | Component | Status | Notes |
 |-----------|--------|-------|
 | WSL2 | ✅ Ready | Ubuntu 24.04.3 LTS |
-| Project Location | ✅ Correct | Linux filesystem (/home/prinova/CodeProjects/) |
+| Project Location | ✅ Correct | Linux filesystem (e.g., `/home/<user>/projects/`) |
 | DISPLAY/WAYLAND | ✅ Set | :0 / wayland-0 |
 | Node.js | ✅ Installed | v22.21.0 |
 | npm | ✅ Installed | 10.9.4 |
@@ -312,7 +312,7 @@ For the fastest path to a working development environment, install in this order
 | clang/llvm | ✅ Installed | v18 |
 | curl | ✅ Installed | 8.5.0 |
 | file | ✅ Installed | 5.45 |
-| pi-mono local | ✅ Present | /home/prinova/CodeProjects/pi-mono |
+| pi-mono local | ✅ Present | `../pi-mono` (relative to this project) |
 | **Rust** | **❌ Missing** | **BLOCKER** |
 | **Cargo** | **❌ Missing** | **BLOCKER** |
 | **Tauri CLI** | **❌ Missing** | **BLOCKER** |

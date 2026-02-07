@@ -2,7 +2,7 @@ markdown
 # Project Spec: Pi-Tauri Cross-Platform Agent
 
 ## 1. Overview
-A unified application to interface with the `pi-mono` (/home/prinova/CodeProjects/pi-mono) coding agent across Desktop (Windows/macOS/Linux) and Mobile (iOS/Android), plus a strategy for VS Code integration.
+A unified application to interface with the `pi-mono` coding agent across Desktop (Windows/macOS/Linux) and Mobile (iOS/Android), plus a strategy for VS Code integration.
 
 ## 2. Tech Stack
 - **Framework:** [Tauri 2.0](https://v2.tauri.app) (Multi-platform support)
@@ -14,12 +14,12 @@ A unified application to interface with the `pi-mono` (/home/prinova/CodeProject
 
 ### A. Desktop (The Sidecar Pattern)
 - **Mechanism:** The Rust backend spawns `pi --mode rpc` as a managed sidecar.
-- **Communication:** [Tauri Command API](https://v2.tauri.appconcept/inter-process-communication/) bridges the Frontend TS and the Rust sidecar `stdin/stdout`.
-- **Packaging:** Include the `pi` binary in the [Tauri Bundle](https://v2.tauri.appplugin/shell/).
+- **Communication:** [Tauri Command API](https://v2.tauri.app/concept/inter-process-communication/) bridges the Frontend TS and the Rust sidecar `stdin/stdout`.
+- **Packaging:** Include the `pi` binary in the [Tauri Bundle](https://v2.tauri.app/plugin/shell/).
 
 ### B. Mobile (The Library Pattern)
 - **Mechanism:** Since Mobile cannot run Node.js subprocesses, the `pi-mono` logic must be bundled as a library within the WebView.
-- **Data:** Use the [Tauri HTTP Plugin](https://v2.tauri.appplugin/http/) to bypass Mobile CORS restrictions for LLM API calls.
+- **Data:** Use the [Tauri HTTP Plugin](https://v2.tauri.app/plugin/http/) to bypass Mobile CORS restrictions for LLM API calls.
 
 ### C. VS Code (The Shared Logic Pattern)
 - **Mechanism:** A standalone [VS Code Extension](https://code.visualstudio.com) project.

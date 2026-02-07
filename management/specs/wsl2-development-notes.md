@@ -46,15 +46,15 @@ Storing the project on Windows filesystem (`/mnt/c/`) causes **severe performanc
 ```bash
 # ✅ CORRECT: Store project in Linux filesystem
 cd ~
-mkdir -p ~/projects/pi-tauri
-cd ~/projects/pi-tauri
+mkdir -p <project-directory>
+cd <project-directory>
 
 # ❌ AVOID: Windows filesystem paths
-cd /mnt/c/Users/username/projects/pi-tauri  # Slow!
+cd /mnt/c/Users/username/projects/graphone  # Slow!
 ```
 
 **Performance Comparison:**
-| Operation | Linux FS (`~/projects`) | Windows FS (`/mnt/c/`) |
+| Operation | Linux FS (`/home/<user>/projects/`) | Windows FS (`/mnt/c/`) |
 |-----------|------------------------|----------------------|
 | `cargo build` | ~30s | ~5-10 min |
 | `npm install` | ~20s | ~3-5 min |
@@ -84,7 +84,7 @@ npm run tauri build -- --target x86_64-pc-windows-msvc
 For complex Windows-specific features, consider building natively on Windows:
 ```powershell
 # From Windows PowerShell (not WSL)
-cd \\wsl$\Ubuntu\home\username\projects\pi-tauri
+cd \\wsl$\Ubuntu\home\username\projects\graphone
 npm run tauri build
 ```
 
@@ -248,7 +248,8 @@ target-dir = "/tmp/cargo-target"  # Faster if using Windows FS (tmpfs)
 ### 6.1 Daily Development Loop (Linux Target)
 ```bash
 # Terminal 1: WSL2
-cd /home/prinova/CodeProjects/graphone
+# Navigate to project directory
+cd graphone
 npm install          # Fast on Linux FS
 npm run tauri dev    # Opens GUI via WSLg
 ```
@@ -256,11 +257,12 @@ npm run tauri dev    # Opens GUI via WSLg
 ### 6.2 Testing Windows Build
 ```bash
 # Cross-compile from WSL2
-cd /home/prinova/CodeProjects/graphone
+# Navigate to project directory
+cd graphone
 npm run tauri build -- --target x86_64-pc-windows-msvc
 
 # Run the Windows binary from Windows side
-/mnt/c/.../pi-tauri.exe  # Or copy to Windows desktop
+/mnt/c/.../graphone.exe  # Or copy to Windows desktop
 ```
 
 ### 6.3 Mobile Development (Android)
@@ -269,7 +271,8 @@ npm run tauri build -- --target x86_64-pc-windows-msvc
 export ANDROID_HOME=$HOME/android-sdk
 export PATH=$PATH:$ANDROID_HOME/platform-tools
 
-cd /home/prinova/CodeProjects/graphone
+# Navigate to project directory
+cd graphone
 
 # Dev server with Android
 npm run tauri android dev
@@ -284,7 +287,7 @@ npm run tauri android dev -- --host  # Bind to all interfaces
 
 **Current Setup (as of February 2026):**
 ```
-/home/prinova/CodeProjects/              # Linux filesystem (✅ fast!)
+<projects-directory>/                    # Linux filesystem (✅ fast!)
 ├── pi-mono/                             # Local pi-mono clone
 │   ├── packages/
 │   │   ├── coding-agent/                # Main SDK package
@@ -323,10 +326,10 @@ npm run tauri android dev -- --host  # Bind to all interfaces
 **Using Local pi-mono:**
 ```bash
 # Option 1: npm link for development
-cd /home/prinova/CodeProjects/pi-mono/packages/coding-agent
+cd ../pi-mono/packages/coding-agent
 npm link
 
-cd /home/prinova/CodeProjects/graphone
+cd ../graphone
 npm link @mariozechner/pi-coding-agent
 
 # Option 2: Local path in package.json
@@ -337,7 +340,7 @@ npm link @mariozechner/pi-coding-agent
 }
 
 # Option 3: Build and pack
-cd /home/prinova/CodeProjects/pi-mono/packages/coding-agent
+cd ../pi-mono/packages/coding-agent
 npm pack
 # Then reference the .tgz file
 ```
@@ -346,7 +349,7 @@ npm pack
 
 **General Best Practice (for new projects):**
 ```
-~/projects/pi-tauri/           # Linux filesystem (fast!)
+<project-directory>/           # Linux filesystem (fast!)
 ├── src/                       # Frontend TypeScript/React
 ├── src-tauri/                 # Rust backend
 │   ├── src/
@@ -406,8 +409,8 @@ chmod +x src-tauri/binaries/pi-agent-*
 pwd  # Should be /home/username/..., not /mnt/c/...
 
 # Move if needed
-mv /mnt/c/projects/pi-tauri ~/projects/
-cd ~/projects/pi-tauri
+mv /mnt/c/projects/graphone <project-directory>/
+cd <project-directory>
 ```
 
 ---
@@ -416,7 +419,7 @@ cd ~/projects/pi-tauri
 
 | Practice | Recommendation |
 |----------|---------------|
-| **Project Location** | Always use Linux filesystem (`~/projects`) |
+| **Project Location** | Always use Linux filesystem (e.g., `/home/<user>/projects/`) |
 | **Node.js** | Use nvm in WSL2, not Windows Node.js |
 | **Rust** | Install via rustup in WSL2 |
 | **IDE** | VS Code Windows + WSL Remote extension |
@@ -434,8 +437,8 @@ cd ~/projects/pi-tauri
 wsl.exe --list --verbose  # Should show WSL 2
 
 # 2. Create project in Linux filesystem
-mkdir -p ~/projects/pi-tauri
-cd ~/projects/pi-tauri
+mkdir -p <project-directory>
+cd <project-directory>
 
 # 3. Install prerequisites
 sudo apt update

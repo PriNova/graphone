@@ -362,7 +362,7 @@ Recommended options for chat interfaces:
 
 **Current Setup:**
 ```
-/home/prinova/CodeProjects/
+<project-directory>/
 ├── pi-mono/              # Local clone of pi-mono repository
 │   ├── packages/
 │   │   ├── coding-agent/     # @mariozechner/pi-coding-agent
@@ -382,18 +382,18 @@ Recommended options for chat interfaces:
 ```
 
 **Development Workflow:**
-- **pi-mono local path:** `/home/prinova/CodeProjects/pi-mono`
-- **Current project:** `/home/prinova/CodeProjects/graphone`
+- **pi-mono local path:** `../pi-mono` (relative to this project)
+- **Current project:** `graphone` (this project)
 - **Reference in code:** Use relative paths or npm link for local pi-mono development
 
 **npm Link Setup (for local pi-mono development):**
 ```bash
 # In pi-mono repository
-cd /home/prinova/CodeProjects/pi-mono/packages/coding-agent
+cd ../pi-mono/packages/coding-agent
 npm link
 
 # In graphone project
-cd /home/prinova/CodeProjects/graphone
+cd ../graphone
 npm link @mariozechner/pi-coding-agent
 ```
 
@@ -402,14 +402,14 @@ npm link @mariozechner/pi-coding-agent
 **Reference Document:** See `wsl2-development-notes.md` for detailed guidance.
 
 **Key Points:**
-- **Store project in Linux filesystem (`~/projects`)** - not `/mnt/c/` (10-100x performance difference)
+- **Store project in Linux filesystem** (e.g., `/home/<user>/projects/`) - not `/mnt/c/` (10-100x performance difference)
 - **Use WSL2 for development** - native Linux performance for cargo/node
 - **Cross-compile for Windows** - use `cargo-xwin` or build on Windows host
 - **Mobile dev** - Android SDK works in WSL2, iOS requires macOS
 - **IDE** - VS Code Windows + WSL Remote extension recommended
 
 **Quick Checklist:**
-- [ ] Project is in `~/projects/` (Linux FS)
+- [ ] Project is in `<project-directory>/` (Linux FS)
 - [ ] Using Node.js via nvm in WSL2
 - [ ] Rust installed via rustup in WSL2
 - [ ] VS Code with Remote-WSL extension

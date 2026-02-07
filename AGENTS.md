@@ -19,7 +19,7 @@
 - `vscode-extension/` - VS Code extension source
 - `management/specs/` - Project specs, findings, WSL2 notes
 
-**Reference:** Local pi-mono at `/home/prinova/CodeProjects/pi-mono`
+**Reference:** Local pi-mono at `../pi-mono` (relative to this project)
 
 ## Code Style Guidelines
 - **Language**: TypeScript (frontend), Rust (backend)
@@ -29,7 +29,7 @@
 - **Bundler**: Vite (Tauri default)
 
 ## Critical Development Notes
-**WSL2 Development:** Store project in **Linux filesystem** (`~/projects`), NOT `/mnt/c/` (10-100x performance difference)
+**WSL2 Development:** Store project in **Linux filesystem** (e.g., `/home/<username>/projects/`), NOT `/mnt/c/` (Windows filesystem) - performance difference is 10-100x.
 
 **Rust toolchain targets:**
 - `x86_64-unknown-linux-gnu` (Linux desktop)
@@ -57,9 +57,9 @@
 - **Architecture:** x86_64
 
 ### Project Location
-- **Path:** `/home/prinova/CodeProjects/graphone` ✅
+- **Path:** project directory (example: `/home/<username>/projects/graphone`)
 - **Filesystem:** Linux (ext4) - Performance optimal
-- **Reference Project:** `/home/prinova/CodeProjects/pi-mono` ✅
+- **Reference Project:** `../pi-mono` (relative to this project)
 
 ### Installed Components ✅
 | Component | Version | Status |

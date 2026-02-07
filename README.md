@@ -32,7 +32,7 @@ This project implements a cross-platform coding agent interface using three arch
 ## Project Structure
 
 ```
-/home/prinova/CodeProjects/graphone/     # This repository
+graphone/                                # This repository
 ├── management/
 │   └── specs/
 │       ├── project-specs.md             # Original specification
@@ -52,7 +52,7 @@ This project implements a cross-platform coding agent interface using three arch
 │       └── extension.ts                 # VS Code API integration
 └── package.json
 
-/home/prinova/CodeProjects/pi-mono/      # Local pi-mono clone (reference)
+pi-mono/                                 # Local pi-mono clone (reference)
 └── packages/
     └── coding-agent/                    # @mariozechner/pi-coding-agent
         ├── docs/sdk.md                  # SDK documentation
@@ -87,8 +87,8 @@ This project implements a cross-platform coding agent interface using three arch
 ### 1. Clone and Setup
 
 ```bash
-# Navigate to project (already in WSL2 Linux filesystem ✅)
-cd /home/prinova/CodeProjects/graphone
+# Navigate to project
+cd graphone
 
 # Install dependencies
 npm install
@@ -103,10 +103,10 @@ For development with local pi-mono changes:
 
 ```bash
 # Option 1: npm link
-cd /home/prinova/CodeProjects/pi-mono/packages/coding-agent
+cd ../pi-mono/packages/coding-agent
 npm link
 
-cd /home/prinova/CodeProjects/graphone
+cd ../../graphone
 npm link @mariozechner/pi-coding-agent
 
 # Option 2: Local path in package.json
@@ -144,7 +144,7 @@ npm run tauri android build
 
 This project is developed in **WSL2 on Windows 11**. See [`management/specs/wsl2-development-notes.md`](management/specs/wsl2-development-notes.md) for detailed guidance.
 
-**Critical:** Keep the project in the **Linux filesystem** (`~/projects/` or `/home/prinova/CodeProjects/`), NOT in `/mnt/c/` (Windows filesystem) - performance difference is 10-100x.
+**Critical:** When using WSL2, keep the project in the **Linux filesystem** (e.g., `/home/username/projects/`), NOT in `/mnt/c/` (Windows filesystem) - performance difference is 10-100x.
 
 ### Architecture Patterns
 
@@ -226,7 +226,7 @@ VS Code ←→ Extension Host ←→ pi-mono SDK ←→ LLM APIs
 
 ## Contributing
 
-This project uses the local pi-mono repository at `/home/prinova/CodeProjects/pi-mono` as a reference. When making changes that affect both projects:
+This project uses the local pi-mono repository at `../pi-mono` (relative to this project) as a reference. When making changes that affect both projects:
 
 1. Test SDK changes in pi-mono first
 2. Use `npm link` or local path for integration testing
