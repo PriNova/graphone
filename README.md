@@ -60,8 +60,27 @@ The pi-mono agent is located at `../pi-mono` (relative to this project) and is a
 
 | Target | Requirements |
 |--------|--------------|
-| Linux Desktop | `libgtk-3-dev`, `libwebkit2gtk-4.1-dev`, `libappindicator3-dev` |
+| Linux Desktop | `libgtk-3-dev`, `libwebkit2gtk-4.1-dev`, `libappindicator3-dev`, `clang`, `lld` |
 | Windows | `cargo-xwin` for cross-compilation (from WSL2) |
+
+### Build Configuration
+
+The project uses **lld** (LLVM linker) for faster linking on Linux and Android targets. Cross-compilation for Windows uses `lld-link` via `cargo-xwin`. This is configured in `src-tauri/.cargo/config.toml`:
+
+```toml
+# Linux x86_64: Use lld for faster linking
+[target.x86_64-unknown-linux-gnu]
+linker = "clang"
+rustflags = ["-C", "link-arg=-fuse-ld=lld"]
+
+# Windows x86_64: Use lld-link via cargo-xwin
+[target.x86_64-pc-windows-msvc]
+linker = "lld-link"
+
+# Android targets: Use lld
+[target.aarch64-linux-android]
+linker = "lld"
+```
 
 ### Required Tools
 
@@ -196,7 +215,46 @@ The sidecar binary is built automatically via `src-tauri/build.rs`:
 
 ---
 
-## Configuration
+## Build Configuration
+
+### Cargo Configuration
+
+The project uses a custom `.cargo/config.toml` for optimized builds and cross-compilation:
+
+```toml
+[build]
+# Linker settings are configured per-target below
+
+[profile.dev]
+# Faster debug builds with incremental compilation
+incremental = true
+codegen-units = 16
+
+[profile.release]
+# Optimized release builds with thin LTO
+lto = "thin"
+codegen-units = 1
+opt-level = 3
+
+# Linux: Use lld for faster linking
+[target.x86_64-unknown-linux-gnu]
+linker = "clang"
+rustflags = ["-C", "link-arg=-fuse-ld=lld"]
+
+# Windows: Use lld-link via cargo-xwin
+[target.x86_64-pc-windows-msvc]
+linker = "lld-link"
+
+# Android: Use lld (included in NDK)
+[target.aarch64-linux-android]
+linker = "lld"
+```
+
+**Benefits:**
+- **lld linker**: 2-10x faster linking compared to default system linker
+- **Incremental compilation**: Faster rebuilds during development
+- **Thin LTO**: Better optimized release builds without full LTO overhead
+- **Cross-compilation ready**: Configured for Linux, Windows, and Android targets
 
 ### tauri.conf.json
 

@@ -271,12 +271,53 @@ rustup target add x86_64-linux-android           # Android x86_64
 ```
 
 **WSL2-Specific Rust Config:**
+
+The project includes a pre-configured `.cargo/config.toml` with optimized settings:
+
+```toml
+[build]
+# Linker settings are configured per-target for cross-compilation support
+
+[profile.dev]
+# Faster debug builds with incremental compilation
+incremental = true
+codegen-units = 16
+
+[profile.release]
+# Optimized release builds with thin LTO
+lto = "thin"
+codegen-units = 1
+opt-level = 3
+
+# Linux x86_64: Use lld for faster linking (2-10x faster than system linker)
+[target.x86_64-unknown-linux-gnu]
+linker = "clang"
+rustflags = ["-C", "link-arg=-fuse-ld=lld"]
+
+# Windows x86_64: Use lld-link via cargo-xwin
+[target.x86_64-pc-windows-msvc]
+linker = "lld-link"
+
+# Android targets: Use lld (included in Android NDK)
+[target.aarch64-linux-android]
+linker = "lld"
+[target.x86_64-linux-android]
+linker = "lld"
+```
+
+**Why lld?**
+- Linking is often the bottleneck in incremental builds
+- lld is 2-10x faster than the default GNU ld on Linux
+- lld-link is used for Windows cross-compilation via cargo-xwin
+- Works seamlessly with cross-compilation to Android
+
+**Alternative global config (optional):**
 ```bash
-# Add to ~/.cargo/config.toml for faster builds
+# Add to ~/.cargo/config.toml for system-wide defaults
 [build]
 target-dir = "/tmp/cargo-target"  # Faster if using Windows FS (tmpfs)
 
-# Or use sccache for caching
+# Or use sccache for distributed caching
 # cargo install sccache
 # export RUSTC_WRAPPER=sccache
 ```
@@ -565,6 +606,7 @@ free -h
 | **File Sharing** | Use `\wsl$​` path from Windows to access WSL2 files |
 | **Git** | Configure Git in WSL2 with Windows credentials |
 | **Sidecar** | Let build.rs handle it - don't manually copy binaries |
+| **Linker** | lld configured per-target in `.cargo/config.toml` |
 
 ---
 

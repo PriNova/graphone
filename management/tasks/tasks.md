@@ -186,7 +186,41 @@ graphone/
 
 ## Phase 5: Tauri Configuration
 
-### 5.1 Configure tauri.conf.json
+### 5.1 Configure Cargo Build Settings
+**Status:** ✅ COMPLETED
+
+Created `src-tauri/.cargo/config.toml` with optimized build settings:
+
+```toml
+[build]
+# Linker settings configured per-target for cross-compilation
+
+[profile.dev]
+incremental = true
+codegen-units = 16
+
+[profile.release]
+lto = "thin"
+codegen-units = 1
+opt-level = 3
+
+# Linux: Use lld linker (2-10x faster)
+[target.x86_64-unknown-linux-gnu]
+linker = "clang"
+rustflags = ["-C", "link-arg=-fuse-ld=lld"]
+
+# Windows: Use lld-link via cargo-xwin
+[target.x86_64-pc-windows-msvc]
+linker = "lld-link"
+
+# Android: Use lld
+[target.aarch64-linux-android]
+linker = "lld"
+[target.x86_64-linux-android]
+linker = "lld"
+```
+
+### 5.2 Configure tauri.conf.json
 **Status:** ✅ COMPLETED
 
 Configured:
@@ -194,7 +228,7 @@ Configured:
 - `plugins.shell` - Process spawning permissions
 - Desktop window settings
 
-### 5.2 Setup Automatic Sidecar Build
+### 5.3 Setup Automatic Sidecar Build
 **Status:** ✅ COMPLETED
 
 **Implementation:** `src-tauri/build.rs`
@@ -216,7 +250,7 @@ npm run build:binary
 
 **Important:** pi-mono is a Node.js/TypeScript project, not Rust. It's compiled with bun.
 
-### 5.3 Configure Capabilities
+### 5.4 Configure Capabilities
 **Status:** ✅ COMPLETED
 
 Created capability files:
@@ -224,7 +258,7 @@ Created capability files:
 - `src-tauri/capabilities/desktop.json` - Shell plugin, sidecar permissions
 - `src-tauri/capabilities/mobile.json` - HTTP plugin (future use)
 
-### 5.4 Add Shell Plugin
+### 5.5 Add Shell Plugin
 **Status:** ✅ COMPLETED
 
 Updated:
@@ -400,6 +434,7 @@ adb devices
 | **Install bun** | **✅ COMPLETED** |
 | Run npm install in project | ✅ COMPLETED |
 | Scaffold Tauri project structure | ✅ COMPLETED |
+| Configure Cargo build settings (lld linker) | ✅ COMPLETED |
 | Configure tauri.conf.json | ✅ COMPLETED |
 | **Setup automatic pi-mono sidecar build** | **✅ COMPLETED** |
 | Configure desktop capabilities (shell plugin) | ✅ COMPLETED |
