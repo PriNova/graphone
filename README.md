@@ -61,11 +61,13 @@ The pi-mono agent is located at `../pi-mono` (relative to this project) and is a
 | Target | Requirements |
 |--------|--------------|
 | Linux Desktop | `libgtk-3-dev`, `libwebkit2gtk-4.1-dev`, `libappindicator3-dev`, `clang`, `lld` |
-| Windows | `cargo-xwin` for cross-compilation (from WSL2) |
+| Windows | `cargo-xwin`, `nsis`, `lld`, `llvm` for cross-compilation (from WSL2) |
 
 ### Build Configuration
 
-The project uses **lld** (LLVM linker) for faster linking on Linux and Android targets. Cross-compilation for Windows uses `lld-link` via `cargo-xwin`. This is configured in `src-tauri/.cargo/config.toml`:
+The project uses **lld** (LLVM linker) for faster linking on Linux and Android targets. Cross-compilation for Windows uses `cargo-xwin` which automatically handles the Windows SDK libraries and linker configuration.
+
+**Configured in `src-tauri/.cargo/config.toml`:**
 
 ```toml
 # Linux x86_64: Use lld for faster linking
@@ -73,14 +75,28 @@ The project uses **lld** (LLVM linker) for faster linking on Linux and Android t
 linker = "clang"
 rustflags = ["-C", "link-arg=-fuse-ld=lld"]
 
-# Windows x86_64: Use lld-link via cargo-xwin
-[target.x86_64-pc-windows-msvc]
-linker = "lld-link"
+# Windows x86_64: Use cargo-xwin (no linker config needed)
+# cargo-xwin is invoked via --runner flag
+# This is handled automatically by npm run build:windows
 
 # Android targets: Use lld
 [target.aarch64-linux-android]
 linker = "lld"
 ```
+
+**Windows Cross-Compilation:**
+```bash
+# Install NSIS (required for creating Windows installers on Linux)
+sudo apt install nsis lld llvm
+
+# Install cargo-xwin (downloads Windows SDK automatically)
+cargo install cargo-xwin
+
+# Build for Windows (creates NSIS installer, not MSI)
+npm run build:windows
+```
+
+**Important:** MSI installers can only be created on Windows. Cross-compilation from Linux creates NSIS installers (`-setup.exe`).
 
 ### Required Tools
 
@@ -240,8 +256,10 @@ Convenience npm scripts for cross-platform builds:
 | `npm run dev:linux` | Linux | Run dev server (native) |
 | `npm run dev:windows` | Windows | Run dev server (cross-compile) |
 | `npm run build:linux` | Linux | Build AppImage/Deb packages |
-| `npm run build:windows` | Windows | Build MSI/NSIS installer (cross-compile) |
+| `npm run build:windows` | Windows | Build NSIS installer (requires NSIS) |
+| `npm run build:windows:exe` | Windows | Build only .exe (no installer) |
 | `npm run build:all` | Both | Build Linux + Windows packages |
+| `npm run run:windows` | Windows | Build (if needed) & launch Windows app from WSL2 |
 
 **Examples:**
 ```bash
@@ -250,6 +268,12 @@ npm run dev:linux
 
 # Build for both platforms from WSL2
 npm run build:all
+
+# Build and run Windows app directly from WSL2
+npm run run:windows
+
+# Build only the Windows executable (fastest, no NSIS needed)
+npm run build:windows:exe
 ```
 
 ---
@@ -280,9 +304,10 @@ opt-level = 3
 linker = "clang"
 rustflags = ["-C", "link-arg=-fuse-ld=lld"]
 
-# Windows: Use lld-link via cargo-xwin
-[target.x86_64-pc-windows-msvc]
-linker = "lld-link"
+# Windows: Use cargo-xwin (configured via CARGO env var)
+# No linker config needed - cargo-xwin handles SDK libs and linking
+# [target.x86_64-pc-windows-msvc]
+# linker = "lld-link"  # Don't set - use CARGO=cargo-xwin instead
 
 # Android: Use lld (included in NDK)
 [target.aarch64-linux-android]
@@ -347,6 +372,45 @@ npm run build:binary
 Ensure the binary naming matches the target triple:
 - Linux: `pi-agent-x86_64-unknown-linux-gnu`
 - Windows: `pi-agent-x86_64-pc-windows-msvc.exe`
+
+### Windows build fails with "link.exe not found" or "could not open 'shell32.lib'"
+
+This happens when `cargo-xwin` is not used. The npm scripts handle this automatically, but if running manually:
+
+```bash
+# Wrong - will fail:
+npm run tauri build -- --target x86_64-pc-windows-msvc
+
+# Correct - use cargo-xwin via --runner flag:
+source ~/.cargo/env && cargo tauri build --target x86_64-pc-windows-msvc --runner cargo-xwin
+
+# Or use the npm script (recommended):
+npm run build:windows
+```
+
+**Cause:** Cross-compiling for Windows requires Windows SDK libraries (kernel32.lib, shell32.lib, etc.) which `cargo-xwin` downloads and configures automatically.
+
+### Windows build fails with "makensis.exe: No such file or directory"
+
+**This error is expected if NSIS is not installed.** The good news is that the `.exe` file is still built successfully! Only the installer creation fails.
+
+**Quick Fix - Run without installer:**
+```bash
+# The exe is already built! Just run it:
+npm run run:windows
+```
+
+**To install NSIS (for creating Windows installers):**
+```bash
+sudo apt install nsis
+npm run build:windows  # Now creates both exe and installer
+```
+
+**Note:** 
+- MSI installers can only be created on Windows (requires WiX)
+- NSIS installers (`-setup.exe`) can be created on Linux (requires `nsis` package)
+- The standalone `.exe` works fine without any installer
+- Use `npm run build:windows:exe` to build just the exe without bundling
 
 ---
 

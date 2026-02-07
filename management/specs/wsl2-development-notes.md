@@ -100,15 +100,32 @@ Tauri Windows builds typically require Windows-native tooling, but WSL2 can cros
 # Install cross-compilation toolchain
 sudo apt install llvm clang lld
 
+# Install NSIS (required for creating Windows installers on Linux)
+sudo apt install nsis
+
 # Install cargo-xwin
 cargo install cargo-xwin
 
 # Add Windows target
 rustup target add x86_64-pc-windows-msvc
 
-# Build Windows app from WSL2
-npm run tauri build -- --target x86_64-pc-windows-msvc
+# Build Windows app from WSL2 (using npm script)
+npm run build:windows
+
+# Or manually with cargo-xwin:
+source ~/.cargo/env && cargo tauri build --target x86_64-pc-windows-msvc --runner cargo-xwin
 ```
+
+**Important:** The `--runner cargo-xwin` flag is required because:
+- `cargo-xwin` downloads Windows SDK libraries automatically
+- It sets up the correct linker paths for `lld-link`
+- Without it, the linker cannot find `shell32.lib`, `kernel32.lib`, etc.
+- This is handled automatically by the `npm run build:windows` script
+
+**Limitations:**
+- MSI installers can only be created on Windows (requires WiX toolset)
+- NSIS installers (`-setup.exe`) can be created on Linux/WSL2
+- The executable `.exe` can be built and run directly without an installer
 
 **Note:** The pi-mono sidecar will also be built for Windows during this process (bun can cross-compile).
 
@@ -463,10 +480,31 @@ npm run build:all
 
 # Legacy command:
 npm run tauri build -- --target x86_64-pc-windows-msvc
-
-# Run the Windows binary from Windows side
-/mnt/c/.../graphone.exe  # Or copy to Windows desktop
 ```
+
+### 6.3 Running Windows App from WSL2
+
+**Automatic Launch (Recommended):**
+```bash
+# Build (if needed) and run Windows app from WSL2
+npm run run:windows
+```
+
+This script (`scripts/run-windows.sh`) will:
+1. Check if the Windows executable exists (builds automatically if missing)
+2. Copy the .exe to `C:\Windows\Temp\graphone.exe`
+3. Copy the sidecar binary if available
+4. Launch via `cmd.exe /c start`
+
+**Manual Launch:**
+```bash
+# Copy to Windows and run
+npm run build:windows
+cp src-tauri/target/x86_64-pc-windows-msvc/release/graphone.exe /mnt/c/Users/<username>/Desktop/
+# Then double-click in Windows Explorer
+```
+
+**Note:** Windows builds created in WSL2 run natively on Windows - no WSL2 required to execute them.
 
 ### 6.3 Mobile Development (Android)
 ```bash
@@ -534,6 +572,16 @@ sudo apt install build-essential
 # Solution: Use cargo-xwin or build on Windows
 # OR install mingw for GNU toolchain (limited)
 sudo apt install mingw-w64
+```
+
+**Error:** `makensis.exe: No such file or directory` (Windows cross-compile)
+```bash
+# Solution: Install NSIS
+sudo apt install nsis
+
+# Note: MSI installers can only be created on Windows
+# NSIS installers can be created on Linux
+# If you only need the .exe, use: --no-bundle flag
 ```
 
 **Error:** `pi-mono not found` during build

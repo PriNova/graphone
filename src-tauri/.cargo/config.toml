@@ -18,10 +18,12 @@ opt-level = 3
 linker = "clang"
 rustflags = ["-C", "link-arg=-fuse-ld=lld"]
 
-# Windows x86_64: Use cargo-xwin (handles linker internally)
-# Note: cargo-xwin uses lld internally via the xwin toolchain
-[target.x86_64-pc-windows-msvc]
-linker = "lld-link"
+# Windows x86_64: Use cargo-xwin
+# IMPORTANT: When building for Windows, use `cargo xwin` instead of `cargo`
+# This is handled by the npm scripts (npm run build:windows)
+# cargo-xwin downloads Windows SDK libs and configures the linker automatically
+# [target.x86_64-pc-windows-msvc]
+# linker = "lld-link"  # Don't set this - cargo-xwin handles it
 
 # Alternative: For GNU Windows targets (if needed in future)
 # [target.x86_64-pc-windows-gnu]

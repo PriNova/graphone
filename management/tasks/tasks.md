@@ -97,6 +97,9 @@ sudo apt install -y \
 # Install additional tools for cross-compilation (already done)
 sudo apt install -y llvm clang lld
 
+# Install NSIS for creating Windows installers on Linux
+sudo apt install nsis  # ✅
+
 # Install cargo-xwin for Windows cross-compilation
 cargo install cargo-xwin  # ✅
 ```
@@ -107,6 +110,7 @@ cargo install cargo-xwin  # ✅
 | clang | ✅ Installed (v18) |
 | llvm | ✅ Installed |
 | lld | ✅ Installed |
+| nsis | ✅ Installed |
 | cargo-xwin | ✅ Installed |
 
 ---
@@ -316,8 +320,10 @@ The following npm scripts have been added to `package.json`:
 | `dev:linux` | Run Tauri dev mode for Linux (native) |
 | `dev:windows` | Run Tauri dev mode for Windows (cross-compile) |
 | `build:linux` | Build Linux AppImage/Deb packages |
-| `build:windows` | Build Windows MSI/NSIS installer (cross-compile) |
+| `build:windows` | Build Windows NSIS installer (requires `nsis` package) |
+| `build:windows:exe` | Build Windows .exe only (no installer needed) |
 | `build:all` | Build both Linux and Windows packages |
+| `run:windows` | Build (if needed) and launch Windows app from WSL2 |
 
 **Usage:**
 ```bash
@@ -330,29 +336,68 @@ npm run dev:windows
 # Production build - Linux only
 npm run build:linux
 
-# Production build - Windows only (cross-compile)
+# Production build - Windows only (creates NSIS installer, requires nsis package)
 npm run build:windows
+
+# Production build - Windows .exe only (no installer, faster)
+npm run build:windows:exe
 
 # Production build - Both platforms
 npm run build:all
+
+# Build and run Windows app from WSL2
+npm run run:windows
 ```
 
 ### 7.2 Windows Build Requirements
 **Prerequisites:**
 - `cargo-xwin` installed: `cargo install cargo-xwin`
 - `lld` linker installed: `sudo apt install lld`
+- `nsis` installed (optional, for creating installers): `sudo apt install nsis`
 - Windows target added: `rustup target add x86_64-pc-windows-msvc`
+
+**NSIS Not Installed Error:**
+If you see `Error: makensis.exe: No such file or directory`, the build still succeeded! Only the installer creation failed.
+- The `.exe` is available at: `src-tauri/target/x86_64-pc-windows-msvc/release/graphone.exe`
+- Use `npm run run:windows` to launch it
+- Or install NSIS and rebuild to get the installer: `sudo apt install nsis`
+
+**Important:** Windows builds use `cargo-xwin` via the `--runner` flag. The npm scripts handle this automatically, but the manual command would be:
+```bash
+source ~/.cargo/env && cargo tauri build --target x86_64-pc-windows-msvc --runner cargo-xwin
+```
+
+This tells Tauri to use `cargo-xwin` instead of `cargo` for the build, which automatically downloads and configures the Windows SDK libraries.
+
+**Why cargo-xwin is required:**
+- Downloads Windows SDK libraries (shell32.lib, kernel32.lib, etc.) automatically
+- Configures the linker (`lld-link`) with correct library paths
+- Without it, you'll get errors like "could not open 'shell32.lib'"
 
 **Build Output Locations:**
 | Platform | Output Path |
 |----------|-------------|
 | Linux | `src-tauri/target/release/bundle/appimage/graphone_*.AppImage` |
 | Linux | `src-tauri/target/release/bundle/deb/graphone_*.deb` |
-| Windows | `src-tauri/target/x86_64-pc-windows-msvc/release/bundle/msi/graphone_*.msi` |
 | Windows | `src-tauri/target/x86_64-pc-windows-msvc/release/bundle/nsis/graphone_*.exe` |
 
+**Note:** MSI installers can only be created on Windows (requires WiX). Cross-compilation from Linux creates NSIS installers only.
+
 ### 7.3 Running Windows Builds
-**From WSL2:**
+
+**Quick Launch (Recommended):**
+```bash
+# Build (if needed) and run Windows executable
+npm run run:windows
+```
+
+This script will:
+1. Check if Windows build exists (builds automatically if not)
+2. Copy the .exe to `C:\Windows\Temp\`
+3. Launch it via `cmd.exe`
+4. Also copies the sidecar binary if available
+
+**Manual Launch:**
 ```bash
 # Build Windows installer
 npm run build:windows
@@ -364,6 +409,17 @@ cp src-tauri/target/x86_64-pc-windows-msvc/release/bundle/msi/*.msi /mnt/c/Users
 ```
 
 **Note:** Windows builds created in WSL2 run natively on Windows - no WSL2 required to execute them.
+
+**Build Output Locations:**
+```
+src-tauri/target/x86_64-pc-windows-msvc/release/
+├── graphone.exe              # Standalone executable (runs from temp)
+└── bundle/
+    ├── msi/
+    │   └── graphone_*.msi    # Windows Installer (recommended for distribution)
+    └── nsis/
+        └── graphone_*.exe    # NSIS installer
+```
 
 ---
 
@@ -494,6 +550,7 @@ adb devices
 | Install librsvg2-dev | ✅ COMPLETED |
 | Install libssl-dev | ✅ COMPLETED |
 | Install lld linker | ✅ COMPLETED |
+| Install nsis for Windows installer creation | ✅ COMPLETED |
 | Install cargo-xwin for Windows cross-compile | ✅ COMPLETED |
 | **Install bun** | **✅ COMPLETED** |
 | Run npm install in project | ✅ COMPLETED |
@@ -505,6 +562,7 @@ adb devices
 | Configure mobile capabilities (HTTP plugin) | ✅ COMPLETED |
 | **Add npm scripts for Linux builds** | **✅ COMPLETED** |
 | **Add npm scripts for Windows cross-compilation** | **✅ COMPLETED** |
+| **Add run:windows script for launching Windows app** | **✅ COMPLETED** |
 | Test Tauri dev server | 🔄 READY TO TEST |
 | Test Linux build | 🔄 READY TO TEST |
 | Test Windows cross-compilation | 🔄 READY TO TEST |
@@ -541,9 +599,14 @@ adb devices
    npm run build:windows
    ```
 
-6. **Build both platforms at once:**
+6. **Build and run Windows app directly:**
+   ```bash
+   npm run run:windows
+   ```
+
+7. **Build both platforms at once:**
    ```bash
    npm run build:all
    ```
 
-7. **(Optional) Setup Android SDK** for mobile development
+8. **(Optional) Setup Android SDK** for mobile development

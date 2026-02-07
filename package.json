@@ -11,10 +11,12 @@
     "check:watch": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json --watch",
     "tauri": "tauri",
     "dev:linux": "tauri dev",
-    "dev:windows": "tauri dev --target x86_64-pc-windows-msvc",
+    "dev:windows": "bash -c 'source ~/.cargo/env && cargo tauri dev --target x86_64-pc-windows-msvc --runner cargo-xwin'",
+    "build:windows:exe": "bash -c 'source ~/.cargo/env && cargo tauri build --target x86_64-pc-windows-msvc --runner cargo-xwin --no-bundle'",
     "build:linux": "tauri build",
-    "build:windows": "tauri build --target x86_64-pc-windows-msvc",
-    "build:all": "npm run build:linux && npm run build:windows"
+    "build:windows": "bash -c 'source ~/.cargo/env && cargo tauri build --target x86_64-pc-windows-msvc --runner cargo-xwin'",
+    "build:all": "npm run build:linux && npm run build:windows",
+    "run:windows": "bash scripts/run-windows.sh"
   },
   "license": "MIT",
   "dependencies": {
