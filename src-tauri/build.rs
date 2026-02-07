@@ -4,6 +4,9 @@ use std::env;
 use std::fs;
 
 fn main() {
+    // Tell Cargo to rerun this script if build.rs itself changes
+    println!("cargo:rerun-if-changed=build.rs");
+    
     // Only build sidecar for desktop platforms
     let target_os = env::var("CARGO_CFG_TARGET_OS").unwrap();
     
@@ -78,18 +81,12 @@ fn main() {
         panic!("Built binary not found at {:?}", source_binary);
     }
     
-    // Determine destination path (Tauri sidecar naming convention)
-    let out_dir = env::var("OUT_DIR").unwrap();
-    let dest_dir = Path::new(&out_dir)
-        .parent()
-        .unwrap()
-        .parent()
-        .unwrap()
-        .parent()
-        .unwrap()
+    // Determine destination path - Tauri expects binaries in src-tauri/binaries/
+    // relative to the Cargo.toml (CARGO_MANIFEST_DIR)
+    let dest_dir = Path::new(&manifest_dir)
         .join("binaries");
     
-    fs::create_dir_all(&dest_dir).unwrap();
+    fs::create_dir_all(&dest_dir).expect("Failed to create binaries directory");
     
     // Tauri sidecar naming: pi-agent-<target-triple>
     // Add .exe extension for Windows
