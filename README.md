@@ -1,7 +1,298 @@
-# Tauri + SvelteKit + TypeScript
+# Graphone - Pi-Tauri Cross-Platform Agent
 
-This template should help get you started developing with Tauri, SvelteKit and TypeScript in Vite.
+A unified cross-platform interface for the [pi-mono](https://github.com/badlogic/pi-mono) coding agent, built with [Tauri 2.0](https://v2.tauri.app/). This project provides native applications for Desktop (Windows, macOS, Linux) using a sidecar pattern with the pi-mono agent.
 
-## Recommended IDE Setup
+![Project Status](https://img.shields.io/badge/status-development-orange)
+![Tauri](https://img.shields.io/badge/Tauri-2.0-blueviolet)
+![License](https://img.shields.io/badge/license-MIT-green)
 
-[VS Code](https://code.visualstudio.com/) + [Svelte](https://marketplace.visualstudio.com/items?itemName=svelte.svelte-vscode) + [Tauri](https://marketplace.visualstudio.com/items?itemName=tauri-apps.tauri-vscode) + [rust-analyzer](https://marketplace.visualstudio.com/items?itemName=rust-lang.rust-analyzer).
+---
+
+## Overview
+
+Graphone provides a desktop interface for the pi-mono coding agent using Tauri's sidecar pattern:
+
+| Platform | Pattern | Mechanism |
+|----------|---------|-----------|
+| **Desktop** | Sidecar | Rust backend spawns `pi --mode rpc` as managed subprocess |
+
+### Key Features
+
+- 🤖 **Unified Interface** - Consistent chat UI for desktop platforms
+- 🖥️ **Desktop Apps** - Native Windows, macOS, and Linux applications
+- ⚡ **Streaming Responses** - Real-time agent output
+- 🔒 **Local-First** - Works with local and remote LLM providers
+- 📦 **Auto-Bundled Agent** - pi-mono binary is built automatically during Tauri build
+
+---
+
+## Architecture
+
+### pi-mono Sidecar (Node.js/TypeScript)
+
+**Important:** pi-mono is a **Node.js/TypeScript project**, not a Rust project. It's built into a standalone binary using **bun**:
+
+```
+Frontend (Svelte) ←→ Tauri Commands ←→ Rust Backend ←→ pi sidecar (bun-compiled)
+                                                          ↓
+                                                   stdin/stdout JSON-RPC
+```
+
+The pi-mono agent is located at `../pi-mono` (relative to this project) and is automatically built during the Tauri build process via `src-tauri/build.rs`.
+
+**Build Process:**
+1. pi-mono source (TypeScript) is compiled using `bun build --compile`
+2. The resulting binary is copied to `src-tauri/binaries/`
+3. Tauri bundles the binary as a sidecar for distribution
+
+---
+
+## Prerequisites
+
+### System Requirements
+
+- **OS**: Linux (development), Windows 11 + WSL2, macOS
+- **Node.js**: 20+ (LTS recommended)
+- **bun**: 1.0+ (Required for building pi-mono sidecar)
+- **Rust**: Latest stable (1.84+)
+
+### Platform-Specific
+
+| Target | Requirements |
+|--------|--------------|
+| Linux Desktop | `libgtk-3-dev`, `libwebkit2gtk-4.1-dev`, `libappindicator3-dev` |
+| Windows | `cargo-xwin` for cross-compilation (from WSL2) |
+
+### Required Tools
+
+```bash
+# Install bun (required for pi-mono sidecar)
+curl -fsSL https://bun.sh/install | bash
+
+# Verify bun installation
+bun --version  # Should show 1.0+
+```
+
+---
+
+## Quick Start
+
+### 1. Clone and Setup
+
+**Repository Structure:**
+```
+projects/
+├── pi-mono/          # Clone this first (../pi-mono from graphone)
+│   └── packages/
+│       └── coding-agent/
+└── graphone/         # This repository
+```
+
+```bash
+# Navigate to project
+cd graphone
+
+# Install dependencies
+npm install
+```
+
+### 2. Build pi-mono Sidecar (Automatic)
+
+The pi-mono sidecar is built automatically when you run Tauri commands. The build script (`src-tauri/build.rs`) handles:
+- Running `npm install` in pi-mono if needed
+- Building the binary with `bun build --compile`
+- Copying to the correct location for Tauri bundling
+
+**Manual build (if needed):**
+```bash
+cd ../pi-mono/packages/coding-agent
+npm install
+bun build --compile ./dist/cli.js --outfile dist/pi
+```
+
+### 3. Run Development Server
+
+```bash
+# Desktop (Linux)
+npm run tauri dev
+
+# With specific target
+npm run tauri dev -- --target x86_64-unknown-linux-gnu
+```
+
+### 4. Build for Production
+
+```bash
+# Linux
+npm run tauri build
+
+# Windows (from WSL2)
+npm run tauri build -- --target x86_64-pc-windows-msvc
+```
+
+---
+
+## Project Structure
+
+```
+graphone/
+├── src/                      # Frontend (Svelte + TypeScript)
+│   ├── components/           # UI components
+│   ├── hooks/                # Reactive state and logic
+│   └── services/             # Tauri command bridge
+├── src-tauri/                # Rust backend
+│   ├── src/
+│   │   ├── lib.rs            # Main library with commands
+│   │   └── main.rs           # Entry point
+│   ├── binaries/             # Sidecar binaries (auto-populated)
+│   ├── capabilities/         # Permissions
+│   │   ├── default.json      # Base capabilities
+│   │   ├── desktop.json      # Desktop-specific (shell plugin)
+│   │   └── mobile.json       # Mobile-specific (HTTP plugin)
+│   ├── build.rs              # Build script (builds pi-mono sidecar)
+│   ├── Cargo.toml            # Rust dependencies
+│   └── tauri.conf.json       # Tauri configuration
+├── management/
+│   └── specs/                # Project documentation
+│       ├── project-specs.md
+│       ├── wsl2-development-notes.md
+│       └── tasks.md
+├── package.json              # Node dependencies
+└── vite.config.js            # Vite configuration
+```
+
+---
+
+## Development
+
+### WSL2 Development
+
+This project is developed in **WSL2 on Windows 11**. See [`management/specs/wsl2-development-notes.md`](management/specs/wsl2-development-notes.md) for detailed guidance.
+
+**Critical:** Keep the project in the **Linux filesystem** (e.g., `/home/username/projects/`), NOT in `/mnt/c/` (Windows filesystem) - performance difference is 10-100x.
+
+### Sidecar Build Process
+
+The sidecar binary is built automatically via `src-tauri/build.rs`:
+
+1. **Dependency Check**: Verifies bun is installed
+2. **npm install**: Runs in pi-mono if `node_modules` is missing
+3. **Compile**: Runs `npm run build:binary` in pi-mono
+   - This uses `bun build --compile` to create a standalone binary
+4. **Copy**: Places the binary in `target/<profile>/binaries/` with the correct naming convention
+5. **Permissions**: Sets executable permissions on Unix systems
+
+**Environment Variables:**
+- `CARGO_MANIFEST_DIR`: Used to locate the project root
+- `TARGET`: Target triple for cross-compilation
+- `CARGO_CFG_TARGET_OS`: Used to detect mobile builds (skipped)
+
+### Key Technologies
+
+- **Frontend**: Svelte 5, TypeScript, Vite
+- **Backend**: Rust, Tauri 2.0
+- **Agent**: pi-mono SDK (`@mariozechner/pi-coding-agent`)
+- **Sidecar Build**: bun (compiles TypeScript to standalone binary)
+
+---
+
+## Configuration
+
+### tauri.conf.json
+
+Key configuration for sidecar support:
+
+```json
+{
+  "bundle": {
+    "externalBin": ["binaries/pi-agent"]
+  },
+  "plugins": {
+    "shell": {
+      "open": true
+    }
+  }
+}
+```
+
+### Capabilities
+
+- **desktop.json**: Shell plugin permissions for spawning sidecar
+- **mobile.json**: HTTP plugin for SDK-only mode (future use)
+
+---
+
+## Troubleshooting
+
+### bun not found
+
+```bash
+# Install bun
+curl -fsSL https://bun.sh/install | bash
+
+# Add to PATH in ~/.bashrc or ~/.zshrc
+export PATH="$HOME/.bun/bin:$PATH"
+```
+
+### Sidecar build fails
+
+```bash
+# Check pi-mono exists at correct location
+ls ../pi-mono/packages/coding-agent
+
+# Manual build for debugging
+cd ../pi-mono/packages/coding-agent
+npm run build:binary
+```
+
+### Binary not found during Tauri build
+
+Ensure the binary naming matches the target triple:
+- Linux: `pi-agent-x86_64-unknown-linux-gnu`
+- Windows: `pi-agent-x86_64-pc-windows-msvc.exe`
+
+---
+
+## Documentation
+
+| Document | Description |
+|----------|-------------|
+| [`management/specs/project-specs.md`](management/specs/project-specs.md) | Original project specification |
+| [`management/specs/wsl2-development-notes.md`](management/specs/wsl2-development-notes.md) | WSL2 development environment guide |
+| [`management/specs/tasks.md`](management/specs/tasks.md) | Setup tasks and checklist |
+
+### External References
+
+- **Tauri 2.0 Docs**: https://v2.tauri.app
+- **pi-mono SDK**: https://github.com/badlogic/pi-mono/tree/main/packages/coding-agent/docs/sdk.md
+- **pi-mono RPC**: https://github.com/badlogic/pi-mono/tree/main/packages/coding-agent/docs/rpc.md
+- **bun Documentation**: https://bun.sh/docs
+
+---
+
+## Contributing
+
+This project uses the local pi-mono repository at `../pi-mono` (relative to this project). When making changes:
+
+1. pi-mono changes: Edit in `../pi-mono`, the build script will pick them up
+2. The build script automatically rebuilds pi-mono when `src/` or `package.json` changes
+3. Test changes with `cargo build` or `npm run tauri dev`
+
+---
+
+## License
+
+MIT License - See [LICENSE](LICENSE) for details.
+
+---
+
+## Acknowledgments
+
+- [pi-mono](https://github.com/badlogic/pi-mono) by Mario Zechner - The underlying coding agent (Node.js/TypeScript)
+- [Tauri](https://tauri.app) - Cross-platform application framework
+- [bun](https://bun.sh) - JavaScript runtime and bundler used for sidecar compilation
+- [Anthropic](https://anthropic.com), [OpenAI](https://openai.com), and other LLM providers supported by pi-mono
+
+---
+
+**Status**: Active development | **Last Updated**: February 7, 2026

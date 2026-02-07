@@ -10,6 +10,11 @@
 
 This document addresses the specific considerations, frictions, and workarounds when developing the Pi-Tauri project within a **WSL2 (Windows Subsystem for Linux)** environment with a **Windows 11** host. While WSL2 provides an excellent Linux development experience, Tauri cross-platform development introduces unique challenges that require awareness and configuration.
 
+**Key Points:**
+- pi-mono is a **Node.js/TypeScript project** built with **bun**
+- The sidecar binary is built automatically during Tauri builds
+- bun is a **required dependency** for building the project
+
 ---
 
 ## 1. Architecture Context
@@ -30,6 +35,29 @@ This document addresses the specific considerations, frictions, and workarounds 
 | Android | WSL2 | Android | Requires Android SDK in WSL2 |
 | iOS | ❌ | macOS only | iOS builds **require macOS** |
 
+### 1.3 pi-mono Sidecar Architecture
+
+**Important:** pi-mono is **NOT** a Rust project. It is:
+- A **Node.js/TypeScript** project located at `../pi-mono`
+- Built using **bun** (`bun build --compile`)
+- Automatically compiled during Tauri builds via `src-tauri/build.rs`
+
+**Build Flow:**
+```
+Tauri Build
+    ↓
+build.rs executes
+    ↓
+Detects desktop target → Runs in pi-mono directory:
+    npm run build:binary
+    ↓
+bun build --compile ./dist/cli.js --outfile dist/pi
+    ↓
+Binary copied to target/<profile>/binaries/
+    ↓
+Tauri bundles as sidecar
+```
+
 ---
 
 ## 2. Known Frictions & Solutions
@@ -40,6 +68,7 @@ This document addresses the specific considerations, frictions, and workarounds 
 Storing the project on Windows filesystem (`/mnt/c/`) causes **severe performance degradation** (10-100x slower) for:
 - `cargo build` (Rust compilation)
 - `npm install` (Node modules)
+- bun build operations
 - Hot module reloading during development
 
 **Solution:**
@@ -58,6 +87,7 @@ cd /mnt/c/Users/username/projects/graphone  # Slow!
 |-----------|------------------------|----------------------|
 | `cargo build` | ~30s | ~5-10 min |
 | `npm install` | ~20s | ~3-5 min |
+| bun build | ~10s | ~2-5 min |
 | HMR updates | <100ms | 2-5s |
 
 ### 2.2 Cross-Compiling for Windows from WSL2
@@ -71,7 +101,7 @@ Tauri Windows builds typically require Windows-native tooling, but WSL2 can cros
 sudo apt install llvm clang lld
 
 # Install cargo-xwin
- cargo install cargo-xwin
+cargo install cargo-xwin
 
 # Add Windows target
 rustup target add x86_64-pc-windows-msvc
@@ -80,13 +110,7 @@ rustup target add x86_64-pc-windows-msvc
 npm run tauri build -- --target x86_64-pc-windows-msvc
 ```
 
-**Alternative - Using Windows Host:**
-For complex Windows-specific features, consider building natively on Windows:
-```powershell
-# From Windows PowerShell (not WSL)
-cd \\wsl$\Ubuntu\home\username\projects\graphone
-npm run tauri build
-```
+**Note:** The pi-mono sidecar will also be built for Windows during this process (bun can cross-compile).
 
 ### 2.3 GUI/Display Issues
 
@@ -164,12 +188,18 @@ New-NetFirewallRule -DisplayName "WSL2" -Direction Inbound -InterfaceAlias "vEth
 ### 3.1 pi-mono Sidecar Pattern (Desktop)
 
 **Challenge:**
-The sidecar pattern (running `pi --mode rpc` as external binary) has path considerations.
+The sidecar pattern (running `pi --mode rpc` as external binary) requires bun for compilation.
+
+**Architecture Clarification:**
+```
+NOT: pi-mono (Rust) → cargo build → binary
+YES:  pi-mono (TypeScript) → bun build --compile → binary
+```
 
 **Configuration:**
 ```rust
-// src-tauri/src/main.rs
-// Sidecar binaries must be placed correctly for cross-platform builds
+// src-tauri/src/lib.rs
+// The sidecar name matches the target triple
 
 #[cfg(target_os = "linux")]
 const SIDECAR_NAME: &str = "pi-agent-x86_64-unknown-linux-gnu";
@@ -177,28 +207,48 @@ const SIDECAR_NAME: &str = "pi-agent-x86_64-unknown-linux-gnu";
 #[cfg(target_os = "windows")]
 const SIDECAR_NAME: &str = "pi-agent-x86_64-pc-windows-msvc.exe";
 
-// In tauri.conf.json, ensure externalBin references work for both platforms
+// In tauri.conf.json:
+{
+  "bundle": {
+    "externalBin": ["binaries/pi-agent"]
+  }
+}
 ```
 
 **Build Sidecar for Both Platforms:**
 ```bash
 # Linux binary (runs in WSL2)
-cargo build --release --target x86_64-unknown-linux-gnu
+npm run tauri build
+# Binary location: target/release/binaries/pi-agent-x86_64-unknown-linux-gnu
 
 # Windows binary (runs on Windows host)
-cargo build --release --target x86_64-pc-windows-msvc
+npm run tauri build -- --target x86_64-pc-windows-msvc
+# Binary location: target/release/binaries/pi-agent-x86_64-pc-windows-msvc.exe
 ```
 
-### 3.2 Node.js Version Management
+**Automatic Build:**
+The `build.rs` script automatically:
+1. Detects the target platform
+2. Runs `npm run build:binary` in pi-mono (which uses bun)
+3. Copies the binary to the correct location
+4. Sets executable permissions
 
-**Recommended:** Use `nvm` in WSL2, not Windows Node.js�```bash
-# Install nvm
-curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.39.7/install.sh | bash
+### 3.2 Node.js and bun Version Management
 
-# Install Node.js 20 (LTS, recommended for Tauri 2.0)
-nvm install 20
-nvm use 20
-nvm alias default 20
+**Recommended:** Use system Node.js for the project, but ensure bun is installed:
+
+```bash
+# Install bun (required for pi-mono sidecar)
+curl -fsSL https://bun.sh/install | bash
+
+# Add to PATH
+export PATH="$HOME/.bun/bin:$PATH"
+
+# Verify
+bun --version  # Should be 1.0+
+
+# Make permanent
+echo 'export PATH="$HOME/.bun/bin:$PATH"' >> ~/.bashrc
 ```
 
 **Avoid:** Using Windows Node.js (`/mnt/c/Program Files/nodejs`) from WSL2 - causes path and permission issues.
@@ -209,6 +259,9 @@ nvm alias default 20
 ```bash
 # Standard Rust installation
 curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
+
+# Add to PATH
+source $HOME/.cargo/env
 
 # Required targets for this project
 rustup target add x86_64-unknown-linux-gnu      # Linux desktop
@@ -243,6 +296,108 @@ target-dir = "/tmp/cargo-target"  # Faster if using Windows FS (tmpfs)
 
 ---
 
+## 4. Local Repository Structure
+
+**Current Setup (as of February 2026):**
+```
+<projects-directory>/                    # Linux filesystem (✅ fast!)
+├── pi-mono/                             # Local pi-mono clone (Node.js/TypeScript)
+│   ├── packages/
+│   │   ├── coding-agent/                # Main SDK package (built with bun)
+│   │   │   ├── src/                     # TypeScript source
+│   │   │   ├── dist/                    # Compiled JavaScript
+│   │   │   ├── docs/
+│   │   │   │   ├── sdk.md               # SDK documentation
+│   │   │   │   ├── rpc.md               # RPC protocol docs
+│   │   │   │   ├── extensions.md
+│   │   │   │   └── skills.md
+│   │   │   └── package.json             # Contains build:binary script
+│   │   ├── agent/                       # Core agent runtime
+│   │   ├── ai/                          # LLM API abstractions
+│   │   ├── tui/                         # Terminal UI components
+│   │   └── web-ui/                      # Web UI components
+│   └── README.md
+│
+└── graphone/                            # This project (Pi-Tauri)
+    ├── management/
+    │   └── specs/
+    │       ├── project-specs.md         # Original specification
+    │       ├── project-findings-2026-02.md  # Research findings
+    │       └── wsl2-development-notes.md    # This document
+    ├── src/                             # Frontend code (Svelte)
+    ├── src-tauri/                       # Rust backend
+    │   ├── src/
+    │   │   ├── lib.rs                   # Main library
+    │   │   └── main.rs                  # Entry point
+    │   ├── binaries/                    # Sidecar binaries (auto-populated by build.rs)
+    │   ├── capabilities/                # Permissions
+    │   │   ├── default.json
+    │   │   ├── desktop.json             # Shell plugin permissions
+    │   │   └── mobile.json              # HTTP plugin permissions
+    │   ├── build.rs                     # Build script: auto-builds pi-mono with bun
+    │   ├── Cargo.toml                   # Rust dependencies (includes tauri-plugin-shell)
+    │   └── tauri.conf.json              # Tauri configuration
+    ├── src/                             # Frontend (Svelte + TypeScript)
+    ├── static/                          # Static assets
+    ├── vscode-extension/                # VS Code extension (future)
+    │   └── src/
+    ├── package.json                     # Node dependencies
+    └── vite.config.js                   # Vite configuration
+```
+
+**Using Local pi-mono:**
+The pi-mono sidecar is built automatically. No npm linking is required:
+
+```bash
+# The build.rs script handles everything:
+# 1. Locates pi-mono at ../pi-mono/packages/coding-agent
+# 2. Runs npm install if needed
+# 3. Runs npm run build:binary (uses bun)
+# 4. Copies binary to target/<profile>/binaries/
+```
+
+**For SDK development (if needed):**
+```bash
+# Option 1: npm link for development
+cd ../pi-mono/packages/coding-agent
+npm link
+
+cd ../../graphone
+npm link @mariozechner/pi-coding-agent
+
+# Option 2: Local path in package.json
+{
+  "dependencies": {
+    "@mariozechner/pi-coding-agent": "file:../pi-mono/packages/coding-agent"
+  }
+}
+
+# Option 3: Build and pack
+cd ../pi-mono/packages/coding-agent
+npm pack
+# Then reference the .tgz file
+```
+
+## 5. Recommended Project Structure for WSL2
+
+**General Best Practice (for new projects):**
+```
+<project-directory>/           # Linux filesystem (fast!)
+├── src/                       # Frontend TypeScript/Svelte
+├── src-tauri/                 # Rust backend
+│   ├── src/
+│   ├── binaries/              # Sidecar binaries (auto-populated by build.rs)
+│   ├── capabilities/
+│   └── tauri.conf.json
+├── vscode-extension/          # VS Code extension
+│   └── src/
+└── package.json
+```
+
+**Important:** Never create the project under `/mnt/c/` or `/mnt/d/`.
+
+---
+
 ## 6. Development Workflows
 
 ### 6.1 Daily Development Loop (Linux Target)
@@ -251,7 +406,7 @@ target-dir = "/tmp/cargo-target"  # Faster if using Windows FS (tmpfs)
 # Navigate to project directory
 cd graphone
 npm install          # Fast on Linux FS
-npm run tauri dev    # Opens GUI via WSLg
+npm run tauri dev    # Opens GUI via WSLg, builds pi-mono automatically
 ```
 
 ### 6.2 Testing Windows Build
@@ -281,95 +436,43 @@ npm run tauri android dev
 npm run tauri android dev -- --host  # Bind to all interfaces
 ```
 
----
+### 6.4 Debugging Sidecar Build
 
-## 4. Local Repository Structure
+If the automatic sidecar build fails:
 
-**Current Setup (as of February 2026):**
-```
-<projects-directory>/                    # Linux filesystem (✅ fast!)
-├── pi-mono/                             # Local pi-mono clone
-│   ├── packages/
-│   │   ├── coding-agent/                # Main SDK package
-│   │   │   ├── src/
-│   │   │   ├── docs/
-│   │   │   │   ├── sdk.md               # SDK documentation
-│   │   │   │   ├── rpc.md               # RPC protocol docs
-│   │   │   │   ├── extensions.md
-│   │   │   │   └── skills.md
-│   │   │   └── examples/
-│   │   ├── agent/                       # Core agent runtime
-│   │   ├── ai/                          # LLM API abstractions
-│   │   ├── tui/                         # Terminal UI components
-│   │   └── web-ui/                      # Web UI components
-│   └── README.md
-│
-└── graphone/                            # This project (Pi-Tauri)
-    ├── management/
-    │   └── specs/
-    │       ├── project-specs.md         # Original specification
-    │       ├── project-findings-2026-02.md  # Research findings
-    │       └── wsl2-development-notes.md    # This document
-    ├── src/                             # Frontend code
-    ├── src-tauri/                       # Rust backend
-    │   ├── src/
-    │   ├── binaries/                    # Sidecar binaries
-    │   ├── capabilities/
-│   │   │   ├── desktop.json
-│   │   │   └── mobile.json
-    │   └── tauri.conf.json
-    ├── vscode-extension/                # VS Code extension
-    │   └── src/
-    └── package.json
-```
-
-**Using Local pi-mono:**
 ```bash
-# Option 1: npm link for development
+# 1. Check bun is installed
+which bun
+bun --version
+
+# 2. Verify pi-mono location
+ls ../pi-mono/packages/coding-agent
+
+# 3. Manual build for debugging
 cd ../pi-mono/packages/coding-agent
-npm link
+npm install
+npm run build:binary
+ls -la dist/pi
 
-cd ../graphone
-npm link @mariozechner/pi-coding-agent
-
-# Option 2: Local path in package.json
-{
-  "dependencies": {
-    "@mariozechner/pi-coding-agent": "file:../pi-mono/packages/coding-agent"
-  }
-}
-
-# Option 3: Build and pack
-cd ../pi-mono/packages/coding-agent
-npm pack
-# Then reference the .tgz file
+# 4. Check build.rs output
+cd ../../graphone
+source ~/.cargo/env
+cargo build -v 2>&1 | grep -i "pi-agent\|warning\|error"
 ```
-
-## 5. Recommended Project Structure for WSL2
-
-**General Best Practice (for new projects):**
-```
-<project-directory>/           # Linux filesystem (fast!)
-├── src/                       # Frontend TypeScript/React
-├── src-tauri/                 # Rust backend
-│   ├── src/
-│   ├── binaries/              # Sidecar binaries
-│   │   ├── pi-agent-x86_64-unknown-linux-gnu
-│   │   └── pi-agent-x86_64-pc-windows-msvc.exe
-│   ├── capabilities/
-│   └── tauri.conf.json
-├── vscode-extension/          # VS Code extension
-│   └── src/
-└── package.json
-```
-
-**Important:** Never create the project under `/mnt/c/` or `/mnt/d/`.
 
 ---
 
 ## 7. Troubleshooting Common Issues
 
 ### 7.1 Build Errors
+
+**Error:** `bun: command not found`
+```bash
+# Solution
+export PATH="$HOME/.bun/bin:$PATH"
+# Or install:
+curl -fsSL https://bun.sh/install | bash
+```
 
 **Error:** `error: linker cc not found`
 ```bash
@@ -385,6 +488,15 @@ sudo apt install build-essential
 sudo apt install mingw-w64
 ```
 
+**Error:** `pi-mono not found` during build
+```bash
+# Verify directory structure
+ls ../pi-mono/packages/coding-agent
+
+# If pi-mono is elsewhere, update build.rs or create symlink
+ln -s /actual/path/to/pi-mono ../pi-mono
+```
+
 ### 7.2 Runtime Issues
 
 **Error:** `Failed to create window` / Display issues
@@ -398,7 +510,20 @@ xclock  # Test GUI
 **Error:** Sidecar permission denied
 ```bash
 # Ensure sidecar binary has execute permissions
-chmod +x src-tauri/binaries/pi-agent-*
+chmod +x src-tauri/target/*/binaries/pi-agent-*
+```
+
+**Error:** `Failed to build pi-agent` (bun compile failed)
+```bash
+# Check pi-mono has node_modules
+cd ../pi-mono/packages/coding-agent
+ls node_modules  # Should exist
+
+# If not:
+npm install
+
+# Try manual build:
+npm run build:binary
 ```
 
 ### 7.3 Performance Issues
@@ -413,6 +538,17 @@ mv /mnt/c/projects/graphone <project-directory>/
 cd <project-directory>
 ```
 
+**Symptom:** bun build hangs
+```bash
+# Check disk space
+df -h
+
+# Check memory
+free -h
+
+# bun compile requires significant memory for large projects
+```
+
 ---
 
 ## 8. Summary: Best Practices
@@ -420,13 +556,15 @@ cd <project-directory>
 | Practice | Recommendation |
 |----------|---------------|
 | **Project Location** | Always use Linux filesystem (e.g., `/home/<user>/projects/`) |
-| **Node.js** | Use nvm in WSL2, not Windows Node.js |
+| **Node.js** | Use nvm or system Node.js in WSL2, not Windows Node.js |
+| **bun** | Required - install via official installer |
 | **Rust** | Install via rustup in WSL2 |
 | **IDE** | VS Code Windows + WSL Remote extension |
 | **Windows Builds** | Use `cargo-xwin` or build on Windows host |
 | **Mobile Dev** | Run Android emulator on Windows, connect via ADB |
-| **File Sharing** | Use `\wsl$\` path from Windows to access WSL2 files |
+| **File Sharing** | Use `\wsl$​` path from Windows to access WSL2 files |
 | **Git** | Configure Git in WSL2 with Windows credentials |
+| **Sidecar** | Let build.rs handle it - don't manually copy binaries |
 
 ---
 
@@ -444,19 +582,29 @@ cd <project-directory>
 sudo apt update
 sudo apt install build-essential curl wget file libssl-dev libgtk-3-dev libappindicator3-dev librsvg2-dev
 
-# 4. Install Node.js via nvm
+# 4. Install bun (REQUIRED for pi-mono)
+curl -fsSL https://bun.sh/install | bash
+export PATH="$HOME/.bun/bin:$PATH"
+
+# 5. Install Node.js (if not present)
 curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.39.7/install.sh | bash
 nvm install 20
 
-# 5. Install Rust
+# 6. Install Rust
 curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
 source $HOME/.cargo/env
 
-# 6. Install Tauri CLI
+# 7. Install Tauri CLI
 cargo install tauri-cli
 
-# 7. Scaffold project (when ready)
-npm create tauri-app@latest
+# 8. Clone/setup pi-mono (at ../pi-mono)
+cd ..
+git clone <pi-mono-repo> pi-mono  # If not already present
+cd <project-directory>
+
+# 9. Install dependencies and run
+npm install
+npm run tauri dev  # Automatically builds pi-mono sidecar
 ```
 
 ---
@@ -467,8 +615,11 @@ npm create tauri-app@latest
 - [WSL2 Filesystem Performance](https://docs.microsoft.com/en-us/windows/wsl/filesystems)
 - [cargo-xwin for Windows cross-compilation](https://github.com/rust-cross/cargo-xwin)
 - [WSL2 GUI Apps](https://docs.microsoft.com/en-us/windows/wsl/tutorials/gui-apps)
+- [bun Documentation](https://bun.sh/docs)
+- [pi-mono SDK Documentation](../pi-mono/packages/coding-agent/docs/sdk.md)
+- [pi-mono RPC Protocol](../pi-mono/packages/coding-agent/docs/rpc.md)
 
 ---
 
-*Environment: WSL2 on Windows 11, Tauri 2.0, pi-mono integration*
+*Environment: WSL2 on Windows 11, Tauri 2.0, pi-mono (Node.js/TypeScript + bun)*
 *Document Status: Living document - update as friction points are discovered*
