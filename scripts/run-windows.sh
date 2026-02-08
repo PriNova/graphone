@@ -26,10 +26,8 @@ echo "=========================================="
 echo "  Graphone Windows Launcher (WSL2)"
 echo "=========================================="
 echo ""
-echo -e "${YELLOW}NOTE:${NC} Cross-compiled Windows apps may have compatibility issues."
-echo "If you see 'TaskDialogIndirect' errors, the app was built but"
-echo "may not run correctly. For production releases, use GitHub Actions"
-echo "or build natively on Windows."
+echo -e "${YELLOW}NOTE:${NC} Building Windows app from WSL2..."
+echo "For production releases with MSI installers, use GitHub Actions."
 echo ""
 
 # Check if NSIS is installed (optional, but needed for bundling)

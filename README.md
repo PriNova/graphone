@@ -429,25 +429,19 @@ Tauri apps require Microsoft Edge WebView2 Runtime to be installed on Windows.
 
 ### "TaskDialogIndirect could not be located" Error
 
-**This is a known issue with cross-compilation from Linux to Windows.**
+**RESOLVED:** This issue has been fixed by embedding a Windows application manifest.
 
-The error occurs because cross-compiled Windows executables may have issues with:
-- COMCTL32.dll version 6+ (required for TaskDialogIndirect)
-- Application manifest handling
-- Windows Common Controls
+The error occurred because the Windows executable needs an [application manifest](https://learn.microsoft.com/en-us/windows/win32/sbscs/application-manifests) to enable Common Controls version 6+, which provides the `TaskDialogIndirect` API used by Tauri.
 
-**Solutions:**
-1. **For development/testing:** Build and run on Linux using `npm run dev:linux`
-2. **For Windows releases:** Use GitHub Actions (recommended) or build natively on Windows
-3. **Quick workaround:** The error may not affect actual functionality - try clicking OK and see if the app still runs
+**Solution Applied:**
+- Added `src-tauri/windows-app.manifest` with Common Controls v6 dependency
+- Updated `build.rs` to use Tauri's native `WindowsAttributes.app_manifest()` API
+- The manifest is now properly embedded during cross-compilation
 
-**Recommended Approach for Windows Distribution:**
-Use GitHub Actions to build on actual Windows runners (see `.github/workflows/` for examples).
-
-**Other possible causes:**
+**If you still encounter issues:**
 - **Antivirus/Windows Defender**: The app might be blocked. Check Windows Defender history.
 - **Missing sidecar**: Ensure `pi-agent-x86_64-pc-windows-msvc.exe` is in the same folder as `graphone.exe`
-- **Run from CMD**: Open Command Prompt and run `C:\Windows\Temp\graphone\graphone.exe` to see error messages
+- **Run from CMD**: Open Command Prompt and run the exe to see detailed error messages
 
 **Launch issues from WSL2:**
 If you get "Windows cannot find..." errors when running `npm run run:windows`:

@@ -48,7 +48,7 @@
 
 ---
 
-## Current Environment (As of February 7, 2026)
+## Current Environment (Updated February 2026)
 
 ### Host System
 - **Platform:** WSL2 on Windows 11
@@ -66,41 +66,39 @@
 |-----------|---------|--------|
 | Node.js | v22.21.0 | Ready |
 | npm | 10.9.4 | Ready |
+| bun | 1.x | Ready (required for pi-mono) |
+| Rust | 1.93.0 | Ready |
+| Cargo | 1.93.0 | Ready |
+| Tauri CLI | 2.10.0 | Ready |
 | build-essential | 12.10ubuntu1 | Ready |
-| libgtk-3 | 3.24.41 | Ready |
-| pkg-config | 1.8.1 | Ready |
-| clang/llvm | 18.0 | Ready |
-| curl | 8.5.0 | Ready |
-| file | 5.45 | Ready |
-| librsvg2 | 2.58.0 | Runtime only |
+| libwebkit2gtk-4.1-dev | Latest | Ready |
+| libappindicator3-dev | Latest | Ready |
+| librsvg2-dev | 2.58.0 | Ready |
+| libssl-dev | Latest | Ready |
+| cargo-xwin | Latest | Ready (Windows cross-compile) |
+| nsis | Latest | Ready (Windows installers) |
+| lld | Latest | Ready (fast linking) |
 | DISPLAY | :0 | Ready (WSLg) |
 | WAYLAND_DISPLAY | wayland-0 | Ready (WSLg) |
 
-### Missing Components ❌ (BLOCKERS)
-| Component | Required For |
-|-----------|--------------|
-| Rust (rustup) | All Tauri operations |
-| Cargo | Build system |
-| Tauri CLI | Dev server, builds |
-| libwebkit2gtk-4.1-dev | WebView compilation |
-| libappindicator3-dev | System tray integration |
-| librsvg2-dev | SVG rendering (dev headers) |
-| libssl-dev | HTTPS/TLS support |
-| Rust targets | Cross-platform builds |
+### Rust Targets ✅
+| Target | Status | Purpose |
+|--------|--------|---------|
+| x86_64-unknown-linux-gnu | Ready | Linux desktop |
+| x86_64-pc-windows-msvc | Ready | Windows cross-compile |
+| aarch64-linux-android | Ready | Android ARM64 |
+| x86_64-linux-android | Ready | Android x86_64 |
 
-### Optional Missing Components
-| Component | Purpose |
-|-----------|---------|
-| NVM | Node version management |
-| cargo-xwin | Windows cross-compilation |
-| lld | Faster linking |
-| Android SDK | Mobile development |
+### Windows Cross-Compilation Notes
+- Uses `cargo-xwin` via `--runner cargo-xwin` flag
+- **TaskDialogIndirect issue RESOLVED** - Windows application manifest now embedded via Tauri's `WindowsAttributes.app_manifest()`
+- NSIS installers can be built on Linux
+- MSI installers require Windows (WiX toolset)
 
 ### Development Status
-- **Phase:** Assessment complete, setup pending
-- **Next Steps:** Install Rust toolchain and system dependencies
-- **Full Task List:** See `management/tasks/tasks.md`
-- **Estimated Setup Time:** 15-30 minutes
+- **Phase:** Setup complete, development ready
+- **Windows builds:** Working with embedded manifest
+- **Sidecar build:** Automated via `build.rs`
 
 ### Notes
 - WSLg is configured and ready for GUI applications

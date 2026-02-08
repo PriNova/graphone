@@ -598,15 +598,15 @@ sudo apt install nsis
 
 **Error:** "TaskDialogIndirect could not be located" (cross-compile issue)
 ```bash
-# This is a known limitation when cross-compiling from Linux to Windows
-# The issue is with COMCTL32.dll manifest handling
-
-# Solutions:
-# 1. For production releases: Use GitHub Actions with Windows runners
-# 2. For development: Use Linux builds (npm run dev:linux)
-# 3. Build natively on Windows if possible
-
-# The Linux cross-compile is best for quick testing only
+# FIXED: This issue has been resolved by embedding a Windows application manifest.
+#
+# The manifest (src-tauri/windows-app.manifest) declares Common Controls v6
+# dependency, which provides the TaskDialogIndirect API.
+#
+# If you still see this error after updating:
+# 1. Rebuild from scratch: cargo clean && npm run build:windows
+# 2. Verify the sidecar binary is present alongside graphone.exe
+# 3. Check Windows Defender isn't blocking the app
 ```
 
 **Error:** `pi-mono not found` during build
