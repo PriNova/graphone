@@ -1,0 +1,167 @@
+/* AssistantMessage component styles */
+
+.message {
+  display: flex;
+  animation: fadeIn 0.3s ease-out;
+  width: 100%;
+}
+
+.message.assistant {
+  justify-content: flex-start;
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.message-bubble {
+  width: 100%;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 1rem 1.25rem;
+  word-wrap: break-word;
+  overflow-wrap: break-word;
+}
+
+.message-bubble.streaming {
+  opacity: 0.9;
+}
+
+.message-header {
+  margin-bottom: 0.5rem;
+}
+
+.message-author {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--muted-foreground);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.message-content {
+  font-size: 0.9375rem;
+  line-height: 1.6;
+  color: var(--foreground);
+  white-space: pre-wrap;
+  word-break: break-word;
+  overflow-wrap: break-word;
+  margin: 0.75rem 0 0 0;
+}
+
+/* Thinking box styles */
+.thinking-box {
+  margin-bottom: 0.75rem;
+  background: rgba(var(--foreground-rgb, 11, 13, 11), 0.03);
+  border: 1px solid var(--border);
+  border-radius: calc(var(--radius) - 4px);
+  overflow: hidden;
+}
+
+.thinking-header {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem 0.75rem;
+  background: rgba(var(--foreground-rgb, 11, 13, 11), 0.05);
+  border-bottom: 1px solid var(--border);
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--muted-foreground);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.thinking-icon {
+  width: 14px;
+  height: 14px;
+}
+
+.thinking-content {
+  padding: 0.75rem;
+  font-family: ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, monospace;
+  font-size: 0.8125rem;
+  line-height: 1.5;
+  color: var(--muted-foreground);
+  white-space: pre-wrap;
+  word-break: break-word;
+  margin: 0;
+}
+
+/* Tool box styles */
+.tool-box {
+  margin-bottom: 0.75rem;
+  background: rgba(var(--foreground-rgb, 11, 13, 11), 0.03);
+  border: 1px solid var(--border);
+  border-radius: calc(var(--radius) - 4px);
+  overflow: hidden;
+}
+
+.tool-header {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem 0.75rem;
+  background: rgba(var(--foreground-rgb, 11, 13, 11), 0.05);
+  border-bottom: 1px solid var(--border);
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--muted-foreground);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.tool-icon {
+  width: 14px;
+  height: 14px;
+}
+
+.tool-content {
+  padding: 0.75rem;
+  font-family: ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, monospace;
+  font-size: 0.8125rem;
+  line-height: 1.5;
+  color: var(--foreground);
+  white-space: pre-wrap;
+  word-break: break-word;
+  margin: 0;
+  max-height: 200px;
+  overflow-y: auto;
+}
+
+/* Dark mode adjustments */
+@media (prefers-color-scheme: dark) {
+  .thinking-box,
+  .tool-box {
+    background: rgba(246, 255, 245, 0.03);
+  }
+
+  .thinking-header,
+  .tool-header {
+    background: rgba(246, 255, 245, 0.05);
+  }
+
+  .thinking-content {
+    color: var(--muted-foreground);
+  }
+}
+
+/* Responsive adjustments */
+@media (max-width: 640px) {
+  .message-bubble {
+    padding: 0.75rem 1rem;
+  }
+
+  .thinking-content,
+  .tool-content {
+    font-size: 0.75rem;
+  }
+}

@@ -3,6 +3,20 @@ use std::path::Path;
 use std::env;
 use std::fs;
 
+fn copy_dir_all(src: impl AsRef<Path>, dst: impl AsRef<Path>) -> std::io::Result<()> {
+    fs::create_dir_all(&dst)?;
+    for entry in fs::read_dir(src)? {
+        let entry = entry?;
+        let ty = entry.file_type()?;
+        if ty.is_dir() {
+            copy_dir_all(entry.path(), dst.as_ref().join(entry.file_name()))?;
+        } else {
+            fs::copy(entry.path(), dst.as_ref().join(entry.file_name()))?;
+        }
+    }
+    Ok(())
+}
+
 fn main() {
     // Tell Cargo to rerun this script if build.rs itself changes
     println!("cargo:rerun-if-changed=build.rs");
@@ -83,10 +97,10 @@ fn main() {
         panic!("Failed to build pi-agent binary");
     }
     
+    let dist_path = pi_mono_path.join("dist");
+    
     // Determine source binary path
-    let source_binary = pi_mono_path
-        .join("dist")
-        .join("pi");
+    let source_binary = dist_path.join("pi");
     
     if !source_binary.exists() {
         panic!("Built binary not found at {:?}", source_binary);
@@ -120,6 +134,83 @@ fn main() {
         let mut perms = fs::metadata(&dest_binary).unwrap().permissions();
         perms.set_mode(0o755);
         fs::set_permissions(&dest_binary, perms).unwrap();
+    }
+    
+    // Copy supporting assets that the binary needs at runtime
+    println!("cargo:warning=Copying pi-agent assets...");
+    
+    // Copy package.json
+    fs::copy(dist_path.join("package.json"), dest_dir.join("package.json"))
+        .expect("Failed to copy package.json");
+    
+    // Copy README.md and CHANGELOG.md
+    fs::copy(dist_path.join("README.md"), dest_dir.join("README.md"))
+        .expect("Failed to copy README.md");
+    fs::copy(dist_path.join("CHANGELOG.md"), dest_dir.join("CHANGELOG.md"))
+        .expect("Failed to copy CHANGELOG.md");
+    
+    // Copy theme directory
+    if dist_path.join("theme").exists() {
+        copy_dir_all(dist_path.join("theme"), dest_dir.join("theme"))
+            .expect("Failed to copy theme directory");
+    }
+    
+    // Copy export-html directory
+    if dist_path.join("export-html").exists() {
+        copy_dir_all(dist_path.join("export-html"), dest_dir.join("export-html"))
+            .expect("Failed to copy export-html directory");
+    }
+    
+    // Copy docs directory
+    if dist_path.join("docs").exists() {
+        copy_dir_all(dist_path.join("docs"), dest_dir.join("docs"))
+            .expect("Failed to copy docs directory");
+    }
+    
+    // Copy examples directory
+    if dist_path.join("examples").exists() {
+        copy_dir_all(dist_path.join("examples"), dest_dir.join("examples"))
+            .expect("Failed to copy examples directory");
+    }
+    
+    // Copy photon wasm file
+    if dist_path.join("photon_rs_bg.wasm").exists() {
+        fs::copy(dist_path.join("photon_rs_bg.wasm"), dest_dir.join("photon_rs_bg.wasm"))
+            .expect("Failed to copy photon_rs_bg.wasm");
+    }
+    
+    // Also copy assets to target/debug/ for development mode
+    // When running via `cargo run` or `tauri dev`, the sidecar is executed from target/debug/
+    let target_dir = Path::new(&manifest_dir)
+        .join("target")
+        .join(if target_os == "windows" { "debug" } else { "debug" });
+    
+    if target_dir.exists() {
+        println!("cargo:warning=Copying assets to target/debug/ for development...");
+        
+        // Copy package.json
+        let _ = fs::copy(dist_path.join("package.json"), target_dir.join("package.json"));
+        // Copy README.md and CHANGELOG.md
+        let _ = fs::copy(dist_path.join("README.md"), target_dir.join("README.md"));
+        let _ = fs::copy(dist_path.join("CHANGELOG.md"), target_dir.join("CHANGELOG.md"));
+        // Copy theme directory
+        if dist_path.join("theme").exists() {
+            let _ = copy_dir_all(dist_path.join("theme"), target_dir.join("theme"));
+        }
+        // Copy export-html directory
+        if dist_path.join("export-html").exists() {
+            let _ = copy_dir_all(dist_path.join("export-html"), target_dir.join("export-html"));
+        }
+        // Copy docs directory
+        if dist_path.join("docs").exists() {
+            let _ = copy_dir_all(dist_path.join("docs"), target_dir.join("docs"));
+        }
+        // Copy examples directory
+        if dist_path.join("examples").exists() {
+            let _ = copy_dir_all(dist_path.join("examples"), target_dir.join("examples"));
+        }
+        // Copy photon wasm file
+        let _ = fs::copy(dist_path.join("photon_rs_bg.wasm"), target_dir.join("photon_rs_bg.wasm"));
     }
     
     println!("cargo:warning=pi-agent built successfully at {:?}", dest_binary);
