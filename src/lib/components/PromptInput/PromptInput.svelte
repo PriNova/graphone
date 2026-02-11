@@ -35,6 +35,7 @@
   
   const hasContent = $derived(internalValue.trim().length > 0);
   const canSubmit = $derived(hasContent && !disabled && !isLoading);
+  const canCancel = $derived(isLoading);
 
   // Slash command detection
   const parsedCommand = $derived(parseSlashCommand(internalValue));
@@ -166,18 +167,21 @@
       <button
         type="button"
         class={cn(
-          "flex items-center justify-center w-8 h-8 p-0 bg-transparent border border-border rounded text-muted-foreground cursor-pointer transition-all duration-150",
-          "hover:not-disabled:bg-secondary hover:not-disabled:border-foreground hover:not-disabled:text-foreground",
-          hasContent && "bg-primary border-primary text-primary-foreground hover:not-disabled:opacity-90",
-          !canSubmit && "opacity-40 cursor-not-allowed"
+          "flex items-center justify-center w-8 h-8 p-0 rounded cursor-pointer transition-all duration-150",
+          isLoading 
+            ? "bg-destructive border-destructive text-destructive-foreground hover:bg-destructive/90" 
+            : "bg-transparent border border-border text-muted-foreground hover:not-disabled:bg-secondary hover:not-disabled:border-foreground hover:not-disabled:text-foreground",
+          !isLoading && hasContent && "bg-primary border-primary text-primary-foreground hover:not-disabled:opacity-90",
+          !canSubmit && !canCancel && "opacity-40 cursor-not-allowed"
         )}
-        disabled={!canSubmit}
-        onclick={handleSubmit}
-        aria-label={isLoading ? 'Cancel' : 'Submit'}
+        disabled={!canSubmit && !canCancel}
+        onclick={isLoading ? () => oncancel?.() : handleSubmit}
+        aria-label={isLoading ? 'Stop' : 'Submit'}
       >
         {#if isLoading}
-          <svg class="w-4 h-4 animate-spin" viewBox="0 0 24 24" fill="none" stroke="currentColor">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+          <!-- Stop square icon -->
+          <svg class="w-4 h-4" viewBox="0 0 24 24" fill="currentColor" stroke="none">
+            <rect x="6" y="6" width="12" height="12" rx="1" />
           </svg>
         {:else}
           <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor">
@@ -218,7 +222,7 @@
     </span>
     <span class="text-xs text-muted-foreground/70">
       {#if isLoading}
-        Press Escape to cancel
+        Click stop button or press Escape to cancel
       {:else}
         Press Enter to submit, Shift+Enter for new line
       {/if}
