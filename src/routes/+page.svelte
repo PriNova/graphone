@@ -83,11 +83,13 @@
       };
       messages = [...messages, errorMessage];
       isLoading = false;
+      streamingMessageId = null;
     });
 
     unlistenTerminated = await listen<number | null>("agent-terminated", (event) => {
       console.log('Agent terminated with code:', event.payload);
       isLoading = false;
+      streamingMessageId = null;
     });
   });
 
@@ -97,6 +99,9 @@
     unlistenTerminated?.();
   });
 
+  // Track the streaming message ID to ensure updates go to the correct message
+  let streamingMessageId: string | null = $state(null);
+
   function handleAgentEvent(event: AgentEvent) {
     switch (event.type) {
       case 'agent_start':
@@ -105,13 +110,18 @@
       
       case 'agent_end':
         isLoading = false;
-        // Update the last assistant message to mark it as complete
-        if (messages.length > 0) {
-          const lastMsg = messages[messages.length - 1];
-          if (lastMsg.type === 'assistant') {
-            lastMsg.isStreaming = false;
-            messages = [...messages];
+        // Update the streaming message to mark it as complete
+        if (streamingMessageId) {
+          const msgIndex = messages.findIndex(m => m.id === streamingMessageId);
+          if (msgIndex >= 0) {
+            const msg = messages[msgIndex];
+            if (msg.type === 'assistant' && msg.isStreaming) {
+              messages = messages.map((m, idx) => 
+                idx === msgIndex ? { ...m, isStreaming: false } : m
+              );
+            }
           }
+          streamingMessageId = null;
         }
         break;
       
@@ -127,32 +137,42 @@
   function handleMessageUpdate(event: Extract<AgentEvent, { type: 'message_update' }>) {
     const { assistantMessageEvent } = event;
 
-    // Get or create the last assistant message
-    let lastMsg: Message | undefined = messages[messages.length - 1];
+    // Get the current streaming message ID or create a new message
+    let targetMessageId = streamingMessageId;
+    let targetIndex = -1;
 
-    if (!lastMsg || lastMsg.type !== 'assistant' || !lastMsg.isStreaming) {
-      // Create a new assistant message
-      lastMsg = {
+    if (targetMessageId) {
+      targetIndex = messages.findIndex(m => m.id === targetMessageId);
+    }
+
+    // If no valid streaming message exists, create a new one
+    if (targetIndex < 0) {
+      const newMsg: Message = {
         id: crypto.randomUUID(),
         type: 'assistant',
         content: [],
         timestamp: new Date(),
         isStreaming: true
       };
-      messages = [...messages, lastMsg];
+      streamingMessageId = newMsg.id;
+      targetMessageId = newMsg.id;
+      targetIndex = messages.length;
+      messages = [...messages, newMsg];
     }
 
-    // Always work with immutable updates to trigger reactivity
-    const currentContent = lastMsg.content;
+    const targetMsg = messages[targetIndex];
+    if (targetMsg.type !== 'assistant') return;
+
+    const currentContent = targetMsg.content;
     const { type, contentIndex = 0 } = assistantMessageEvent;
-    let newContent = currentContent;
+    let newContent: ContentBlock[] | undefined;
 
     switch (type) {
       case 'text_start':
         newContent = [...currentContent, { type: 'text', text: '' }];
         break;
 
-      case 'text_delta':
+      case 'text_delta': {
         // Try to use contentIndex if valid, otherwise find the last text block
         let textIndex = contentIndex;
         if (currentContent[textIndex]?.type !== 'text') {
@@ -166,12 +186,13 @@
           );
         }
         break;
+      }
 
       case 'thinking_start':
         newContent = [...currentContent, { type: 'thinking', thinking: '' }];
         break;
 
-      case 'thinking_delta':
+      case 'thinking_delta': {
         // Find the last thinking block and update it
         const lastThinkingIndex = currentContent.findLastIndex(b => b.type === 'thinking');
         if (lastThinkingIndex >= 0) {
@@ -182,6 +203,7 @@
           );
         }
         break;
+      }
 
       case 'toolcall_start':
         // Tool call is added on toolcall_end with full data
@@ -195,9 +217,12 @@
     }
 
     // Update the message with new content array to trigger reactivity
-    if (newContent !== currentContent) {
-      lastMsg.content = newContent;
-      messages = [...messages];
+    if (newContent !== undefined && newContent !== currentContent) {
+      messages = messages.map((m, idx) => 
+        idx === targetIndex && m.type === 'assistant'
+          ? { ...m, content: newContent! }
+          : m
+      );
     }
   }
 
@@ -243,6 +268,7 @@
   function handleCancel() {
     invoke("abort_agent").catch(console.error);
     isLoading = false;
+    streamingMessageId = null;
   }
 
   async function handleSlashCommand(command: string, args: string, fullText: string) {
