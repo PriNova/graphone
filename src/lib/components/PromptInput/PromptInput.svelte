@@ -1,5 +1,5 @@
 <script lang="ts">
-  import './PromptInput.css';
+  import { cn } from '$lib/utils/cn';
   
   interface Props {
     value?: string;
@@ -86,14 +86,29 @@
   });
 </script>
 
-<div class="prompt-input-container" class:focused={isFocused} class:loading={isLoading} class:disabled>
-  <div class="prompt-input-wrapper">
+<div 
+  class={cn(
+    "flex flex-col w-full mx-auto",
+    disabled && "opacity-60 cursor-not-allowed"
+  )}
+>
+  <div 
+    class={cn(
+      "flex flex-col w-full bg-foreground/[0.03] border border-input-border rounded-md transition-all duration-100 relative overflow-hidden",
+      isFocused && "bg-foreground/[0.04] border-ring",
+      isLoading && "animate-pulse"
+    )}
+  >
     <textarea
       bind:this={textareaRef}
       bind:value={internalValue}
       {placeholder}
       {disabled}
-      class="prompt-textarea"
+      class={cn(
+        "w-full min-h-[44px] max-h-[40vh] py-3 px-4 pr-12 bg-transparent border-none outline-none resize-none text-foreground overflow-y-auto text-base leading-normal",
+        "placeholder:text-muted-foreground/60",
+        disabled && "cursor-not-allowed"
+      )}
       rows="1"
       oninput={handleInput}
       onkeydown={handleKeyDown}
@@ -101,21 +116,25 @@
       onblur={() => isFocused = false}
     ></textarea>
     
-    <div class="prompt-actions">
+    <div class="absolute bottom-2 right-2 flex items-center gap-2">
       <button
         type="button"
-        class="submit-button"
-        class:active={hasContent}
+        class={cn(
+          "flex items-center justify-center w-8 h-8 p-0 bg-transparent border border-border rounded text-muted-foreground cursor-pointer transition-all duration-150",
+          "hover:not-disabled:bg-secondary hover:not-disabled:border-foreground hover:not-disabled:text-foreground",
+          hasContent && "bg-primary border-primary text-primary-foreground hover:not-disabled:opacity-90",
+          !canSubmit && "opacity-40 cursor-not-allowed"
+        )}
         disabled={!canSubmit}
         onclick={handleSubmit}
         aria-label={isLoading ? 'Cancel' : 'Submit'}
       >
         {#if isLoading}
-          <svg class="spinner" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+          <svg class="w-4 h-4 animate-spin" viewBox="0 0 24 24" fill="none" stroke="currentColor">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
           </svg>
         {:else}
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor">
+          <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 12h14M12 5l7 7-7 7" />
           </svg>
         {/if}
@@ -123,8 +142,8 @@
     </div>
   </div>
   
-  <div class="prompt-footer">
-    <span class="hint">
+  <div class="flex justify-end pt-1.5 pr-1">
+    <span class="text-xs text-muted-foreground/70">
       {#if isLoading}
         Press Escape to cancel
       {:else}

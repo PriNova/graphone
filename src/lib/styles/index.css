@@ -1,0 +1,168 @@
+@import 'tailwindcss';
+
+@theme {
+  /* Disable all builtin colors - we use our own palette */
+  --color-*: initial;
+
+  /* Map CSS variables to Tailwind colors */
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-border: var(--border);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-input-background: var(--input-background);
+  --color-input-border: var(--input-border);
+  --color-card: var(--card);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-accent: var(--accent);
+  --color-destructive: var(--destructive);
+  --color-success: var(--success);
+  --color-ring: var(--ring);
+
+  /* Typography scale */
+  --text-xs: 0.6875rem;
+  --text-xs--line-height: 0.85rem;
+  --text-sm: 0.75rem;
+  --text-sm--line-height: 1rem;
+  --text-base: 0.8125rem;
+  --text-base--line-height: 1.25rem;
+  --text-lg: 1rem;
+  --text-lg--line-height: 1.5rem;
+  --text-xl: 1.25rem;
+  --text-xl--line-height: 1.75rem;
+  --text-2xl: 1.5rem;
+  --text-2xl--line-height: 2rem;
+  --text-3xl: 1.875rem;
+  --text-3xl--line-height: 2.25rem;
+
+  /* Border radius */
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+
+  /* Animations */
+  --animate-spin: spin 1s linear infinite;
+  --animate-pulse: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+  --animate-fade-in: fadeIn 0.3s ease-out;
+  --animate-bounce: bounce 1.4s ease-in-out infinite;
+
+  @keyframes spin {
+    from { transform: rotate(0deg); }
+    to { transform: rotate(360deg); }
+  }
+
+  @keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.5; }
+  }
+
+  @keyframes fadeIn {
+    from {
+      opacity: 0;
+      transform: translateY(10px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+
+  @keyframes bounce {
+    0%, 80%, 100% {
+      transform: scale(0);
+      opacity: 0.5;
+    }
+    40% {
+      transform: scale(1);
+      opacity: 1;
+    }
+  }
+}
+
+@layer base {
+  :root {
+    color-scheme: dark light;
+    
+    /* Core colors - Light mode */
+    --background: #fafaf8;
+    --foreground: #0b0d0b;
+    --border: rgba(135, 139, 134, 0.2);
+    --muted-foreground: rgba(11, 13, 11, 0.6);
+    
+    /* Input specific */
+    --input-background: #fcfcfc;
+    --input-border: rgba(11, 13, 11, 0.15);
+    
+    /* Component colors */
+    --card: rgba(11, 13, 11, 0.02);
+    --primary: var(--foreground);
+    --primary-foreground: var(--background);
+    --secondary: rgba(11, 13, 11, 0.07);
+    --accent: rgba(11, 13, 11, 0.07);
+    
+    /* Status */
+    --destructive: hsl(0 62.8% 55%);
+    --success: hsl(120, 58%, 40%);
+    --ring: var(--foreground);
+    
+    /* Sizing */
+    --radius: 0.5rem;
+  }
+
+  /* Desktop app enhanced borders */
+  :root[data-desktop='true'] {
+    --border: rgba(135, 139, 134, 0.6);
+  }
+
+  /* Dark mode */
+  @variant dark {
+    :root {
+      --background: #0b0d0b;
+      --foreground: #f6fff5;
+      --border: rgba(135, 139, 134, 0.2);
+      --muted-foreground: rgba(246, 255, 245, 0.6);
+      --input-background: #0b0d0b;
+      --input-border: rgba(246, 255, 245, 0.15);
+      --card: rgba(246, 255, 245, 0.03);
+      --secondary: rgba(246, 255, 245, 0.07);
+      --accent: rgba(246, 255, 245, 0.07);
+    }
+
+    :root[data-desktop='true'] {
+      --border: rgba(135, 139, 134, 0.6);
+    }
+  }
+
+  *,
+  ::after,
+  ::before {
+    border: 0 solid var(--color-border);
+  }
+
+  html, body {
+    height: 100%;
+    width: 100%;
+    overflow: hidden;
+  }
+
+  body {
+    @apply bg-background text-foreground text-base;
+    font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    padding: 0;
+    margin: 0;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  /* Reset box-sizing */
+  * {
+    box-sizing: border-box;
+  }
+
+  /* Ensure app root takes full height */
+  #app, #svelte {
+    height: 100%;
+    width: 100%;
+  }
+}

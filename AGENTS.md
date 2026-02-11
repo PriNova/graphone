@@ -99,6 +99,36 @@ graphone/
 | Slow builds | Verify project is in Linux filesystem, not `/mnt/c/` |
 | "TaskDialogIndirect could not be located" | Fixed - rebuild with `npm run build:windows` |
 
+## Frontend Development Rules
+
+### Tailwind v4 + Svelte 5
+- **Single CSS entry**: Use one `index.css` with `@import 'tailwindcss'` - do NOT split into multiple CSS files with `@import`
+- **No CSS imports in Svelte `<style>`**: Import CSS in `<script>` block only: `import '$lib/styles/index.css'`
+
+### Cross-Platform Layout (WebView2 vs WebKitGTK)
+Windows WebView2 requires explicit height inheritance for flexbox layouts to work:
+```css
+/* Required in global CSS for Windows */
+html, body, #app, #svelte { height: 100%; width: 100%; }
+html, body { overflow: hidden; }
+```
+
+### Flexbox Pattern for Fixed Header/Scrollable Content/Fixed Footer
+```svelte
+<!-- Parent must have explicit height (h-screen) -->
+<div class="flex flex-col h-screen overflow-hidden">
+  <!-- Header/Input: prevent shrinking -->
+  <header class="shrink-0">...</header>
+  
+  <!-- Scrollable area: flex-1 + min-h-0 is critical -->
+  <div class="flex-1 min-h-0 overflow-y-auto">...</div>
+  
+  <!-- Footer/Input: prevent shrinking -->
+  <section class="shrink-0">...</section>
+</div>
+```
+**Key classes**: `shrink-0` (fixed elements), `flex-1 min-h-0` (scrollable area), `overflow-hidden` (container)
+
 ## Documentation
 - `docs/specs/project-findings-2026-02.md` - Tech research & patterns
 - `docs/specs/wsl2-development-notes.md` - WSL2 development guide
