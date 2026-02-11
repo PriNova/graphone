@@ -135,8 +135,6 @@
   }
 
   function handleMessageUpdate(event: Extract<AgentEvent, { type: 'message_update' }>) {
-    const { assistantMessageEvent } = event;
-
     // Get the current streaming message ID or create a new message
     let targetMessageId = streamingMessageId;
     let targetIndex = -1;
@@ -163,67 +161,36 @@
     const targetMsg = messages[targetIndex];
     if (targetMsg.type !== 'assistant') return;
 
-    const currentContent = targetMsg.content;
-    const { type, contentIndex = 0 } = assistantMessageEvent;
-    let newContent: ContentBlock[] | undefined;
+    // Use the complete message content from the event - this is the source of truth
+    // The event.message contains the full assistant message with all content blocks
+    const agentMessage = event.message;
+    if (agentMessage.role !== 'assistant') return;
 
-    switch (type) {
-      case 'text_start':
-        newContent = [...currentContent, { type: 'text', text: '' }];
-        break;
-
-      case 'text_delta': {
-        // Try to use contentIndex if valid, otherwise find the last text block
-        let textIndex = contentIndex;
-        if (currentContent[textIndex]?.type !== 'text') {
-          textIndex = currentContent.findLastIndex(b => b.type === 'text');
-        }
-        if (textIndex >= 0 && currentContent[textIndex]?.type === 'text') {
-          newContent = currentContent.map((block, idx) =>
-            idx === textIndex && block.type === 'text'
-              ? { ...block, text: block.text + (assistantMessageEvent.delta || '') }
-              : block
-          );
-        }
-        break;
+    // Convert the agent's content blocks to our ContentBlock format
+    const newContent: ContentBlock[] = agentMessage.content.map(block => {
+      if (block.type === 'text') {
+        return { type: 'text', text: block.text };
       }
-
-      case 'thinking_start':
-        newContent = [...currentContent, { type: 'thinking', thinking: '' }];
-        break;
-
-      case 'thinking_delta': {
-        // Find the last thinking block and update it
-        const lastThinkingIndex = currentContent.findLastIndex(b => b.type === 'thinking');
-        if (lastThinkingIndex >= 0) {
-          newContent = currentContent.map((block, idx) =>
-            idx === lastThinkingIndex && block.type === 'thinking'
-              ? { ...block, thinking: block.thinking + (assistantMessageEvent.delta || '') }
-              : block
-          );
-        }
-        break;
+      if (block.type === 'thinking') {
+        return { type: 'thinking', thinking: block.thinking };
       }
+      if (block.type === 'toolCall') {
+        return {
+          type: 'toolCall',
+          id: block.id,
+          name: block.name,
+          arguments: block.arguments
+        };
+      }
+      return { type: 'text', text: '' };
+    });
 
-      case 'toolcall_start':
-        // Tool call is added on toolcall_end with full data
-        break;
-
-      case 'toolcall_end':
-        if (assistantMessageEvent.toolCall) {
-          newContent = [...currentContent, assistantMessageEvent.toolCall];
-        }
-        break;
-    }
-
-    // Update the message with new content array to trigger reactivity
-    if (newContent !== undefined && newContent !== currentContent) {
-      messages = messages.map((m, idx) => 
-        idx === targetIndex && m.type === 'assistant'
-          ? { ...m, content: newContent! }
-          : m
-      );
-    }
+    // Always update the message content to ensure we have the latest state
+    messages = messages.map((m, idx) =>
+      idx === targetIndex && m.type === 'assistant'
+        ? { ...m, content: newContent }
+        : m
+    );
   }
 
   async function handleSubmit(prompt: string) {
