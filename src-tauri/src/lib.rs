@@ -99,7 +99,14 @@ async fn start_agent_session(
             match event {
                 CommandEvent::Stdout(line) => {
                     let line = String::from_utf8_lossy(&line);
-                    eprintln!("Sidecar stdout: {}", line);
+                    // Suppress logging for message_update types to reduce noise
+                    let should_log = match serde_json::from_str::<serde_json::Value>(&line) {
+                        Ok(json) => json.get("type").and_then(|t| t.as_str()) != Some("message_update"),
+                        Err(_) => true,
+                    };
+                    if should_log {
+                        eprintln!("Sidecar stdout: {}", line);
+                    }
                     if let Err(e) = app_clone.emit("agent-event", line.to_string()) {
                         eprintln!("Failed to emit agent event: {}", e);
                     }
