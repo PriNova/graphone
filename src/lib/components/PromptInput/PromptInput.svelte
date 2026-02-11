@@ -32,6 +32,7 @@
 
   let textareaRef = $state<HTMLTextAreaElement | null>(null);
   let isFocused = $state(false);
+  let commandJustSelected = $state(false);
   
   const hasContent = $derived(internalValue.trim().length > 0);
   const canSubmit = $derived(hasContent && !disabled && !isLoading);
@@ -43,15 +44,42 @@
   const isKnownCommand = $derived(parsedCommand ? isKnownSlashCommand(parsedCommand.command) : false);
   const commandHandler = $derived(parsedCommand ? getCommandHandler(parsedCommand.command) : null);
   
-  // Filter matching commands for autocomplete hint (first 5 matches)
+  // Filter matching commands for autocomplete (show all matches, scrollable)
   const matchingCommands = $derived.by(() => {
     if (!isFocused || !isSlashCommand) return [];
     if (!parsedCommand || parsedCommand.args) return [];
+    // Don't show dropdown if input ends with space (command is complete/selected)
+    if (internalValue.endsWith(' ')) return [];
+    // Don't show dropdown immediately after selecting a command
+    if (commandJustSelected) return [];
     const query = parsedCommand.command.toLowerCase();
     return ALL_SLASH_COMMANDS
-      .filter(cmd => cmd.name.toLowerCase().startsWith(query))
-      .slice(0, 5);
+      .filter(cmd => cmd.name.toLowerCase().startsWith(query));
   });
+
+  // Track selected command index for keyboard navigation
+  let selectedCommandIndex = $state(0);
+  
+  // Reset selection when matching commands change
+  $effect(() => {
+    if (matchingCommands.length > 0) {
+      selectedCommandIndex = 0;
+    }
+  });
+
+  function selectCommand(cmd: typeof ALL_SLASH_COMMANDS[0]) {
+    // Set flag to prevent dropdown from reopening immediately
+    commandJustSelected = true;
+    // Update value with trailing space to prevent dropdown from reopening
+    internalValue = `/${cmd.name} `;
+    oninput?.(internalValue);
+    // Re-focus textarea
+    textareaRef?.focus();
+    // Clear the flag after a short delay to allow future slash commands
+    setTimeout(() => {
+      commandJustSelected = false;
+    }, 100);
+  }
 
   function handleInput(event: Event) {
     const target = event.target as HTMLTextAreaElement;
@@ -87,6 +115,32 @@
   }
 
   function handleKeyDown(event: KeyboardEvent) {
+    // Handle dropdown navigation when slash command dropdown is open
+    if (matchingCommands.length > 0) {
+      if (event.key === 'ArrowDown') {
+        event.preventDefault();
+        selectedCommandIndex = (selectedCommandIndex + 1) % matchingCommands.length;
+        return;
+      } else if (event.key === 'ArrowUp') {
+        event.preventDefault();
+        selectedCommandIndex = (selectedCommandIndex - 1 + matchingCommands.length) % matchingCommands.length;
+        return;
+      } else if (event.key === 'Enter' && !event.shiftKey) {
+        // Select the highlighted command
+        event.preventDefault();
+        const selectedCmd = matchingCommands[selectedCommandIndex];
+        if (selectedCmd) {
+          selectCommand(selectedCmd);
+        }
+        return;
+      } else if (event.key === 'Escape') {
+        // Close dropdown but keep typing
+        event.preventDefault();
+        isFocused = false;
+        return;
+      }
+    }
+
     if (event.key === 'Enter' && !event.shiftKey) {
       event.preventDefault();
       if (canSubmit) {
@@ -120,15 +174,27 @@
 >
   <!-- Slash command autocomplete dropdown -->
   {#if matchingCommands.length > 0}
-    <div class="absolute bottom-full left-0 right-0 mb-1 bg-popover border border-border rounded-md shadow-lg overflow-hidden z-50">
-      {#each matchingCommands as cmd (cmd.name)}
-        <div class="flex items-center gap-2 px-3 py-2 hover:bg-accent cursor-pointer">
+    <!-- svelte-ignore a11y_no_static_element_interactions -->
+    <div 
+      class="absolute bottom-full left-0 right-0 mb-1 bg-popover border border-border rounded-md shadow-lg max-h-64 overflow-y-auto z-50"
+      onmousedown={(e) => e.preventDefault()}
+    >
+      {#each matchingCommands as cmd, index (cmd.name)}
+        <button
+          type="button"
+          class={cn(
+            "flex items-center gap-2 px-3 py-2 w-full text-left cursor-pointer",
+            index === selectedCommandIndex && "bg-accent"
+          )}
+          onmouseenter={() => selectedCommandIndex = index}
+          onclick={() => selectCommand(cmd)}
+        >
           <span class="text-sm font-medium text-primary">/{cmd.name}</span>
           <span class="text-sm text-muted-foreground">{cmd.description}</span>
-        </div>
+        </button>
       {/each}
     </div>
-  {:else if isSlashCommand && isFocused && parsedCommand && !parsedCommand.args && matchingCommands.length === 0}
+  {:else if isSlashCommand && isFocused && parsedCommand && !parsedCommand.args && matchingCommands.length === 0 && !internalValue.endsWith(' ')}
     <!-- No matches indicator -->
     <div class="absolute bottom-full left-0 mb-1 px-2 py-1 bg-popover border border-border rounded-md shadow-lg">
       <span class="text-xs text-warning">/{parsedCommand.command}</span>
