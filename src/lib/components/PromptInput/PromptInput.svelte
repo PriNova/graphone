@@ -1,11 +1,13 @@
 <script lang="ts">
   import { cn } from '$lib/utils/cn';
+  import { parseSlashCommand, isKnownSlashCommand, ALL_SLASH_COMMANDS, getCommandHandler } from '$lib/slash-commands';
   
   interface Props {
     value?: string;
     onsubmit?: (value: string) => void | Promise<void>;
     oninput?: (value: string) => void;
     oncancel?: () => void;
+    onslashcommand?: (command: string, args: string, fullText: string) => void | Promise<void>;
     placeholder?: string;
     disabled?: boolean;
     autofocus?: boolean;
@@ -17,6 +19,7 @@
     onsubmit,
     oninput,
     oncancel,
+    onslashcommand,
     placeholder = 'Ask anything...',
     disabled = false,
     autofocus = false,
@@ -32,6 +35,22 @@
   
   const hasContent = $derived(internalValue.trim().length > 0);
   const canSubmit = $derived(hasContent && !disabled && !isLoading);
+
+  // Slash command detection
+  const parsedCommand = $derived(parseSlashCommand(internalValue));
+  const isSlashCommand = $derived(parsedCommand !== null);
+  const isKnownCommand = $derived(parsedCommand ? isKnownSlashCommand(parsedCommand.command) : false);
+  const commandHandler = $derived(parsedCommand ? getCommandHandler(parsedCommand.command) : null);
+  
+  // Filter matching commands for autocomplete hint (first 5 matches)
+  const matchingCommands = $derived.by(() => {
+    if (!isFocused || !isSlashCommand) return [];
+    if (!parsedCommand || parsedCommand.args) return [];
+    const query = parsedCommand.command.toLowerCase();
+    return ALL_SLASH_COMMANDS
+      .filter(cmd => cmd.name.toLowerCase().startsWith(query))
+      .slice(0, 5);
+  });
 
   function handleInput(event: Event) {
     const target = event.target as HTMLTextAreaElement;
@@ -51,7 +70,13 @@
     const trimmedValue = internalValue.trim();
     if (!trimmedValue) return;
     
-    await onsubmit?.(trimmedValue);
+    // Check if this is a slash command
+    const slashCmd = parseSlashCommand(trimmedValue);
+    if (slashCmd && onslashcommand) {
+      await onslashcommand(slashCmd.command, slashCmd.args, trimmedValue);
+    } else {
+      await onsubmit?.(trimmedValue);
+    }
     
     // Clear input after submission
     internalValue = '';
@@ -88,14 +113,35 @@
 
 <div 
   class={cn(
-    "flex flex-col w-full mx-auto",
+    "flex flex-col w-full mx-auto relative",
     disabled && "opacity-60 cursor-not-allowed"
   )}
 >
+  <!-- Slash command autocomplete dropdown -->
+  {#if matchingCommands.length > 0}
+    <div class="absolute bottom-full left-0 right-0 mb-1 bg-popover border border-border rounded-md shadow-lg overflow-hidden z-50">
+      {#each matchingCommands as cmd (cmd.name)}
+        <div class="flex items-center gap-2 px-3 py-2 hover:bg-accent cursor-pointer">
+          <span class="text-sm font-medium text-primary">/{cmd.name}</span>
+          <span class="text-sm text-muted-foreground">{cmd.description}</span>
+        </div>
+      {/each}
+    </div>
+  {:else if isSlashCommand && isFocused && parsedCommand && !parsedCommand.args && matchingCommands.length === 0}
+    <!-- No matches indicator -->
+    <div class="absolute bottom-full left-0 mb-1 px-2 py-1 bg-popover border border-border rounded-md shadow-lg">
+      <span class="text-xs text-warning">/{parsedCommand.command}</span>
+      <span class="text-xs text-muted-foreground ml-2">Unknown command</span>
+    </div>
+  {/if}
+
   <div 
     class={cn(
-      "flex flex-col w-full bg-foreground/[0.03] border border-input-border rounded-md transition-all duration-100 relative overflow-hidden",
+      "flex flex-col w-full bg-foreground/[0.03] border border-input-border rounded-md transition-all duration-100 overflow-hidden",
       isFocused && "bg-foreground/[0.04] border-ring",
+      isSlashCommand && isKnownCommand && commandHandler === 'local' && "border-success/50",
+      isSlashCommand && isKnownCommand && commandHandler === 'unimplemented' && "border-warning/50",
+      isSlashCommand && !isKnownCommand && "border-destructive/50",
       isLoading && "animate-pulse"
     )}
   >
@@ -142,7 +188,34 @@
     </div>
   </div>
   
-  <div class="flex justify-end pt-1.5 pr-1">
+  <div class="flex justify-between pt-1.5 px-1">
+    <span class="text-xs">
+      {#if isSlashCommand}
+        {#if isKnownCommand}
+          {#if commandHandler === 'local'}
+            <span class="text-success font-medium">/{parsedCommand?.command}</span>
+            <span class="text-muted-foreground ml-1">
+              {ALL_SLASH_COMMANDS.find(c => c.name === parsedCommand?.command)?.description}
+            </span>
+          {:else if commandHandler === 'unimplemented'}
+            <span class="text-warning font-medium">/{parsedCommand?.command}</span>
+            <span class="text-muted-foreground ml-1">
+              Not yet implemented • {ALL_SLASH_COMMANDS.find(c => c.name === parsedCommand?.command)?.description}
+            </span>
+          {:else}
+            <span class="text-primary font-medium">/{parsedCommand?.command}</span>
+            <span class="text-muted-foreground ml-1">
+              {ALL_SLASH_COMMANDS.find(c => c.name === parsedCommand?.command)?.description}
+            </span>
+          {/if}
+        {:else}
+          <span class="text-destructive">/{parsedCommand?.command}</span>
+          <span class="text-muted-foreground ml-1">Unknown command</span>
+        {/if}
+      {:else}
+        <span class="text-muted-foreground/50">Type / for commands</span>
+      {/if}
+    </span>
     <span class="text-xs text-muted-foreground/70">
       {#if isLoading}
         Press Escape to cancel

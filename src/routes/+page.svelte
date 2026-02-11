@@ -5,6 +5,7 @@
   import { PromptInput } from '$lib/components/PromptInput';
   import { AssistantMessage, UserMessage } from '$lib/components/Messages';
   import type { Message, ContentBlock, AgentEvent, ThinkingBlock } from '$lib/types/agent';
+  import { getCommandHandler } from '$lib/slash-commands';
 
   let isLoading = $state(false);
   let messages = $state<Message[]>([]);
@@ -243,6 +244,75 @@
     invoke("abort_agent").catch(console.error);
     isLoading = false;
   }
+
+  async function handleSlashCommand(command: string, args: string, fullText: string) {
+    if (!sessionStarted) {
+      const errorMessage: Message = {
+        id: crypto.randomUUID(),
+        type: 'assistant',
+        content: [{ type: 'text', text: 'Error: Agent session not started. Please wait for initialization.' }],
+        timestamp: new Date()
+      };
+      messages = [...messages, errorMessage];
+      return;
+    }
+
+    const handler = getCommandHandler(command);
+
+    if (handler === 'local') {
+      // Handle local commands
+      if (command === 'clear') {
+        messages = [];
+      }
+      return;
+    }
+
+    if (handler === 'unimplemented') {
+      // These commands require UI that we haven't implemented yet
+      const systemMessage: Message = {
+        id: crypto.randomUUID(),
+        type: 'assistant',
+        content: [{ 
+          type: 'text', 
+          text: `Command "/${command}" requires a UI that hasn't been implemented yet in Graphone.\n\nThis command works in the terminal UI (TUI) mode.` 
+        }],
+        timestamp: new Date(),
+        isStreaming: false
+      };
+      messages = [...messages, systemMessage];
+      return;
+    }
+
+    if (handler === 'rpc') {
+      // Extension commands, prompt templates, and skills work via RPC
+      const userMessage: Message = {
+        id: crypto.randomUUID(),
+        type: 'user',
+        content: fullText,
+        timestamp: new Date()
+      };
+      messages = [...messages, userMessage];
+      
+      requestAnimationFrame(() => scrollToBottom(false));
+      
+      try {
+        await invoke("send_prompt", { prompt: fullText });
+      } catch (error) {
+        console.error('Error sending slash command:', error);
+        const errorMessage: Message = {
+          id: crypto.randomUUID(),
+          type: 'assistant',
+          content: [{ type: 'text', text: `Error: ${error}` }],
+          timestamp: new Date()
+        };
+        messages = [...messages, errorMessage];
+      }
+      return;
+    }
+
+    // Unknown command - treat as regular message
+    await handleSubmit(fullText);
+  }
 </script>
 
 <main class="flex flex-col items-center w-full h-screen overflow-hidden">
@@ -295,9 +365,10 @@
       <PromptInput
         onsubmit={handleSubmit}
         oncancel={handleCancel}
+        onslashcommand={handleSlashCommand}
         isLoading={isLoading}
         disabled={!sessionStarted}
-        placeholder={sessionStarted ? "What would you like to know?" : "Initializing agent session..."}
+        placeholder={sessionStarted ? "What would you like to know? Try /login, /model, /help..." : "Initializing agent session..."}
         autofocus={true}
       />
     </section>
