@@ -4,7 +4,7 @@
   import { invoke } from "@tauri-apps/api/core";
   import { PromptInput } from '$lib/components/PromptInput';
   import { AssistantMessage, UserMessage } from '$lib/components/Messages';
-  import type { Message, ContentBlock, AgentEvent, ThinkingBlock } from '$lib/types/agent';
+  import type { Message, ContentBlock, AgentEvent } from '$lib/types/agent';
   import { getCommandHandler } from '$lib/slash-commands';
 
   let isLoading = $state(false);
@@ -52,6 +52,9 @@
       });
       console.log('Agent session started successfully');
       sessionStarted = true;
+      
+      // Load existing messages from the session
+      await loadMessages();
     } catch (error) {
       console.error('Failed to start agent session:', error);
       const errorMsg: Message = {
@@ -102,10 +105,53 @@
   // Track the streaming message ID to ensure updates go to the correct message
   let streamingMessageId: string | null = $state(null);
 
+  async function loadMessages() {
+    try {
+      const response = await invoke<{ success: true; data: { messages: Array<{ role: string; content: unknown; timestamp?: number }> } } | { success: false; error: string }>("get_messages");
+      
+      if (response && typeof response === 'object' && 'success' in response && response.success) {
+        const agentMessages = response.data.messages;
+        // Convert agent messages to our Message format
+        const loadedMessages: Message[] = [];
+        
+        for (const msg of agentMessages) {
+          const timestamp = msg.timestamp ? new Date(msg.timestamp) : new Date();
+          if (msg.role === 'user') {
+            loadedMessages.push({
+              id: crypto.randomUUID(),
+              type: 'user',
+              content: typeof msg.content === 'string' ? msg.content : JSON.stringify(msg.content),
+              timestamp
+            });
+          } else if (msg.role === 'assistant') {
+            // For assistant messages, we'll get the full content via message_update events
+            // For now, just create a placeholder that will be updated
+            loadedMessages.push({
+              id: crypto.randomUUID(),
+              type: 'assistant',
+              content: [],
+              timestamp,
+              isStreaming: false
+            });
+          }
+        }
+        
+        messages = loadedMessages;
+        requestAnimationFrame(() => scrollToBottom(false));
+      }
+    } catch (error) {
+      console.error('Failed to load messages:', error);
+    }
+  }
+
   function handleAgentEvent(event: AgentEvent) {
     switch (event.type) {
       case 'agent_start':
         isLoading = true;
+        break;
+      
+      case 'turn_start':
+        // Turn is starting - a new message will be created on first message_update
         break;
       
       case 'agent_end':
@@ -125,13 +171,77 @@
         }
         break;
       
+      case 'message_start':
+        handleMessageStart(event);
+        break;
+      
       case 'message_update':
         handleMessageUpdate(event);
+        break;
+      
+      case 'message_end':
+        // Message is complete - finalize it
+        if (streamingMessageId) {
+          const msgIndex = messages.findIndex(m => m.id === streamingMessageId);
+          if (msgIndex >= 0) {
+            const msg = messages[msgIndex];
+            if (msg.type === 'assistant' && msg.isStreaming) {
+              messages = messages.map((m, idx) => 
+                idx === msgIndex ? { ...m, isStreaming: false } : m
+              );
+            }
+          }
+          streamingMessageId = null;
+        }
+        break;
+      
+      case 'turn_end':
+        // Mark the current streaming message as complete for this turn
+        if (streamingMessageId) {
+          const msgIndex = messages.findIndex(m => m.id === streamingMessageId);
+          if (msgIndex >= 0) {
+            const msg = messages[msgIndex];
+            if (msg.type === 'assistant' && msg.isStreaming) {
+              messages = messages.map((m, idx) => 
+                idx === msgIndex ? { ...m, isStreaming: false } : m
+              );
+            }
+          }
+          streamingMessageId = null;
+        }
         break;
     }
     
     // Scroll after state updates, but only if user is near bottom
     requestAnimationFrame(() => scrollToBottom(true));
+  }
+
+  function handleMessageStart(event: Extract<AgentEvent, { type: 'message_start' }>) {
+    const msg = event.message;
+    
+    if (msg.role === 'user') {
+      // Add user message when it starts
+      const content = typeof msg.content === 'string' 
+        ? msg.content 
+        : Array.isArray(msg.content) 
+          ? msg.content.map((c: unknown) => {
+              if (typeof c === 'object' && c !== null && 'type' in c) {
+                const block = c as { type: string; text?: string };
+                if (block.type === 'text') return block.text || '';
+              }
+              return '';
+            }).join('')
+          : JSON.stringify(msg.content);
+      
+      const userMessage: Message = {
+        id: crypto.randomUUID(),
+        type: 'user',
+        content,
+        timestamp: msg.timestamp ? new Date(msg.timestamp) : new Date()
+      };
+      messages = [...messages, userMessage];
+      requestAnimationFrame(() => scrollToBottom(false));
+    }
   }
 
   function handleMessageUpdate(event: Extract<AgentEvent, { type: 'message_update' }>) {
@@ -205,19 +315,8 @@
       messages = [...messages, errorMessage];
       return;
     }
-
-    // Add user message
-    const userMessage: Message = {
-      id: crypto.randomUUID(),
-      type: 'user',
-      content: prompt,
-      timestamp: new Date()
-    };
-    messages = [...messages, userMessage];
     
-    // Scroll immediately on user submit
-    requestAnimationFrame(() => scrollToBottom(false));
-    
+    // Send the prompt to the agent - UI will be updated via message_start event
     try {
       await invoke("send_prompt", { prompt });
     } catch (error) {
@@ -253,10 +352,7 @@
     const handler = getCommandHandler(command);
 
     if (handler === 'local') {
-      // Handle local commands
-      if (command === 'clear') {
-        messages = [];
-      }
+      // No local commands currently - all state changes go through RPC
       return;
     }
 
@@ -277,17 +373,32 @@
     }
 
     if (handler === 'rpc') {
+      // Handle specific RPC commands
+      if (command === 'new') {
+        try {
+          const response = await invoke<{ success: true; data: { cancelled: boolean } } | { success: false; error: string }>("new_session");
+          if (response && typeof response === 'object' && 'success' in response && response.success) {
+            if (!response.data.cancelled) {
+              // Clear local messages and reload from new session
+              messages = [];
+              await loadMessages();
+            }
+          }
+        } catch (error) {
+          console.error('Error creating new session:', error);
+          const errorMessage: Message = {
+            id: crypto.randomUUID(),
+            type: 'assistant',
+            content: [{ type: 'text', text: `Error creating new session: ${error}` }],
+            timestamp: new Date()
+          };
+          messages = [...messages, errorMessage];
+        }
+        return;
+      }
+      
       // Extension commands, prompt templates, and skills work via RPC
-      const userMessage: Message = {
-        id: crypto.randomUUID(),
-        type: 'user',
-        content: fullText,
-        timestamp: new Date()
-      };
-      messages = [...messages, userMessage];
-      
-      requestAnimationFrame(() => scrollToBottom(false));
-      
+      // Send the command text as a prompt - UI will update via events
       try {
         await invoke("send_prompt", { prompt: fullText });
       } catch (error) {
@@ -361,7 +472,7 @@
         onslashcommand={handleSlashCommand}
         isLoading={isLoading}
         disabled={!sessionStarted}
-        placeholder={sessionStarted ? "What would you like to know? Try /login, /model, /help..." : "Initializing agent session..."}
+        placeholder={sessionStarted ? "What would you like to know? Try /new, /model, /help..." : "Initializing agent session..."}
         autofocus={true}
       />
     </section>

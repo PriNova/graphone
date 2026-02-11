@@ -42,8 +42,18 @@ export function isToolCall(block: ContentBlock): block is ToolCall {
   return block.type === 'toolCall';
 }
 
-// RPC Event types
-export interface AgentMessageEvent {
+// RPC Event types - aligned with pi-mono AgentEvent
+export interface AgentMessageStartEvent {
+  type: 'message_start';
+  message: {
+    role: 'user' | 'assistant' | 'toolResult';
+    content?: string | unknown[];
+    timestamp?: number;
+    [key: string]: unknown;
+  };
+}
+
+export interface AgentMessageUpdateEvent {
   type: 'message_update';
   message: AssistantMessage;
   assistantMessageEvent: {
@@ -60,6 +70,16 @@ export interface AgentMessageEvent {
   };
 }
 
+export interface AgentMessageEndEvent {
+  type: 'message_end';
+  message: {
+    role: 'user' | 'assistant' | 'toolResult';
+    content?: string | unknown[];
+    timestamp?: number;
+    [key: string]: unknown;
+  };
+}
+
 export interface AgentStartEvent {
   type: 'agent_start';
 }
@@ -69,4 +89,24 @@ export interface AgentEndEvent {
   messages: AssistantMessage[];
 }
 
-export type AgentEvent = AgentMessageEvent | AgentStartEvent | AgentEndEvent;
+export interface TurnStartEvent {
+  type: 'turn_start';
+  turnIndex: number;
+  timestamp: number;
+}
+
+export interface TurnEndEvent {
+  type: 'turn_end';
+  turnIndex: number;
+  message: AssistantMessage;
+  toolResults: unknown[];
+}
+
+export type AgentEvent = 
+  | AgentMessageStartEvent 
+  | AgentMessageUpdateEvent 
+  | AgentMessageEndEvent 
+  | AgentStartEvent 
+  | AgentEndEvent 
+  | TurnStartEvent 
+  | TurnEndEvent;

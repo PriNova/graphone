@@ -2,10 +2,13 @@
 
 ## Build Commands
 - `npm install` - Install dependencies
+- `npm run check` - Type check Svelte/TypeScript (runs automatically on build)
+- `npm run check:watch` - Type check in watch mode (for development)
 - `npm run dev:linux` - Dev server (Linux native)
 - `npm run dev:windows` - Dev server (Windows cross-compile)
-- `npm run build:linux` - Build Linux AppImage/deb
-- `npm run build:windows` - Build Windows NSIS installer
+- `npm run build` - Type check + build frontend (runs `check` first)
+- `npm run build:linux` - Full Linux AppImage/deb build (includes type check)
+- `npm run build:windows` - Full Windows NSIS installer build (includes type check)
 - `npm run build:windows:exe` - Build Windows .exe only (no installer needed)
 - `npm run build:all` - Build Linux + Windows
 - `npm run run:windows` - Build (if needed) & launch Windows app from WSL2
@@ -100,6 +103,12 @@ graphone/
 | "TaskDialogIndirect could not be located" | Fixed - rebuild with `npm run build:windows` |
 
 ## Frontend Development Rules
+
+### Type Checking
+- **`npm run build` now includes type checking** - The build script runs `svelte-check` first to catch TypeScript/Svelte errors
+- **`npm run check`** - Run type checking standalone (uses `svelte-check --fail-on-warnings`)
+- **`npm run check:watch`** - Run type checking in watch mode during development
+- Type errors and warnings will fail the build - fix them before committing
 
 ### Tailwind v4 + Svelte 5
 - **Single CSS entry**: Use one `index.css` with `@import 'tailwindcss'` - do NOT split into multiple CSS files with `@import`

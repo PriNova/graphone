@@ -44,7 +44,6 @@ export const UNIMPLEMENTED_COMMANDS: SlashCommand[] = [
 	{ name: 'session', description: 'Show session info and stats', handler: 'unimplemented' },
 	{ name: 'changelog', description: 'Show changelog entries', handler: 'unimplemented' },
 	{ name: 'hotkeys', description: 'Show all keyboard shortcuts', handler: 'unimplemented' },
-	{ name: 'new', description: 'Start a new session', handler: 'unimplemented' },
 	{ name: 'compact', description: 'Manually compact the session context', handler: 'unimplemented' },
 	{ name: 'reload', description: 'Reload extensions, skills, prompts, and themes', handler: 'unimplemented' },
 	{ name: 'quit', description: 'Quit pi', handler: 'unimplemented' },
@@ -52,16 +51,18 @@ export const UNIMPLEMENTED_COMMANDS: SlashCommand[] = [
 
 /** Commands handled locally by Graphone UI */
 export const LOCAL_COMMANDS: SlashCommand[] = [
-	{ name: 'clear', description: 'Clear the conversation', handler: 'local' },
+	// No local commands currently - all state changes go through RPC
 ];
 
 /**
  * Commands that work via RPC (extension commands, prompt templates, skills).
  * These are discovered dynamically from the sidecar via getCommands RPC call.
  */
-export const RPC_COMMANDS: SlashCommand[] = [];
+export const RPC_COMMANDS: SlashCommand[] = [
+	{ name: 'new', description: 'Start a new session', handler: 'rpc' },
+];
 
-export const ALL_SLASH_COMMANDS: SlashCommand[] = [...UNIMPLEMENTED_COMMANDS, ...LOCAL_COMMANDS];
+export const ALL_SLASH_COMMANDS: SlashCommand[] = [...UNIMPLEMENTED_COMMANDS, ...LOCAL_COMMANDS, ...RPC_COMMANDS];
 
 /**
  * Parse a message to check if it's a slash command.
