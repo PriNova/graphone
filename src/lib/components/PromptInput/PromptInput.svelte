@@ -176,7 +176,7 @@
   {#if matchingCommands.length > 0}
     <!-- svelte-ignore a11y_no_static_element_interactions -->
     <div 
-      class="absolute bottom-full left-0 right-0 mb-1 bg-popover border border-border rounded-md shadow-lg max-h-64 overflow-y-auto z-50"
+      class="absolute bottom-full left-0 right-0 mb-1 bg-background border border-border rounded-md shadow-lg max-h-64 overflow-y-auto z-50"
       onmousedown={(e) => e.preventDefault()}
     >
       {#each matchingCommands as cmd, index (cmd.name)}
@@ -196,7 +196,7 @@
     </div>
   {:else if isSlashCommand && isFocused && parsedCommand && !parsedCommand.args && matchingCommands.length === 0 && !internalValue.endsWith(' ')}
     <!-- No matches indicator -->
-    <div class="absolute bottom-full left-0 mb-1 px-2 py-1 bg-popover border border-border rounded-md shadow-lg">
+    <div class="absolute bottom-full left-0 mb-1 px-2 py-1 bg-background border border-border rounded-md shadow-lg">
       <span class="text-xs text-warning">/{parsedCommand.command}</span>
       <span class="text-xs text-muted-foreground ml-2">Unknown command</span>
     </div>
