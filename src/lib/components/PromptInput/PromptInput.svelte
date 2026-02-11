@@ -138,7 +138,7 @@
 
   <div 
     class={cn(
-      "flex flex-col w-full bg-foreground/[0.03] border border-input-border rounded-md transition-all duration-100 overflow-hidden",
+      "flex flex-col w-full bg-foreground/[0.03] border border-input-border rounded-md transition-all duration-100 overflow-hidden relative",
       isFocused && "bg-foreground/[0.04] border-ring",
       isSlashCommand && isKnownCommand && commandHandler === 'local' && "border-success/50",
       isSlashCommand && isKnownCommand && commandHandler === 'unimplemented' && "border-warning/50",
@@ -163,7 +163,7 @@
       onblur={() => isFocused = false}
     ></textarea>
     
-    <div class="absolute bottom-2 right-2 flex items-center gap-2">
+    <div class="absolute right-2 top-1/2 -translate-y-1/2 flex items-center gap-2">
       <button
         type="button"
         class={cn(
