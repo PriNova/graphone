@@ -17,25 +17,11 @@ fn copy_dir_all(src: impl AsRef<Path>, dst: impl AsRef<Path>) -> std::io::Result
     Ok(())
 }
 
-fn main() {
-    // Tell Cargo to rerun this script if build.rs itself changes
-    println!("cargo:rerun-if-changed=build.rs");
-    
+fn build_sidecar() {
     // Get target information
     let target_os = env::var("CARGO_CFG_TARGET_OS").unwrap();
     let target_triple = env::var("TARGET").unwrap();
-    
-    // Run tauri_build with Windows manifest if building for Windows
-    if target_os == "windows" {
-        let manifest = include_str!("windows-app.manifest");
-        let windows = tauri_build::WindowsAttributes::new()
-            .app_manifest(manifest);
-        tauri_build::try_build(
-            tauri_build::Attributes::new().windows_attributes(windows)
-        ).expect("failed to run tauri build");
-    } else {
-        tauri_build::build();
-    }
+    let manifest_dir = env::var("CARGO_MANIFEST_DIR").unwrap();
     
     // Only build sidecar for desktop platforms
     // Skip for mobile builds
@@ -45,7 +31,6 @@ fn main() {
     }
     
     // Path to pi-mono coding-agent package
-    let manifest_dir = env::var("CARGO_MANIFEST_DIR").unwrap();
     let pi_mono_path = Path::new(&manifest_dir)
         .parent()
         .unwrap()
@@ -87,20 +72,65 @@ fn main() {
     }
     
     // Build the binary using npm run build:binary
-    let status = Command::new("npm")
-        .args(&["run", "build:binary"])
-        .current_dir(&pi_mono_path)
-        .status()
-        .expect("Failed to execute npm run build:binary for pi-agent");
+    // For cross-compilation, we need to invoke bun directly with the correct --target flag
+    // as bun's --compile supports cross-compilation but npm script doesn't pass target info
+    let is_cross_compiling_windows = target_os == "windows" && env::consts::OS != "windows";
     
-    if !status.success() {
-        panic!("Failed to build pi-agent binary");
+    if is_cross_compiling_windows {
+        println!("cargo:warning=Cross-compiling for Windows from non-Windows host");
+        println!("cargo:warning=Using bun with --target=bun-windows-x64 for cross-compilation");
+        
+        // First run the TypeScript build
+        let status = Command::new("npm")
+            .args(&["run", "build"])
+            .current_dir(&pi_mono_path)
+            .status()
+            .expect("Failed to execute npm run build for pi-agent");
+        
+        if !status.success() {
+            panic!("Failed to build pi-agent TypeScript");
+        }
+        
+        // Then compile with bun for Windows target
+        let status = Command::new("bun")
+            .args(&["build", "--compile", "--target=bun-windows-x64", "./dist/cli.js", "--outfile", "dist/pi"])
+            .current_dir(&pi_mono_path)
+            .status()
+            .expect("Failed to execute bun build --compile for Windows target");
+        
+        if !status.success() {
+            panic!("Failed to cross-compile pi-agent binary for Windows");
+        }
+        
+        // Copy assets manually (normally done by copy-binary-assets npm script)
+        let status = Command::new("npm")
+            .args(&["run", "copy-binary-assets"])
+            .current_dir(&pi_mono_path)
+            .status()
+            .expect("Failed to copy binary assets");
+        
+        if !status.success() {
+            panic!("Failed to copy binary assets");
+        }
+    } else {
+        // Native compilation - use npm script as before
+        let status = Command::new("npm")
+            .args(&["run", "build:binary"])
+            .current_dir(&pi_mono_path)
+            .status()
+            .expect("Failed to execute npm run build:binary for pi-agent");
+        
+        if !status.success() {
+            panic!("Failed to build pi-agent binary");
+        }
     }
     
     let dist_path = pi_mono_path.join("dist");
     
     // Determine source binary path
-    let source_binary = dist_path.join("pi");
+    // For Windows cross-compilation, bun automatically adds .exe extension
+    let source_binary_name = if is_cross_compiling_windows { "pi.exe" } else { "pi" };
+    let source_binary = dist_path.join(source_binary_name);
     
     if !source_binary.exists() {
         panic!("Built binary not found at {:?}", source_binary);
@@ -218,4 +248,28 @@ fn main() {
     // Rerun if pi-mono source changes
     println!("cargo:rerun-if-changed={}/src", pi_mono_path.display());
     println!("cargo:rerun-if-changed={}/package.json", pi_mono_path.display());
+}
+
+fn main() {
+    // Tell Cargo to rerun this script if build.rs itself changes
+    println!("cargo:rerun-if-changed=build.rs");
+    
+    // Get target information
+    let target_os = env::var("CARGO_CFG_TARGET_OS").unwrap();
+    
+    // Build sidecar FIRST before calling tauri_build
+    // Tauri's build system checks for externalBin resources at build time
+    build_sidecar();
+    
+    // Run tauri_build with Windows manifest if building for Windows
+    if target_os == "windows" {
+        let manifest = include_str!("windows-app.manifest");
+        let windows = tauri_build::WindowsAttributes::new()
+            .app_manifest(manifest);
+        tauri_build::try_build(
+            tauri_build::Attributes::new().windows_attributes(windows)
+        ).expect("failed to run tauri build");
+    } else {
+        tauri_build::build();
+    }
 }
