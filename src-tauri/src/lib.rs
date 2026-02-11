@@ -61,9 +61,10 @@ async fn start_agent_session(
 ) -> Result<(), String> {
     let mut state_guard = state.lock().await;
     
-    // If already running, return error
+    // If already running, return success (idempotent)
     if state_guard.child.is_some() {
-        return Err("Agent session already running".to_string());
+        eprintln!("Agent session already running, reusing existing session");
+        return Ok(());
     }
 
     // Build args for sidecar
