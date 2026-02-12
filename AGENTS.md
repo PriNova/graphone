@@ -2,6 +2,7 @@
 
 ## Agent Workflow Guidelines
 - **Check local code first** - Before using GitHub tools (`read_github`, `search_github`, etc.), always explore the local codebase using standard file tools (`read`, `bash` with `find`/`grep`, etc.)
+- **Check pi-mono first for feature implementations** - Since graphone is a visual wrapper around pi-mono, always look up code implementations in the local `../pi-mono` repository before implementing new features. Many features may already be implemented in pi-mono and can be mimicked or adapted for the desktop UI
 - Use GitHub tools only when you need to reference external repositories or when explicitly asked about remote code
 
 ## Build Commands
