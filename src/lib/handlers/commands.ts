@@ -20,7 +20,11 @@ export async function handleSlashCommand(command: string, args: string, fullText
   const handler = getCommandHandler(command);
 
   if (handler === 'local') {
-    // No local commands currently - all state changes go through RPC
+    if (command === 'model') {
+      messagesStore.addSystemMessage('Use the model dropdown next to the prompt input to switch models.');
+      return { type: 'handled' };
+    }
+
     return { type: 'handled' };
   }
 

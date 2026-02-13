@@ -56,6 +56,8 @@ pub async fn send_prompt(
         id: Some(crypto_random_uuid()),
         r#type: "prompt".to_string(),
         message: Some(prompt),
+        provider: None,
+        model_id: None,
     };
 
     RpcClient::send_command(state.inner(), cmd).await
@@ -68,6 +70,8 @@ pub async fn abort_agent(state: State<'_, Arc<Mutex<SidecarState>>>) -> Result<(
         id: Some(crypto_random_uuid()),
         r#type: "abort".to_string(),
         message: None,
+        provider: None,
+        model_id: None,
     };
 
     RpcClient::send_command(state.inner(), cmd).await
@@ -84,6 +88,8 @@ pub async fn new_session(
         id: Some(id.clone()),
         r#type: "new_session".to_string(),
         message: None,
+        provider: None,
+        model_id: None,
     };
 
     RpcClient::send_command_with_response(state.inner(), cmd, id, 5).await
@@ -100,6 +106,8 @@ pub async fn get_messages(
         id: Some(id.clone()),
         r#type: "get_messages".to_string(),
         message: None,
+        provider: None,
+        model_id: None,
     };
 
     RpcClient::send_command_with_response(state.inner(), cmd, id, 5).await
@@ -114,6 +122,95 @@ pub async fn get_state(state: State<'_, Arc<Mutex<SidecarState>>>) -> Result<Rpc
         id: Some(id.clone()),
         r#type: "get_state".to_string(),
         message: None,
+        provider: None,
+        model_id: None,
+    };
+
+    RpcClient::send_command_with_response(state.inner(), cmd, id, 5).await
+}
+
+/// Get available models (filtered by configured auth)
+#[tauri::command]
+pub async fn get_available_models(
+    state: State<'_, Arc<Mutex<SidecarState>>>,
+) -> Result<RpcResponse, String> {
+    let id = crypto_random_uuid();
+
+    let cmd = RpcCommand {
+        id: Some(id.clone()),
+        r#type: "get_available_models".to_string(),
+        message: None,
+        provider: None,
+        model_id: None,
+    };
+
+    let mut response = RpcClient::send_command_with_response(state.inner(), cmd, id, 3).await?;
+
+    // Keep IPC payload compact for webview transport reliability.
+    // Sidecar returns full model objects; frontend only needs provider/id/name.
+    if response.success {
+        if let Some(data) = response.data.take() {
+            let compact_models = data
+                .get("models")
+                .and_then(|models| models.as_array())
+                .map(|models| {
+                    models
+                        .iter()
+                        .filter_map(|model| {
+                            let provider = model.get("provider")?.as_str()?;
+                            let id = model.get("id")?.as_str()?;
+                            let name = model.get("name").and_then(|v| v.as_str()).unwrap_or(id);
+
+                            Some(serde_json::json!({
+                                "provider": provider,
+                                "id": id,
+                                "name": name,
+                            }))
+                        })
+                        .collect::<Vec<serde_json::Value>>()
+                })
+                .unwrap_or_default();
+
+            response.data = Some(serde_json::json!({ "models": compact_models }));
+        }
+    }
+
+    Ok(response)
+}
+
+/// Set active model by provider and model id
+#[tauri::command]
+pub async fn set_model(
+    state: State<'_, Arc<Mutex<SidecarState>>>,
+    provider: String,
+    model_id: String,
+) -> Result<RpcResponse, String> {
+    let id = crypto_random_uuid();
+
+    let cmd = RpcCommand {
+        id: Some(id.clone()),
+        r#type: "set_model".to_string(),
+        message: None,
+        provider: Some(provider),
+        model_id: Some(model_id),
+    };
+
+    RpcClient::send_command_with_response(state.inner(), cmd, id, 5).await
+}
+
+/// Cycle to next model
+#[tauri::command]
+pub async fn cycle_model(
+    state: State<'_, Arc<Mutex<SidecarState>>>,
+) -> Result<RpcResponse, String> {
+    let id = crypto_random_uuid();
+
+    let cmd = RpcCommand {
+        id: Some(id.clone()),
+        r#type: "cycle_model".to_string(),
+        message: None,
+        provider: None,
+        model_id: None,
     };
 
     RpcClient::send_command_with_response(state.inner(), cmd, id, 5).await

@@ -1,12 +1,21 @@
 import { invoke } from "@tauri-apps/api/core";
 
+export interface AvailableModel {
+  provider: string;
+  id: string;
+  name: string;
+}
+
 // Agent session state
 class AgentStore {
   sessionStarted = $state(false);
   isLoading = $state(false);
+  isModelsLoading = $state(false);
+  isSettingModel = $state(false);
   error = $state<string | null>(null);
   currentModel = $state("");
   currentProvider = $state("");
+  availableModels = $state<AvailableModel[]>([]);
 
   async startSession(): Promise<void> {
     // Already started - nothing to do
@@ -37,6 +46,11 @@ class AgentStore {
       const model = response.data?.model;
       this.currentModel = typeof model?.id === "string" ? model.id : "";
       this.currentProvider = typeof model?.provider === "string" ? model.provider : "";
+
+      if (this.availableModels.length > 0) {
+        this.availableModels = this.sortAvailableModels(this.availableModels);
+      }
+
       return;
     }
 
@@ -44,6 +58,55 @@ class AgentStore {
       ? response.error
       : "Failed to get agent state";
     throw new Error(error);
+  }
+
+  async loadAvailableModels(): Promise<void> {
+    if (!this.sessionStarted) {
+      throw new Error("Agent session not started");
+    }
+
+    this.isModelsLoading = true;
+
+    try {
+      const models = await this.loadAvailableModelsByCycling();
+      this.availableModels = this.sortAvailableModels(models);
+    } finally {
+      this.isModelsLoading = false;
+    }
+  }
+
+  async setModel(provider: string, modelId: string): Promise<void> {
+    if (!this.sessionStarted) {
+      throw new Error("Agent session not started");
+    }
+
+    if (!provider || !modelId) {
+      throw new Error("Provider and model are required");
+    }
+
+    if (provider === this.currentProvider && modelId === this.currentModel) {
+      return;
+    }
+
+    this.isSettingModel = true;
+
+    try {
+      const response = await invoke<
+        { success: true; data?: unknown } | { success: false; error: string }
+      >("set_model", { provider, modelId });
+
+      if (!(response && typeof response === "object" && "success" in response && response.success)) {
+        const error = response && typeof response === "object" && "error" in response
+          ? response.error
+          : "Failed to set model";
+        throw new Error(error);
+      }
+
+      await this.refreshState();
+      this.availableModels = this.sortAvailableModels(this.availableModels);
+    } finally {
+      this.isSettingModel = false;
+    }
   }
 
   async sendPrompt(prompt: string): Promise<void> {
@@ -67,6 +130,9 @@ class AgentStore {
       await this.refreshState().catch((error) => {
         console.warn("Failed to refresh agent state after new session:", error);
       });
+      await this.loadAvailableModels().catch((error) => {
+        console.warn("Failed to refresh models after new session:", error);
+      });
       return !response.data.cancelled;
     }
     return false;
@@ -74,6 +140,89 @@ class AgentStore {
 
   setLoading(loading: boolean): void {
     this.isLoading = loading;
+  }
+
+  private async loadAvailableModelsByCycling(): Promise<AvailableModel[]> {
+    await this.refreshState().catch(() => undefined);
+
+    const originalProvider = this.currentProvider;
+    const originalModel = this.currentModel;
+
+    if (!originalProvider || !originalModel) {
+      return [];
+    }
+
+    const originalKey = `${originalProvider}/${originalModel}`;
+    const discovered = new Map<string, AvailableModel>();
+    discovered.set(originalKey, {
+      provider: originalProvider,
+      id: originalModel,
+      name: originalModel,
+    });
+
+    const maxIterations = 2000;
+
+    try {
+      for (let i = 0; i < maxIterations; i++) {
+        const response = await invoke<
+          | { success: true; data: { model?: { provider?: unknown; id?: unknown; name?: unknown } } | null }
+          | { success: false; error: string }
+        >("cycle_model");
+
+        if (!(response && typeof response === "object" && "success" in response && response.success)) {
+          const error = response && typeof response === "object" && "error" in response
+            ? response.error
+            : "Failed to cycle model";
+          throw new Error(error);
+        }
+
+        const data = response.data;
+        if (!data || typeof data !== "object" || !("model" in data) || !data.model || typeof data.model !== "object") {
+          break;
+        }
+
+        const typedModel = data.model as { provider?: unknown; id?: unknown; name?: unknown };
+        if (typeof typedModel.provider !== "string" || typeof typedModel.id !== "string") {
+          continue;
+        }
+
+        const key = `${typedModel.provider}/${typedModel.id}`;
+        if (key === originalKey || discovered.has(key)) {
+          break;
+        }
+
+        discovered.set(key, {
+          provider: typedModel.provider,
+          id: typedModel.id,
+          name: typeof typedModel.name === "string" && typedModel.name.length > 0
+            ? typedModel.name
+            : typedModel.id,
+        });
+      }
+
+      return [...discovered.values()];
+    } finally {
+      await invoke("set_model", { provider: originalProvider, modelId: originalModel }).catch(() => undefined);
+      await this.refreshState().catch(() => undefined);
+    }
+  }
+
+  private sortAvailableModels(models: AvailableModel[]): AvailableModel[] {
+    const currentProvider = this.currentProvider;
+    const currentModel = this.currentModel;
+
+    return [...models].sort((a, b) => {
+      const aIsCurrent = a.provider === currentProvider && a.id === currentModel;
+      const bIsCurrent = b.provider === currentProvider && b.id === currentModel;
+
+      if (aIsCurrent && !bIsCurrent) return -1;
+      if (!aIsCurrent && bIsCurrent) return 1;
+
+      const providerCompare = a.provider.localeCompare(b.provider);
+      if (providerCompare !== 0) return providerCompare;
+
+      return a.id.localeCompare(b.id);
+    });
   }
 }
 

@@ -21,6 +21,10 @@ impl SidecarManager {
             "rpc".to_string(),
             "--no-session".to_string(),
             "--no-skills".to_string(),
+            // Ensure model cycling scope is not constrained by persisted settings.
+            // This keeps Graphone model fallback enumeration consistent across platforms.
+            "--models".to_string(),
+            "*".to_string(),
         ];
 
         if let Some(provider) = provider {
@@ -151,32 +155,88 @@ impl EventHandler {
     }
 
     async fn handle_stdout_line(app: &AppHandle, state: &Arc<Mutex<SidecarState>>, line: String) {
-        if line.trim().is_empty() {
+        let normalized = line
+            .trim_start_matches('\u{feff}')
+            .trim_matches('\0')
+            .to_string();
+
+        if normalized.trim().is_empty() {
             return;
         }
 
-        if let Ok(json) = serde_json::from_str::<serde_json::Value>(&line) {
+        let json = Self::parse_json_line(&normalized);
+
+        if let Some(json) = json {
             if json.get("type").and_then(|t| t.as_str()) == Some("response") {
-                if let Ok(response) = serde_json::from_value::<RpcResponse>(json.clone()) {
-                    if let Some(ref id) = response.id {
-                        let state_guard = state.lock().await;
-                        if let Some(ref tx) = state_guard.response_tx {
-                            let _ = tx.try_send((id.clone(), response));
+                match serde_json::from_value::<RpcResponse>(json.clone()) {
+                    Ok(response) => {
+                        if let Some(id) = response.id.clone() {
+                            let command = response.command.clone();
+                            let state_guard = state.lock().await;
+                            if let Some(ref tx) = state_guard.response_tx {
+                                if tx.try_send((id.clone(), response)).is_err() {
+                                    logger::log(format!(
+                                        "Failed to queue response id={} command={} (channel full/closed)",
+                                        id, command
+                                    ));
+                                }
+                            } else {
+                                logger::log("Response channel not initialized");
+                            }
                         }
+                        return;
                     }
-                    return;
+                    Err(error) => {
+                        logger::log(format!(
+                            "Failed to deserialize response JSON (len={}): {}",
+                            normalized.len(),
+                            error
+                        ));
+                    }
                 }
             }
 
             let should_log = json.get("type").and_then(|t| t.as_str()) != Some("message_update");
             if should_log {
-                logger::log(format!("Sidecar stdout: {}", line));
+                logger::log(format!(
+                    "Sidecar stdout: {}",
+                    Self::shorten_for_log(&normalized, 2000)
+                ));
             }
+        } else {
+            logger::log(format!(
+                "Sidecar stdout non-JSON (len={}): {}",
+                normalized.len(),
+                Self::shorten_for_log(&normalized, 400)
+            ));
         }
 
-        if let Err(e) = app.emit("agent-event", line.clone()) {
+        if let Err(e) = app.emit("agent-event", normalized.clone()) {
             logger::log(format!("Failed to emit agent event: {}", e));
         }
+    }
+
+    fn parse_json_line(line: &str) -> Option<serde_json::Value> {
+        if let Ok(json) = serde_json::from_str::<serde_json::Value>(line) {
+            return Some(json);
+        }
+
+        let start = line.find('{')?;
+        let end = line.rfind('}')?;
+        if end <= start {
+            return None;
+        }
+
+        serde_json::from_str::<serde_json::Value>(&line[start..=end]).ok()
+    }
+
+    fn shorten_for_log(value: &str, max_chars: usize) -> String {
+        if value.chars().count() <= max_chars {
+            return value.to_string();
+        }
+
+        let shortened = value.chars().take(max_chars).collect::<String>();
+        format!("{}…", shortened)
     }
 
     fn handle_stderr(chunk: Vec<u8>, buffer: &mut Vec<u8>) {

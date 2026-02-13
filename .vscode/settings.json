@@ -1,4 +1,6 @@
 {
   "svelte.enable-ts-plugin": true,
-  "amp.internal.primaryModel": "fireworks/accounts/fireworks/models/kimi-k2p5"
+  "files.associations": {
+    "*.css": "tailwindcss"
+  }
 }

@@ -6,9 +6,11 @@
  * - Prompt templates (/template-name)
  * - Skills (/skill:name)
  *
- * Built-in commands like /settings, /model, /login are handled by the
+ * Built-in commands like /settings and /login are handled by the
  * interactive TUI mode and do NOT work in RPC mode. Sending them to the
  * sidecar will just treat them as regular text prompts to the LLM.
+ *
+ * Note: Graphone handles /model locally via a dropdown UI.
  */
 
 export interface SlashCommand {
@@ -29,7 +31,6 @@ export interface SlashCommand {
  */
 export const UNIMPLEMENTED_COMMANDS: SlashCommand[] = [
 	{ name: 'settings', description: 'Open settings menu', handler: 'unimplemented' },
-	{ name: 'model', description: 'Select model (opens selector UI)', handler: 'unimplemented' },
 	{ name: 'scoped-models', description: 'Enable/disable models for cycling', handler: 'unimplemented' },
 	{ name: 'login', description: 'Login with OAuth provider', handler: 'unimplemented' },
 	{ name: 'logout', description: 'Logout from OAuth provider', handler: 'unimplemented' },
@@ -51,7 +52,7 @@ export const UNIMPLEMENTED_COMMANDS: SlashCommand[] = [
 
 /** Commands handled locally by Graphone UI */
 export const LOCAL_COMMANDS: SlashCommand[] = [
-	// No local commands currently - all state changes go through RPC
+	{ name: 'model', description: 'Select model using the dropdown', handler: 'local' },
 ];
 
 /**

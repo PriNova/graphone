@@ -1,6 +1,8 @@
 <script lang="ts">
   import { cn } from '$lib/utils/cn';
   import { parseSlashCommand, isKnownSlashCommand, ALL_SLASH_COMMANDS, getCommandHandler } from '$lib/slash-commands';
+  import ModelSelector from './ModelSelector.svelte';
+  import type { AvailableModel } from '$lib/stores/agent.svelte';
   
   interface Props {
     value?: string;
@@ -8,12 +10,16 @@
     oninput?: (value: string) => void;
     oncancel?: () => void;
     onslashcommand?: (command: string, args: string, fullText: string) => void | Promise<void>;
+    onmodelchange?: (provider: string, modelId: string) => void | Promise<void>;
     placeholder?: string;
     disabled?: boolean;
     autofocus?: boolean;
     isLoading?: boolean;
     model?: string;
     provider?: string;
+    models?: AvailableModel[];
+    modelsLoading?: boolean;
+    modelChanging?: boolean;
   }
 
   let {
@@ -22,12 +28,16 @@
     oninput,
     oncancel,
     onslashcommand,
+    onmodelchange,
     placeholder = 'Ask anything...',
     disabled = false,
     autofocus = false,
     isLoading = false,
     model = '',
     provider = '',
+    models = [],
+    modelsLoading = false,
+    modelChanging = false,
   }: Props = $props();
 
   // Internal state for the input value
@@ -41,6 +51,7 @@
   const hasContent = $derived(internalValue.trim().length > 0);
   const canSubmit = $derived(hasContent && !disabled && !isLoading);
   const canCancel = $derived(isLoading);
+  const modelSelectorDisabled = $derived(disabled || isLoading || modelChanging);
 
   // Slash command detection
   const parsedCommand = $derived(parseSlashCommand(internalValue));
@@ -290,13 +301,18 @@
         <span class="text-muted-foreground/50">Type / for commands</span>
       {/if}
     </span>
-    <span class="text-xs text-muted-foreground/70 text-right">
-      {#if model}
-        <span class="text-muted-foreground/60">Model:</span> {model}{#if provider} [{provider}]{/if}
-      {/if}
+    <span class="text-xs text-muted-foreground/70 text-right flex items-center gap-2">
+      <ModelSelector
+        models={models}
+        currentModel={model}
+        currentProvider={provider}
+        loading={modelsLoading}
+        changing={modelChanging}
+        disabled={modelSelectorDisabled}
+        onchange={onmodelchange}
+      />
       {#if isLoading}
-        {#if model}<span class="mx-1">•</span>{/if}
-        Click stop button or press Escape to cancel
+        <span>Click stop button or press Escape to cancel</span>
       {/if}
     </span>
   </div>

@@ -24,6 +24,9 @@
   const sessionStarted = $derived(agentStore.sessionStarted);
   const currentModel = $derived(agentStore.currentModel);
   const currentProvider = $derived(agentStore.currentProvider);
+  const availableModels = $derived(agentStore.availableModels);
+  const isModelsLoading = $derived(agentStore.isModelsLoading);
+  const isSettingModel = $derived(agentStore.isSettingModel);
   const isStreaming = $derived(messagesStore.streamingMessageId !== null);
 
   // Scroll management
@@ -78,6 +81,14 @@
     agentStore.abort();
   }
 
+  async function onModelChange(provider: string, modelId: string): Promise<void> {
+    try {
+      await agentStore.setModel(provider, modelId);
+    } catch (error) {
+      messagesStore.addErrorMessage(error instanceof Error ? error.message : String(error));
+    }
+  }
+
   async function onSlashCommand(command: string, args: string, fullText: string): Promise<void> {
     const result = await handleSlashCommand(command, args, fullText);
 
@@ -100,6 +111,9 @@
     try {
       await agentStore.startSession();
       await loadMessages();
+      await agentStore.loadAvailableModels().catch((error) => {
+        console.warn('Failed to load available models:', error);
+      });
     } catch (error) {
       messagesStore.addErrorMessage(`Failed to start session: ${error}`);
     }
@@ -182,11 +196,15 @@
         onsubmit={onSubmit}
         oncancel={onCancel}
         onslashcommand={onSlashCommand}
+        onmodelchange={onModelChange}
         {isLoading}
         disabled={!sessionStarted}
-        placeholder={sessionStarted ? "What would you like to know? Try /new, /model, /help..." : "Initializing agent session..."}
+        placeholder={sessionStarted ? "What would you like to know? Try /new, /help..." : "Initializing agent session..."}
         model={currentModel}
         provider={currentProvider}
+        models={availableModels}
+        modelsLoading={isModelsLoading}
+        modelChanging={isSettingModel}
         autofocus={true}
       />
     </section>

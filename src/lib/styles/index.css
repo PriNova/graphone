@@ -90,7 +90,8 @@
 
 @layer base {
   :root {
-    color-scheme: dark light;
+    /* Force dark color-scheme for native form controls (select dropdowns, etc.) */
+    color-scheme: dark;
     
     /* Core colors - Light mode */
     --background: #fafaf8;
@@ -123,23 +124,23 @@
     --border: rgba(135, 139, 134, 0.6);
   }
 
-  /* Dark mode */
-  @variant dark {
-    :root {
-      --background: #0b0d0b;
-      --foreground: #f6fff5;
-      --border: rgba(135, 139, 134, 0.2);
-      --muted-foreground: rgba(246, 255, 245, 0.6);
-      --input-background: #0b0d0b;
-      --input-border: rgba(246, 255, 245, 0.15);
-      --card: rgba(246, 255, 245, 0.03);
-      --secondary: rgba(246, 255, 245, 0.07);
-      --accent: rgba(246, 255, 245, 0.07);
-    }
+  /* Dark mode - explicit selector for forced dark mode */
+  :root.dark,
+  html.dark {
+    --background: #0b0d0b;
+    --foreground: #f6fff5;
+    --border: rgba(135, 139, 134, 0.2);
+    --muted-foreground: rgba(246, 255, 245, 0.6);
+    --input-background: #0b0d0b;
+    --input-border: rgba(246, 255, 245, 0.15);
+    --card: rgba(246, 255, 245, 0.03);
+    --secondary: rgba(246, 255, 245, 0.07);
+    --accent: rgba(246, 255, 245, 0.07);
+  }
 
-    :root[data-desktop='true'] {
-      --border: rgba(135, 139, 134, 0.6);
-    }
+  :root.dark[data-desktop='true'],
+  html.dark[data-desktop='true'] {
+    --border: rgba(135, 139, 134, 0.6);
   }
 
   *,
@@ -179,5 +180,17 @@
   #app, #svelte {
     height: 100%;
     width: 100%;
+  }
+
+  /* Native select styling - override OS defaults for consistent dark mode */
+  select {
+    appearance: none;
+    -webkit-appearance: none;
+    -moz-appearance: none;
+    background-image: url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right 6px center;
+    background-size: 14px;
+    padding-right: 24px;
   }
 }
