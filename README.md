@@ -258,8 +258,9 @@ Convenience npm scripts for cross-platform builds:
 | `npm run build:linux` | Linux | Build AppImage/Deb packages |
 | `npm run build:windows` | Windows | Build NSIS installer (requires NSIS) |
 | `npm run build:windows:exe` | Windows | Build only .exe (no installer) |
+| `npm run build:windows:portable` | Windows | Build .exe + stage portable runtime folder (`src-tauri/target/x86_64-pc-windows-msvc/release/portable`) |
 | `npm run build:all` | Both | Build Linux + Windows packages |
-| `npm run run:windows` | Windows | Build (if needed) & launch Windows app from WSL2 |
+| `npm run run:windows` | Windows | Build (if needed), stage portable runtime, & launch Windows app from WSL2 |
 
 **Examples:**
 ```bash
@@ -274,6 +275,9 @@ npm run run:windows
 
 # Build only the Windows executable (fastest, no NSIS needed)
 npm run build:windows:exe
+
+# Build and stage a portable Windows runtime folder (copy this folder to Windows)
+npm run build:windows:portable
 ```
 
 ---

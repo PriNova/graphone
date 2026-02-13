@@ -15,8 +15,9 @@
 - `npm run build:linux` - Full Linux AppImage/deb build (includes type check)
 - `npm run build:windows` - Full Windows NSIS installer build (includes type check)
 - `npm run build:windows:exe` - Build Windows .exe only (no installer needed)
+- `npm run build:windows:portable` - Build Windows .exe + stage portable runtime folder with sidecar assets
 - `npm run build:all` - Build Linux + Windows
-- `npm run run:windows` - Build (if needed) & launch Windows app from WSL2
+- `npm run run:windows` - Build (if needed), stage portable runtime, and launch Windows app from WSL2
 
 ## Stack & Architecture
 - **Frontend**: Svelte 5 + TypeScript + Vite
@@ -40,7 +41,9 @@ graphone/
 ├── docs/
 │   ├── specs/            # wsl2-development-notes.md, project-findings-2026-02.md
 │   └── tasks/            # scaffolding-tasks.md (setup history)
-├── scripts/run-windows.sh # Launch Windows app from WSL2
+├── scripts/
+│   ├── run-windows.sh            # Launch Windows app from WSL2
+│   └── stage-windows-portable.sh # Stage portable Windows runtime folder
 └── package.json
 ```
 
