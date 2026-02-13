@@ -2,6 +2,18 @@ import type { AgentEvent } from '$lib/types/agent';
 import { messagesStore } from '$lib/stores/messages.svelte';
 import { agentStore } from '$lib/stores/agent.svelte';
 
+function extractAssistantErrorMessage(message: { [key: string]: unknown }): string | null {
+  if (typeof message.errorMessage === 'string' && message.errorMessage.trim().length > 0) {
+    return message.errorMessage.trim();
+  }
+
+  if (message.stopReason === 'error') {
+    return 'The model request failed. Check provider authentication and model settings.';
+  }
+
+  return null;
+}
+
 // Event handlers for agent events
 export function handleAgentStart(): void {
   agentStore.setLoading(true);
@@ -46,18 +58,22 @@ export function handleMessageUpdate(event: Extract<AgentEvent, { type: 'message_
 export function handleMessageEnd(event: Extract<AgentEvent, { type: 'message_end' }>): void {
   if (event.message.role === 'assistant') {
     const content = messagesStore.convertAssistantContent(event.message.content);
+    const errorMessage = extractAssistantErrorMessage(event.message);
+    const resolvedContent = content.length > 0
+      ? content
+      : errorMessage
+        ? [{ type: 'text' as const, text: `Error: ${errorMessage}` }]
+        : [];
 
     const streamingId = messagesStore.streamingMessageId;
     const hasStreamingMessage = !!streamingId && messagesStore.messages.some(m => m.id === streamingId);
 
-    if (hasStreamingMessage || content.length > 0) {
+    if (hasStreamingMessage || resolvedContent.length > 0) {
       if (!hasStreamingMessage) {
         messagesStore.createStreamingMessage();
       }
 
-      if (content.length > 0) {
-        messagesStore.updateStreamingMessage(content);
-      }
+      messagesStore.updateStreamingMessage(resolvedContent);
     }
   }
 
