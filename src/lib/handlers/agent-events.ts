@@ -25,18 +25,42 @@ export function handleMessageUpdate(event: Extract<AgentEvent, { type: 'message_
   const agentMessage = event.message;
   if (agentMessage.role !== 'assistant') return;
 
-  // Ensure we have a streaming message
-  let targetId = messagesStore.streamingMessageId;
-  if (!targetId || !messagesStore.messages.find(m => m.id === targetId)) {
-    targetId = messagesStore.createStreamingMessage();
+  const content = messagesStore.convertAssistantContent(agentMessage.content);
+
+  // Avoid creating empty assistant placeholders
+  const streamingId = messagesStore.streamingMessageId;
+  const hasStreamingMessage = !!streamingId && messagesStore.messages.some(m => m.id === streamingId);
+  if (!hasStreamingMessage && content.length === 0) {
+    return;
   }
 
-  // Convert and update content
-  const content = messagesStore.constructor.prototype.constructor.convertContentBlocks(agentMessage.content);
-  messagesStore.updateStreamingMessage(content);
+  if (!hasStreamingMessage) {
+    messagesStore.createStreamingMessage();
+  }
+
+  if (content.length > 0) {
+    messagesStore.updateStreamingMessage(content);
+  }
 }
 
-export function handleMessageEnd(): void {
+export function handleMessageEnd(event: Extract<AgentEvent, { type: 'message_end' }>): void {
+  if (event.message.role === 'assistant') {
+    const content = messagesStore.convertAssistantContent(event.message.content);
+
+    const streamingId = messagesStore.streamingMessageId;
+    const hasStreamingMessage = !!streamingId && messagesStore.messages.some(m => m.id === streamingId);
+
+    if (hasStreamingMessage || content.length > 0) {
+      if (!hasStreamingMessage) {
+        messagesStore.createStreamingMessage();
+      }
+
+      if (content.length > 0) {
+        messagesStore.updateStreamingMessage(content);
+      }
+    }
+  }
+
   messagesStore.finalizeStreamingMessage();
 }
 
@@ -68,7 +92,7 @@ export function handleAgentEvent(event: AgentEvent): void {
       break;
 
     case 'message_end':
-      handleMessageEnd();
+      handleMessageEnd(event);
       break;
 
     case 'turn_end':

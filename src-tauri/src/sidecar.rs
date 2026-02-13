@@ -80,9 +80,26 @@ impl EventHandler {
         let app_clone = app.clone();
 
         tokio::spawn(async move {
+            let mut stdout_buffer: Vec<u8> = Vec::new();
+            let mut stderr_buffer: Vec<u8> = Vec::new();
+
             while let Some(event) = event_rx.recv().await {
-                Self::handle_event(&app_clone, &state, event).await;
+                let should_continue = Self::handle_event(
+                    &app_clone,
+                    &state,
+                    event,
+                    &mut stdout_buffer,
+                    &mut stderr_buffer,
+                )
+                .await;
+
+                if !should_continue {
+                    break;
+                }
             }
+
+            Self::flush_stdout_buffer(&app_clone, &state, &mut stdout_buffer).await;
+            Self::flush_stderr_buffer(&mut stderr_buffer);
         });
     }
 
@@ -90,23 +107,28 @@ impl EventHandler {
         app: &AppHandle,
         state: &Arc<Mutex<SidecarState>>,
         event: CommandEvent,
+        stdout_buffer: &mut Vec<u8>,
+        stderr_buffer: &mut Vec<u8>,
     ) -> bool {
         match event {
-            CommandEvent::Stdout(line) => {
-                Self::handle_stdout(app, state, line).await;
+            CommandEvent::Stdout(chunk) => {
+                Self::handle_stdout(app, state, chunk, stdout_buffer).await;
                 true
             }
-            CommandEvent::Stderr(line) => {
-                let line = String::from_utf8_lossy(&line);
-                eprintln!("Sidecar stderr: {}", line);
+            CommandEvent::Stderr(chunk) => {
+                Self::handle_stderr(chunk, stderr_buffer);
                 true
             }
             CommandEvent::Terminated(payload) => {
+                Self::flush_stdout_buffer(app, state, stdout_buffer).await;
+                Self::flush_stderr_buffer(stderr_buffer);
                 eprintln!("Sidecar terminated with code: {:?}", payload.code);
                 let _ = app.emit("agent-terminated", payload.code);
                 false
             }
             CommandEvent::Error(e) => {
+                Self::flush_stdout_buffer(app, state, stdout_buffer).await;
+                Self::flush_stderr_buffer(stderr_buffer);
                 eprintln!("Sidecar error: {}", e);
                 let _ = app.emit("agent-error", e);
                 false
@@ -118,9 +140,22 @@ impl EventHandler {
     async fn handle_stdout(
         app: &AppHandle,
         state: &Arc<Mutex<SidecarState>>,
-        line: Vec<u8>,
+        chunk: Vec<u8>,
+        buffer: &mut Vec<u8>,
     ) {
-        let line = String::from_utf8_lossy(&line);
+        for line in Self::extract_lines(chunk, buffer) {
+            Self::handle_stdout_line(app, state, line).await;
+        }
+    }
+
+    async fn handle_stdout_line(
+        app: &AppHandle,
+        state: &Arc<Mutex<SidecarState>>,
+        line: String,
+    ) {
+        if line.trim().is_empty() {
+            return;
+        }
 
         if let Ok(json) = serde_json::from_str::<serde_json::Value>(&line) {
             if json.get("type").and_then(|t| t.as_str()) == Some("response") {
@@ -141,9 +176,68 @@ impl EventHandler {
             }
         }
 
-        if let Err(e) = app.emit("agent-event", line.to_string()) {
+        if let Err(e) = app.emit("agent-event", line.clone()) {
             eprintln!("Failed to emit agent event: {}", e);
         }
+    }
+
+    fn handle_stderr(chunk: Vec<u8>, buffer: &mut Vec<u8>) {
+        for line in Self::extract_lines(chunk, buffer) {
+            if !line.trim().is_empty() {
+                eprintln!("Sidecar stderr: {}", line);
+            }
+        }
+    }
+
+    async fn flush_stdout_buffer(
+        app: &AppHandle,
+        state: &Arc<Mutex<SidecarState>>,
+        buffer: &mut Vec<u8>,
+    ) {
+        if buffer.is_empty() {
+            return;
+        }
+
+        let remaining = std::mem::take(buffer);
+        let line = Self::decode_utf8_lossy(remaining);
+        Self::handle_stdout_line(app, state, line).await;
+    }
+
+    fn flush_stderr_buffer(buffer: &mut Vec<u8>) {
+        if buffer.is_empty() {
+            return;
+        }
+
+        let remaining = std::mem::take(buffer);
+        let line = Self::decode_utf8_lossy(remaining);
+        if !line.trim().is_empty() {
+            eprintln!("Sidecar stderr: {}", line);
+        }
+    }
+
+    fn extract_lines(chunk: Vec<u8>, buffer: &mut Vec<u8>) -> Vec<String> {
+        buffer.extend_from_slice(&chunk);
+
+        let mut lines = Vec::new();
+        while let Some(newline_index) = buffer.iter().position(|b| *b == b'\n') {
+            let mut line = buffer.drain(..=newline_index).collect::<Vec<u8>>();
+
+            if line.last() == Some(&b'\n') {
+                line.pop();
+            }
+            if line.last() == Some(&b'\r') {
+                line.pop();
+            }
+
+            lines.push(Self::decode_utf8_lossy(line));
+        }
+
+        lines
+    }
+
+    fn decode_utf8_lossy(bytes: Vec<u8>) -> String {
+        String::from_utf8(bytes)
+            .unwrap_or_else(|err| String::from_utf8_lossy(&err.into_bytes()).into_owned())
     }
 }
 

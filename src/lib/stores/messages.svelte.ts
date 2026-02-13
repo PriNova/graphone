@@ -1,4 +1,4 @@
-import type { Message, ContentBlock, AgentEvent } from '$lib/types/agent';
+import type { Message, ContentBlock } from '$lib/types/agent';
 
 // Messages store manages message state and scroll behavior
 class MessagesStore {
@@ -40,19 +40,19 @@ class MessagesStore {
 
     for (const msg of agentMessages) {
       const timestamp = msg.timestamp ? new Date(msg.timestamp) : new Date();
-      
+
       if (msg.role === 'user') {
         loadedMessages.push({
           id: crypto.randomUUID(),
           type: 'user',
-          content: typeof msg.content === 'string' ? msg.content : JSON.stringify(msg.content),
+          content: this.convertUserContent(msg.content),
           timestamp
         });
       } else if (msg.role === 'assistant') {
         loadedMessages.push({
           id: crypto.randomUUID(),
           type: 'assistant',
-          content: [],
+          content: this.convertAssistantContent(msg.content),
           timestamp,
           isStreaming: false
         });
@@ -64,22 +64,10 @@ class MessagesStore {
 
   // Add user message from agent event
   addUserMessage(msg: { content?: unknown; timestamp?: number }): void {
-    const content = typeof msg.content === 'string'
-      ? msg.content
-      : Array.isArray(msg.content)
-        ? msg.content.map((c: unknown) => {
-            if (typeof c === 'object' && c !== null && 'type' in c) {
-              const block = c as { type: string; text?: string };
-              if (block.type === 'text') return block.text || '';
-            }
-            return '';
-          }).join('')
-        : msg.content !== undefined ? JSON.stringify(msg.content) : '';
-
     this.addMessage({
       id: crypto.randomUUID(),
       type: 'user',
-      content,
+      content: this.convertUserContent(msg.content),
       timestamp: msg.timestamp ? new Date(msg.timestamp) : new Date()
     });
   }
@@ -144,25 +132,81 @@ class MessagesStore {
     });
   }
 
+  convertAssistantContent(content: unknown): ContentBlock[] {
+    return MessagesStore.convertUnknownAssistantContent(content);
+  }
+
+  convertUserContent(content: unknown): string {
+    return MessagesStore.convertUnknownUserContent(content);
+  }
+
+  static convertUnknownAssistantContent(content: unknown): ContentBlock[] {
+    if (typeof content === 'string') {
+      return content.length > 0 ? [{ type: 'text', text: content }] : [];
+    }
+
+    if (Array.isArray(content)) {
+      return MessagesStore.convertContentBlocks(
+        content.filter((block): block is { type: string; text?: string; thinking?: string; id?: string; name?: string; arguments?: Record<string, unknown> } =>
+          typeof block === 'object' && block !== null && 'type' in block && typeof (block as { type?: unknown }).type === 'string'
+        )
+      );
+    }
+
+    return [];
+  }
+
+  static convertUnknownUserContent(content: unknown): string {
+    if (typeof content === 'string') {
+      return content;
+    }
+
+    if (Array.isArray(content)) {
+      return content
+        .map((block) => {
+          if (typeof block === 'string') return block;
+          if (typeof block === 'object' && block !== null && 'type' in block) {
+            const typed = block as { type: string; text?: string };
+            if (typed.type === 'text') {
+              return typed.text ?? '';
+            }
+          }
+          return '';
+        })
+        .join('');
+    }
+
+    if (content === undefined || content === null) {
+      return '';
+    }
+
+    return JSON.stringify(content);
+  }
+
   // Convert agent content blocks to our format
   static convertContentBlocks(agentContent: Array<{ type: string; text?: string; thinking?: string; id?: string; name?: string; arguments?: Record<string, unknown> }>): ContentBlock[] {
-    return agentContent.map(block => {
+    const converted: ContentBlock[] = [];
+
+    for (const block of agentContent) {
       if (block.type === 'text') {
-        return { type: 'text', text: block.text ?? '' };
+        converted.push({ type: 'text', text: block.text ?? '' });
+        continue;
       }
       if (block.type === 'thinking') {
-        return { type: 'thinking', thinking: block.thinking ?? '' };
+        converted.push({ type: 'thinking', thinking: block.thinking ?? '' });
+        continue;
       }
       if (block.type === 'toolCall') {
-        return {
+        converted.push({
           type: 'toolCall',
           id: block.id ?? '',
           name: block.name ?? '',
           arguments: block.arguments ?? {}
-        };
+        });
       }
-      return { type: 'text', text: '' };
-    });
+    }
+
+    return converted;
   }
 }
 

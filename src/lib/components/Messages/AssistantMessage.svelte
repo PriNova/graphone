@@ -48,7 +48,7 @@
             </svg>
             <span>Thinking</span>
           </div>
-          <pre class="p-3 font-mono text-[0.8125rem] leading-normal text-muted-foreground whitespace-pre-wrap break-words m-0">{block.thinking}</pre>
+          <pre class="p-3 text-[0.8125rem] leading-normal text-muted-foreground whitespace-pre-wrap break-words m-0">{block.thinking}</pre>
         </div>
       {:else if isToolCall(block)}
         <div class="mb-3 bg-foreground/[0.03] dark:bg-f6fff5/[0.03] border border-border rounded overflow-hidden">
