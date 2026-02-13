@@ -106,3 +106,19 @@ pub async fn get_messages(
 
     RpcClient::send_command_with_response(state.inner(), cmd, id, 5).await
 }
+
+/// Get current session state (including selected model/provider)
+#[tauri::command]
+pub async fn get_state(
+    state: State<'_, Arc<Mutex<SidecarState>>>,
+) -> Result<RpcResponse, String> {
+    let id = crypto_random_uuid();
+
+    let cmd = RpcCommand {
+        id: Some(id.clone()),
+        r#type: "get_state".to_string(),
+        message: None,
+    };
+
+    RpcClient::send_command_with_response(state.inner(), cmd, id, 5).await
+}

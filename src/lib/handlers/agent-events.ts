@@ -10,6 +10,9 @@ export function handleAgentStart(): void {
 export function handleAgentEnd(): void {
   agentStore.setLoading(false);
   messagesStore.finalizeStreamingMessage();
+  agentStore.refreshState().catch((error) => {
+    console.warn('Failed to refresh agent state:', error);
+  });
 }
 
 export function handleMessageStart(event: Extract<AgentEvent, { type: 'message_start' }>): void {

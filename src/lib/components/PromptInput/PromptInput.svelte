@@ -12,6 +12,8 @@
     disabled?: boolean;
     autofocus?: boolean;
     isLoading?: boolean;
+    model?: string;
+    provider?: string;
   }
 
   let {
@@ -24,6 +26,8 @@
     disabled = false,
     autofocus = false,
     isLoading = false,
+    model = '',
+    provider = '',
   }: Props = $props();
 
   // Internal state for the input value
@@ -286,11 +290,13 @@
         <span class="text-muted-foreground/50">Type / for commands</span>
       {/if}
     </span>
-    <span class="text-xs text-muted-foreground/70">
+    <span class="text-xs text-muted-foreground/70 text-right">
+      {#if model}
+        <span class="text-muted-foreground/60">Model:</span> {model}{#if provider} [{provider}]{/if}
+      {/if}
       {#if isLoading}
+        {#if model}<span class="mx-1">•</span>{/if}
         Click stop button or press Escape to cancel
-      {:else}
-        Press Enter to submit, Shift+Enter for new line
       {/if}
     </span>
   </div>

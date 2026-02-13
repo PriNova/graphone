@@ -22,6 +22,8 @@
   const messages = $derived(messagesStore.messages);
   const isLoading = $derived(agentStore.isLoading);
   const sessionStarted = $derived(agentStore.sessionStarted);
+  const currentModel = $derived(agentStore.currentModel);
+  const currentProvider = $derived(agentStore.currentProvider);
   const isStreaming = $derived(messagesStore.streamingMessageId !== null);
 
   // Scroll management
@@ -183,6 +185,8 @@
         {isLoading}
         disabled={!sessionStarted}
         placeholder={sessionStarted ? "What would you like to know? Try /new, /model, /help..." : "Initializing agent session..."}
+        model={currentModel}
+        provider={currentProvider}
         autofocus={true}
       />
     </section>
