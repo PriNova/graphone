@@ -2,6 +2,7 @@ use std::sync::Arc;
 use tauri::{AppHandle, State};
 use tokio::sync::Mutex;
 
+use crate::logger;
 use crate::sidecar::{EventHandler, RpcClient, SidecarManager};
 use crate::state::SidecarState;
 use crate::types::{RpcCommand, RpcResponse};
@@ -18,16 +19,15 @@ pub async fn start_agent_session(
     let mut state_guard = state.lock().await;
 
     if state_guard.child.is_some() {
-        eprintln!("Agent session already running, reusing existing session");
+        logger::log("Agent session already running, reusing existing session");
         return Ok(());
     }
 
-    let sidecar_command =
-        SidecarManager::build_sidecar_command(&app, provider, model)?;
+    let sidecar_command = SidecarManager::build_sidecar_command(&app, provider, model)?;
 
     let (event_rx, child) = SidecarManager::spawn_sidecar(sidecar_command).await?;
 
-    eprintln!("Sidecar spawned successfully");
+    logger::log("Sidecar spawned successfully");
 
     let (response_tx, response_rx) = tokio::sync::mpsc::channel::<(String, RpcResponse)>(100);
     state_guard.response_tx = Some(response_tx);
@@ -63,9 +63,7 @@ pub async fn send_prompt(
 
 /// Abort the current agent operation
 #[tauri::command]
-pub async fn abort_agent(
-    state: State<'_, Arc<Mutex<SidecarState>>>,
-) -> Result<(), String> {
+pub async fn abort_agent(state: State<'_, Arc<Mutex<SidecarState>>>) -> Result<(), String> {
     let cmd = RpcCommand {
         id: Some(crypto_random_uuid()),
         r#type: "abort".to_string(),
@@ -109,9 +107,7 @@ pub async fn get_messages(
 
 /// Get current session state (including selected model/provider)
 #[tauri::command]
-pub async fn get_state(
-    state: State<'_, Arc<Mutex<SidecarState>>>,
-) -> Result<RpcResponse, String> {
+pub async fn get_state(state: State<'_, Arc<Mutex<SidecarState>>>) -> Result<RpcResponse, String> {
     let id = crypto_random_uuid();
 
     let cmd = RpcCommand {

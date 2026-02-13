@@ -14,6 +14,8 @@
     "dev:windows": "bash -c 'source ~/.cargo/env && cargo tauri dev --target x86_64-pc-windows-msvc --runner cargo-xwin'",
     "build:windows:exe": "bash -c 'source ~/.cargo/env && cargo tauri build --target x86_64-pc-windows-msvc --runner cargo-xwin --no-bundle'",
     "build:windows:portable": "npm run build:windows:exe && bash scripts/stage-windows-portable.sh",
+    "build:windows:debug:exe": "bash -c 'source ~/.cargo/env && cargo tauri build --debug --target x86_64-pc-windows-msvc --runner cargo-xwin --no-bundle'",
+    "build:windows:debug:portable": "npm run build:windows:debug:exe && bash scripts/stage-windows-portable.sh x86_64-pc-windows-msvc debug",
     "build:linux": "tauri build",
     "build:windows": "bash -c 'source ~/.cargo/env && cargo tauri build --target x86_64-pc-windows-msvc --runner cargo-xwin'",
     "build:all": "npm run build:linux && npm run build:windows",

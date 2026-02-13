@@ -4,6 +4,7 @@ use tauri_plugin_shell::process::CommandEvent;
 use tauri_plugin_shell::ShellExt;
 use tokio::sync::Mutex;
 
+use crate::logger;
 use crate::state::SidecarState;
 use crate::types::{RpcCommand, RpcResponse};
 
@@ -32,9 +33,10 @@ impl SidecarManager {
             args.push(model);
         }
 
-        eprintln!("Sidecar args: {:?}", args);
+        logger::log(format!("Sidecar args: {:?}", args));
 
-        Ok(app.shell()
+        Ok(app
+            .shell()
             .sidecar("pi-agent")
             .map_err(|e| format!("Failed to create sidecar: {}", e))?
             .args(args))
@@ -122,14 +124,14 @@ impl EventHandler {
             CommandEvent::Terminated(payload) => {
                 Self::flush_stdout_buffer(app, state, stdout_buffer).await;
                 Self::flush_stderr_buffer(stderr_buffer);
-                eprintln!("Sidecar terminated with code: {:?}", payload.code);
+                logger::log(format!("Sidecar terminated with code: {:?}", payload.code));
                 let _ = app.emit("agent-terminated", payload.code);
                 false
             }
             CommandEvent::Error(e) => {
                 Self::flush_stdout_buffer(app, state, stdout_buffer).await;
                 Self::flush_stderr_buffer(stderr_buffer);
-                eprintln!("Sidecar error: {}", e);
+                logger::log(format!("Sidecar error: {}", e));
                 let _ = app.emit("agent-error", e);
                 false
             }
@@ -148,11 +150,7 @@ impl EventHandler {
         }
     }
 
-    async fn handle_stdout_line(
-        app: &AppHandle,
-        state: &Arc<Mutex<SidecarState>>,
-        line: String,
-    ) {
+    async fn handle_stdout_line(app: &AppHandle, state: &Arc<Mutex<SidecarState>>, line: String) {
         if line.trim().is_empty() {
             return;
         }
@@ -172,19 +170,19 @@ impl EventHandler {
 
             let should_log = json.get("type").and_then(|t| t.as_str()) != Some("message_update");
             if should_log {
-                eprintln!("Sidecar stdout: {}", line);
+                logger::log(format!("Sidecar stdout: {}", line));
             }
         }
 
         if let Err(e) = app.emit("agent-event", line.clone()) {
-            eprintln!("Failed to emit agent event: {}", e);
+            logger::log(format!("Failed to emit agent event: {}", e));
         }
     }
 
     fn handle_stderr(chunk: Vec<u8>, buffer: &mut Vec<u8>) {
         for line in Self::extract_lines(chunk, buffer) {
             if !line.trim().is_empty() {
-                eprintln!("Sidecar stderr: {}", line);
+                logger::log(format!("Sidecar stderr: {}", line));
             }
         }
     }
@@ -211,7 +209,7 @@ impl EventHandler {
         let remaining = std::mem::take(buffer);
         let line = Self::decode_utf8_lossy(remaining);
         if !line.trim().is_empty() {
-            eprintln!("Sidecar stderr: {}", line);
+            logger::log(format!("Sidecar stderr: {}", line));
         }
     }
 
@@ -308,13 +306,10 @@ impl RpcClient {
 
         drop(child_guard);
 
-        let response = tokio::time::timeout(
-            std::time::Duration::from_secs(timeout_secs),
-            rx,
-        )
-        .await
-        .map_err(|_| "Timeout waiting for response")?
-        .map_err(|_| "Response channel closed")?;
+        let response = tokio::time::timeout(std::time::Duration::from_secs(timeout_secs), rx)
+            .await
+            .map_err(|_| "Timeout waiting for response")?
+            .map_err(|_| "Response channel closed")?;
 
         Ok(response)
     }

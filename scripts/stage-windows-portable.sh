@@ -1,11 +1,12 @@
 #!/bin/bash
 # Stage a portable Windows runtime folder with graphone + pi-agent sidecar assets.
-# Usage: bash scripts/stage-windows-portable.sh [target-triple]
+# Usage: bash scripts/stage-windows-portable.sh [target-triple] [profile]
 
 set -euo pipefail
 
 TARGET_TRIPLE="${1:-x86_64-pc-windows-msvc}"
-BUILD_DIR="src-tauri/target/${TARGET_TRIPLE}/release"
+PROFILE="${2:-release}"
+BUILD_DIR="src-tauri/target/${TARGET_TRIPLE}/${PROFILE}"
 BINARIES_DIR="src-tauri/binaries"
 PORTABLE_DIR="${BUILD_DIR}/portable"
 
@@ -19,6 +20,12 @@ GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 NC='\033[0m'
 
+if [ "$PROFILE" != "release" ] && [ "$PROFILE" != "debug" ]; then
+  echo -e "${RED}Invalid profile: ${PROFILE}${NC}"
+  echo "Profile must be one of: release, debug"
+  exit 1
+fi
+
 copy_if_exists() {
   local src="$1"
   local dst="$2"
@@ -31,17 +38,26 @@ echo "=========================================="
 echo "  Stage Windows Portable Runtime"
 echo "=========================================="
 echo "Target: ${TARGET_TRIPLE}"
+echo "Profile: ${PROFILE}"
 echo ""
 
 if [ ! -f "$GRAPHONE_EXE" ]; then
   echo -e "${RED}Missing ${GRAPHONE_EXE}${NC}"
-  echo "Run: npm run build:windows:exe"
+  if [ "$PROFILE" = "debug" ]; then
+    echo "Run: npm run build:windows:debug:exe"
+  else
+    echo "Run: npm run build:windows:exe"
+  fi
   exit 1
 fi
 
 if [ ! -f "${BINARIES_DIR}/package.json" ]; then
   echo -e "${RED}Missing ${BINARIES_DIR}/package.json${NC}"
-  echo "The sidecar runtime assets were not staged. Rebuild with: npm run build:windows:exe"
+  if [ "$PROFILE" = "debug" ]; then
+    echo "The sidecar runtime assets were not staged. Rebuild with: npm run build:windows:debug:exe"
+  else
+    echo "The sidecar runtime assets were not staged. Rebuild with: npm run build:windows:exe"
+  fi
   exit 1
 fi
 

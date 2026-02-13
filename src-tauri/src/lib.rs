@@ -1,4 +1,5 @@
 mod commands;
+mod logger;
 mod sidecar;
 mod state;
 mod types;
@@ -11,6 +12,13 @@ use state::SidecarState;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    logger::init();
+    logger::log("Starting graphone");
+
+    std::panic::set_hook(Box::new(|panic_info| {
+        crate::logger::log(format!("panic: {}", panic_info));
+    }));
+
     let sidecar_state = Arc::new(Mutex::new(SidecarState::new()));
 
     tauri::Builder::default()
