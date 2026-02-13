@@ -202,6 +202,7 @@ fn resolve_compiled_binary_path(output_stem: &Path, target_os: &str) -> PathBuf 
 fn compile_sidecar_binary(
     source: &SidecarSource,
     target_os: &str,
+    target_triple: &str,
     is_cross_compiling_windows: bool,
     compile_dir: &Path,
 ) -> PathBuf {
@@ -209,10 +210,33 @@ fn compile_sidecar_binary(
 
     let output_stem = compile_dir.join("pi");
 
-    let mut args = vec!["build".to_string(), "--compile".to_string()];
+    let mut args = vec![
+        "build".to_string(),
+        "--compile".to_string(),
+        "--production".to_string(),
+        "--minify".to_string(),
+        "--define".to_string(),
+        "DEBUG=false".to_string(),
+        "--no-compile-autoload-dotenv".to_string(),
+        "--no-compile-autoload-bunfig".to_string(),
+    ];
 
-    if is_cross_compiling_windows {
-        args.push("--target=bun-windows-x64".to_string());
+    let explicit_target = env::var("GRAPHONE_PI_AGENT_BUN_TARGET").ok();
+
+    let compile_target = explicit_target.or_else(|| {
+        if target_triple == "x86_64-unknown-linux-gnu" {
+            Some("bun-linux-x64-baseline".to_string())
+        } else if target_triple == "x86_64-pc-windows-msvc" {
+            Some("bun-windows-x64-baseline".to_string())
+        } else if is_cross_compiling_windows {
+            Some("bun-windows-x64".to_string())
+        } else {
+            None
+        }
+    });
+
+    if let Some(target) = compile_target {
+        args.push(format!("--target={}", target));
     }
 
     args.push("./dist/cli.js".to_string());
@@ -447,7 +471,7 @@ fn build_sidecar() {
     let is_cross_compiling_windows = target_os == "windows" && env::consts::OS != "windows";
 
     if is_cross_compiling_windows {
-        println!("cargo:warning=Cross-compiling sidecar for Windows with --target=bun-windows-x64");
+        println!("cargo:warning=Cross-compiling sidecar for Windows with explicit Bun target");
     }
 
     let compile_dir = manifest_dir
@@ -458,6 +482,7 @@ fn build_sidecar() {
     let source_binary = compile_sidecar_binary(
         &source,
         &target_os,
+        &target_triple,
         is_cross_compiling_windows,
         &compile_dir,
     );
