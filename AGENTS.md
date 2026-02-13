@@ -2,7 +2,7 @@
 
 ## Agent Workflow Guidelines
 - **Check local code first** - Before using GitHub tools (`read_github`, `search_github`, etc.), always explore the local codebase using standard file tools (`read`, `bash` with `find`/`grep`, etc.)
-- **Check pi-mono first for feature implementations** - Since graphone is a visual wrapper around pi-mono, always look up code implementations in the local `../pi-mono` repository before implementing new features. Many features may already be implemented in pi-mono and can be mimicked or adapted for the desktop UI
+- **Check pi-mono first for feature implementations** - Since graphone is a visual wrapper around pi-mono, look up implementations in local `../pi-mono` first (when available). Many features already exist there and can be mimicked or adapted for desktop UI
 - Use GitHub tools only when you need to reference external repositories or when explicitly asked about remote code
 
 ## Build Commands
@@ -18,13 +18,14 @@
 - `npm run build:windows:portable` - Build Windows .exe + stage portable runtime folder with sidecar assets
 - `npm run build:all` - Build Linux + Windows
 - `npm run run:windows` - Build (if needed), stage portable runtime, and launch Windows app from WSL2
+- `GRAPHONE_PI_AGENT_SOURCE=local npm run build:linux` - Build using local `../pi-mono` sidecar source
 
 ## Stack & Architecture
 - **Frontend**: Svelte 5 + TypeScript + Vite
 - **Backend**: Rust + Tauri 2.0
-- **Sidecar**: pi-mono (TypeScript/Node.js, built with bun)
+- **Sidecar**: `@mariozechner/pi-coding-agent` (npm dependency, compiled with bun)
 - **Pattern**: Desktop uses sidecar (`pi --mode rpc` subprocess via shell plugin)
-- **Reference**: Local pi-mono at `../pi-mono` (relative to this project)
+- **Reference**: Optional local pi-mono override at `../pi-mono` via `GRAPHONE_PI_AGENT_SOURCE=local`
 
 ## Project Structure
 ```
@@ -35,7 +36,7 @@ graphone/
 │   ├── binaries/          # Sidecar binaries (auto-populated by build.rs)
 │   ├── capabilities/      # Tauri permissions (desktop.json, mobile.json)
 │   ├── .cargo/config.toml # lld linker settings per-target
-│   ├── build.rs           # Auto-builds pi-mono sidecar with bun
+│   ├── build.rs           # Auto-builds pi-agent sidecar with bun (npm first)
 │   ├── Cargo.toml
 │   └── tauri.conf.json    # externalBin: ["binaries/pi-agent"]
 ├── docs/
@@ -59,7 +60,7 @@ graphone/
 |-----------|---------|--------|
 | Node.js | v22.21.0 | ✅ |
 | npm | 10.9.4 | ✅ |
-| bun | 1.x | ✅ **Required for pi-mono build** |
+| bun | 1.x | ✅ **Required for sidecar compilation** |
 | Rust | 1.93.0 | ✅ |
 | Tauri CLI | 2.10.0 | ✅ |
 | cargo-xwin | Latest | ✅ Windows cross-compile |
@@ -90,10 +91,12 @@ graphone/
 - **TaskDialogIndirect issue RESOLVED** - Windows manifest embedded via Tauri's `WindowsAttributes.app_manifest()`
 
 ### Sidecar Build (Automatic)
-- pi-mono is built automatically during Tauri builds via `src-tauri/build.rs`
+- Sidecar is built automatically during Tauri/Cargo builds via `src-tauri/build.rs`
+- Default source: `node_modules/@mariozechner/pi-coding-agent` (pinned npm dependency)
+- Optional local source: `GRAPHONE_PI_AGENT_SOURCE=local` (uses `../pi-mono/packages/coding-agent`)
 - Requires **bun**: `curl -fsSL https://bun.sh/install | bash`
 - Binary naming: `pi-agent-<target-triple>` (with `.exe` for Windows)
-- bun compiles TypeScript to standalone binary (not cargo/Rust)
+- bun compiles `dist/cli.js` to a standalone binary (not cargo/Rust)
 
 ### Linker Configuration (.cargo/config.toml)
 - **Linux**: `lld` via `clang -fuse-ld=lld` (2-10x faster than system linker)
@@ -104,6 +107,7 @@ graphone/
 | Issue | Solution |
 |-------|----------|
 | `bun: command not found` | `export PATH="$HOME/.bun/bin:$PATH"` |
+| `pi-coding-agent` missing in `node_modules` | Run `npm install` in project root |
 | `makensis.exe: No such file` | `sudo apt install nsis` or use `build:windows:exe` |
 | `shell32.lib` / `kernel32.lib` not found | Use `npm run build:windows` (handles cargo-xwin) |
 | Windows app won't open | Install WebView2 Runtime on Windows |

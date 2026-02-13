@@ -38,12 +38,16 @@ Frontend (Svelte) ←→ Tauri Commands ←→ Rust Backend ←→ pi sidecar (b
                                                    stdin/stdout JSON-RPC
 ```
 
-The pi-mono agent is located at `../pi-mono` (relative to this project) and is automatically built during the Tauri build process via `src-tauri/build.rs`.
+The pi-coding-agent sidecar is built automatically during Tauri builds via `src-tauri/build.rs`.
+
+By default, Graphone compiles the CLI from the pinned npm dependency (`node_modules/@mariozechner/pi-coding-agent`).
+For local pi-mono development, set `GRAPHONE_PI_AGENT_SOURCE=local` to use `../pi-mono/packages/coding-agent` instead.
 
 **Build Process:**
-1. pi-mono source (TypeScript) is compiled using `bun build --compile`
-2. The resulting binary is copied to `src-tauri/binaries/`
-3. Tauri bundles the binary as a sidecar for distribution
+1. Resolve sidecar source (`npm` by default, optional `local` override)
+2. Compile `dist/cli.js` using `bun build --compile`
+3. Copy binary + runtime assets to `src-tauri/binaries/`
+4. Tauri bundles the binary as a sidecar for distribution
 
 ---
 
@@ -53,7 +57,7 @@ The pi-mono agent is located at `../pi-mono` (relative to this project) and is a
 
 - **OS**: Linux (development), Windows 11 + WSL2, macOS
 - **Node.js**: 20+ (LTS recommended)
-- **bun**: 1.0+ (Required for building pi-mono sidecar)
+- **bun**: 1.0+ (Required for sidecar compilation)
 - **Rust**: Latest stable (1.84+)
 
 ### Platform-Specific
@@ -101,7 +105,7 @@ npm run build:windows
 ### Required Tools
 
 ```bash
-# Install bun (required for pi-mono sidecar)
+# Install bun (required for sidecar compilation)
 curl -fsSL https://bun.sh/install | bash
 
 # Verify bun installation
@@ -117,9 +121,6 @@ bun --version  # Should show 1.0+
 **Repository Structure:**
 ```
 projects/
-├── pi-mono/          # Clone this first (../pi-mono from graphone)
-│   └── packages/
-│       └── coding-agent/
 └── graphone/         # This repository
 ```
 
@@ -131,18 +132,16 @@ cd graphone
 npm install
 ```
 
-### 2. Build pi-mono Sidecar (Automatic)
+### 2. Build Sidecar (Automatic)
 
-The pi-mono sidecar is built automatically when you run Tauri commands. The build script (`src-tauri/build.rs`) handles:
-- Running `npm install` in pi-mono if needed
-- Building the binary with `bun build --compile`
-- Copying to the correct location for Tauri bundling
+The sidecar is built automatically when you run Tauri commands. The build script (`src-tauri/build.rs`) handles:
+- Resolving the source package (`@mariozechner/pi-coding-agent` from `node_modules` by default)
+- Compiling `dist/cli.js` with `bun build --compile`
+- Copying binary + runtime assets to the Tauri binaries directory
 
-**Manual build (if needed):**
+**Optional local override (for pi-mono development):**
 ```bash
-cd ../pi-mono/packages/coding-agent
-npm install
-bun build --compile ./dist/cli.js --outfile dist/pi
+GRAPHONE_PI_AGENT_SOURCE=local npm run build:linux
 ```
 
 ### 3. Run Development Server
@@ -200,7 +199,7 @@ graphone/
 │   │   ├── default.json      # Base capabilities
 │   │   ├── desktop.json      # Desktop-specific (shell plugin)
 │   │   └── mobile.json       # Mobile-specific (HTTP plugin)
-│   ├── build.rs              # Build script (builds pi-mono sidecar)
+│   ├── build.rs              # Build script (builds pi-agent sidecar)
 │   ├── Cargo.toml            # Rust dependencies
 │   └── tauri.conf.json       # Tauri configuration
 ├── management/
@@ -227,11 +226,12 @@ This project is developed in **WSL2 on Windows 11**. See [`management/specs/wsl2
 The sidecar binary is built automatically via `src-tauri/build.rs`:
 
 1. **Dependency Check**: Verifies bun is installed
-2. **npm install**: Runs in pi-mono if `node_modules` is missing
-3. **Compile**: Runs `npm run build:binary` in pi-mono
-   - This uses `bun build --compile` to create a standalone binary
-4. **Copy**: Places the binary in `target/<profile>/binaries/` with the correct naming convention
-5. **Permissions**: Sets executable permissions on Unix systems
+2. **Source Resolve**: Uses npm package by default (`node_modules/@mariozechner/pi-coding-agent`)
+   - Optional local override: `GRAPHONE_PI_AGENT_SOURCE=local`
+3. **Compile**: Runs `bun build --compile ./dist/cli.js`
+   - Uses `--target=bun-windows-x64` when cross-compiling Windows from Linux
+4. **Copy**: Places the binary in `src-tauri/binaries/` with Tauri sidecar naming
+5. **Assets**: Copies runtime assets (`package.json`, docs/examples, theme, export-html, `photon_rs_bg.wasm`)
 
 **Environment Variables:**
 - `CARGO_MANIFEST_DIR`: Used to locate the project root
@@ -363,12 +363,14 @@ export PATH="$HOME/.bun/bin:$PATH"
 ### Sidecar build fails
 
 ```bash
-# Check pi-mono exists at correct location
-ls ../pi-mono/packages/coding-agent
+# Reinstall dependencies (ensures npm sidecar package is present)
+npm install
 
-# Manual build for debugging
-cd ../pi-mono/packages/coding-agent
-npm run build:binary
+# Verify package exists
+ls node_modules/@mariozechner/pi-coding-agent/dist/cli.js
+
+# Optional: force local pi-mono source
+GRAPHONE_PI_AGENT_SOURCE=local npm run build:linux
 ```
 
 ### Binary not found during Tauri build
@@ -474,10 +476,11 @@ If you get "Windows cannot find..." errors when running `npm run run:windows`:
 
 ## Contributing
 
-This project uses the local pi-mono repository at `../pi-mono` (relative to this project). When making changes:
+By default, this project builds the sidecar from the pinned npm package.
 
-1. pi-mono changes: Edit in `../pi-mono`, the build script will pick them up
-2. The build script automatically rebuilds pi-mono when `src/` or `package.json` changes
+For local pi-mono development:
+1. Clone `../pi-mono` next to graphone
+2. Set `GRAPHONE_PI_AGENT_SOURCE=local`
 3. Test changes with `cargo build` or `npm run tauri dev`
 
 ---

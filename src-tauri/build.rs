@@ -1,6 +1,6 @@
 use std::env;
 use std::fs;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::process::Command;
 
 fn copy_dir_all(src: impl AsRef<Path>, dst: impl AsRef<Path>) -> std::io::Result<()> {
@@ -17,160 +17,470 @@ fn copy_dir_all(src: impl AsRef<Path>, dst: impl AsRef<Path>) -> std::io::Result
     Ok(())
 }
 
+#[derive(Debug, Clone, Copy)]
+enum SidecarSourceKind {
+    NpmDependency,
+    LocalPiMono,
+}
+
+#[derive(Debug)]
+struct SidecarSource {
+    kind: SidecarSourceKind,
+    package_root: PathBuf,
+}
+
+impl SidecarSource {
+    fn label(&self) -> &'static str {
+        match self.kind {
+            SidecarSourceKind::NpmDependency => "npm dependency",
+            SidecarSourceKind::LocalPiMono => "local pi-mono",
+        }
+    }
+}
+
+fn run_command(command: &str, args: &[String], cwd: &Path, step: &str) {
+    let status = Command::new(command)
+        .args(args)
+        .current_dir(cwd)
+        .status()
+        .unwrap_or_else(|error| {
+            panic!(
+                "Failed to {}: {} {:?} (cwd: {})\nError: {}",
+                step,
+                command,
+                args,
+                cwd.display(),
+                error
+            )
+        });
+
+    if !status.success() {
+        panic!(
+            "Command failed while {}: {} {:?} (cwd: {})",
+            step,
+            command,
+            args,
+            cwd.display()
+        );
+    }
+}
+
+fn ensure_bun_installed() {
+    let bun_check = Command::new("bun").arg("--version").status();
+
+    if bun_check.is_err() || !bun_check.unwrap().success() {
+        panic!("bun is not installed. Please install bun: https://bun.sh/docs/installation");
+    }
+}
+
+fn detect_sidecar_source(local_path: &Path, npm_path: &Path) -> SidecarSource {
+    let local_exists = local_path.exists();
+    let npm_exists = npm_path.exists();
+
+    let requested_source = env::var("GRAPHONE_PI_AGENT_SOURCE").unwrap_or_else(|_| "auto".to_string());
+
+    match requested_source.as_str() {
+        "npm" => {
+            if !npm_exists {
+                panic!(
+                    "GRAPHONE_PI_AGENT_SOURCE=npm, but package not found at {}. Run 'npm install'.",
+                    npm_path.display()
+                );
+            }
+            SidecarSource {
+                kind: SidecarSourceKind::NpmDependency,
+                package_root: npm_path.to_path_buf(),
+            }
+        }
+        "local" => {
+            if !local_exists {
+                panic!(
+                    "GRAPHONE_PI_AGENT_SOURCE=local, but pi-mono not found at {}.",
+                    local_path.display()
+                );
+            }
+            SidecarSource {
+                kind: SidecarSourceKind::LocalPiMono,
+                package_root: local_path.to_path_buf(),
+            }
+        }
+        "auto" => {
+            if npm_exists {
+                SidecarSource {
+                    kind: SidecarSourceKind::NpmDependency,
+                    package_root: npm_path.to_path_buf(),
+                }
+            } else if local_exists {
+                SidecarSource {
+                    kind: SidecarSourceKind::LocalPiMono,
+                    package_root: local_path.to_path_buf(),
+                }
+            } else {
+                panic!(
+                    "Could not find pi-coding-agent source.\nChecked npm path: {}\nChecked local path: {}\n\nEither run 'npm install' (recommended) or clone pi-mono next to graphone.",
+                    npm_path.display(),
+                    local_path.display()
+                );
+            }
+        }
+        other => {
+            panic!(
+                "Invalid GRAPHONE_PI_AGENT_SOURCE='{}'. Expected one of: auto, npm, local",
+                other
+            );
+        }
+    }
+}
+
+fn ensure_source_is_ready(source: &SidecarSource) {
+    let dist_cli = source.package_root.join("dist").join("cli.js");
+
+    match source.kind {
+        SidecarSourceKind::NpmDependency => {
+            if !dist_cli.exists() {
+                panic!(
+                    "Expected dist/cli.js in npm package at {}. Run 'npm install' again.",
+                    dist_cli.display()
+                );
+            }
+        }
+        SidecarSourceKind::LocalPiMono => {
+            if !source.package_root.join("node_modules").exists() {
+                println!("cargo:warning=Installing dependencies for local pi-mono...");
+                run_command(
+                    "npm",
+                    &["install".to_string()],
+                    &source.package_root,
+                    "install local pi-mono dependencies",
+                );
+            }
+
+            println!("cargo:warning=Building local pi-mono TypeScript...");
+            run_command(
+                "npm",
+                &["run".to_string(), "build".to_string()],
+                &source.package_root,
+                "build local pi-mono dist",
+            );
+
+            if !dist_cli.exists() {
+                panic!(
+                    "Local pi-mono build did not produce dist/cli.js at {}",
+                    dist_cli.display()
+                );
+            }
+        }
+    }
+}
+
+fn resolve_compiled_binary_path(output_stem: &Path, target_os: &str) -> PathBuf {
+    let output_exe = output_stem.with_extension("exe");
+
+    if target_os == "windows" {
+        if output_exe.exists() {
+            return output_exe;
+        }
+        if output_stem.exists() {
+            return output_stem.to_path_buf();
+        }
+    } else {
+        if output_stem.exists() {
+            return output_stem.to_path_buf();
+        }
+        if output_exe.exists() {
+            return output_exe;
+        }
+    }
+
+    panic!(
+        "Compiled sidecar binary not found. Checked {} and {}",
+        output_stem.display(),
+        output_exe.display()
+    );
+}
+
+fn compile_sidecar_binary(
+    source: &SidecarSource,
+    target_os: &str,
+    is_cross_compiling_windows: bool,
+    compile_dir: &Path,
+) -> PathBuf {
+    fs::create_dir_all(compile_dir).expect("Failed to create temporary sidecar compile directory");
+
+    let output_stem = compile_dir.join("pi");
+
+    let mut args = vec!["build".to_string(), "--compile".to_string()];
+
+    if is_cross_compiling_windows {
+        args.push("--target=bun-windows-x64".to_string());
+    }
+
+    args.push("./dist/cli.js".to_string());
+    args.push("--outfile".to_string());
+    args.push(output_stem.to_string_lossy().to_string());
+
+    run_command(
+        "bun",
+        &args,
+        &source.package_root,
+        "compile pi-agent binary with bun",
+    );
+
+    resolve_compiled_binary_path(&output_stem, target_os)
+}
+
+fn format_candidates(candidates: &[PathBuf]) -> String {
+    candidates
+        .iter()
+        .map(|candidate| format!("- {}", candidate.display()))
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+fn remove_path_if_exists(path: &Path) {
+    if !path.exists() {
+        return;
+    }
+
+    if path.is_dir() {
+        fs::remove_dir_all(path)
+            .unwrap_or_else(|error| panic!("Failed to remove directory {}: {}", path.display(), error));
+    } else {
+        fs::remove_file(path)
+            .unwrap_or_else(|error| panic!("Failed to remove file {}: {}", path.display(), error));
+    }
+}
+
+fn copy_required_file(candidates: &[PathBuf], destination: &Path, label: &str) {
+    let source = candidates.iter().find(|candidate| candidate.exists()).unwrap_or_else(|| {
+        panic!(
+            "Missing required {}. Checked:\n{}",
+            label,
+            format_candidates(candidates)
+        )
+    });
+
+    if let Some(parent) = destination.parent() {
+        fs::create_dir_all(parent)
+            .unwrap_or_else(|error| panic!("Failed to create directory {}: {}", parent.display(), error));
+    }
+
+    fs::copy(source, destination).unwrap_or_else(|error| {
+        panic!(
+            "Failed to copy {} from {} to {}: {}",
+            label,
+            source.display(),
+            destination.display(),
+            error
+        )
+    });
+}
+
+fn copy_required_dir(candidates: &[PathBuf], destination: &Path, label: &str) {
+    let source = candidates.iter().find(|candidate| candidate.exists()).unwrap_or_else(|| {
+        panic!(
+            "Missing required {} directory. Checked:\n{}",
+            label,
+            format_candidates(candidates)
+        )
+    });
+
+    remove_path_if_exists(destination);
+
+    copy_dir_all(source, destination).unwrap_or_else(|error| {
+        panic!(
+            "Failed to copy {} directory from {} to {}: {}",
+            label,
+            source.display(),
+            destination.display(),
+            error
+        )
+    });
+}
+
+fn find_dependency_file(start: &Path, relative_path: &str) -> Option<PathBuf> {
+    let mut current = Some(start);
+
+    while let Some(dir) = current {
+        let candidate = dir.join("node_modules").join(relative_path);
+        if candidate.exists() {
+            return Some(candidate);
+        }
+        current = dir.parent();
+    }
+
+    None
+}
+
+fn copy_runtime_assets(source: &SidecarSource, project_root: &Path, destination: &Path) {
+    let dist_path = source.package_root.join("dist");
+
+    fs::create_dir_all(destination).unwrap_or_else(|error| {
+        panic!(
+            "Failed to create destination directory {}: {}",
+            destination.display(),
+            error
+        )
+    });
+
+    copy_required_file(
+        &[
+            source.package_root.join("package.json"),
+            dist_path.join("package.json"),
+        ],
+        &destination.join("package.json"),
+        "package.json",
+    );
+
+    copy_required_file(
+        &[source.package_root.join("README.md"), dist_path.join("README.md")],
+        &destination.join("README.md"),
+        "README.md",
+    );
+
+    copy_required_file(
+        &[
+            source.package_root.join("CHANGELOG.md"),
+            dist_path.join("CHANGELOG.md"),
+        ],
+        &destination.join("CHANGELOG.md"),
+        "CHANGELOG.md",
+    );
+
+    copy_required_dir(
+        &[
+            dist_path.join("theme"),
+            dist_path.join("modes").join("interactive").join("theme"),
+        ],
+        &destination.join("theme"),
+        "theme",
+    );
+
+    copy_required_dir(
+        &[
+            dist_path.join("export-html"),
+            dist_path.join("core").join("export-html"),
+        ],
+        &destination.join("export-html"),
+        "export-html",
+    );
+
+    copy_required_dir(
+        &[dist_path.join("docs"), source.package_root.join("docs")],
+        &destination.join("docs"),
+        "docs",
+    );
+
+    copy_required_dir(
+        &[dist_path.join("examples"), source.package_root.join("examples")],
+        &destination.join("examples"),
+        "examples",
+    );
+
+    let mut wasm_candidates = vec![
+        dist_path.join("photon_rs_bg.wasm"),
+        source
+            .package_root
+            .join("node_modules")
+            .join("@silvia-odwyer")
+            .join("photon-node")
+            .join("photon_rs_bg.wasm"),
+        project_root
+            .join("node_modules")
+            .join("@silvia-odwyer")
+            .join("photon-node")
+            .join("photon_rs_bg.wasm"),
+    ];
+
+    if let Some(found) = find_dependency_file(
+        &source.package_root,
+        "@silvia-odwyer/photon-node/photon_rs_bg.wasm",
+    ) {
+        wasm_candidates.push(found);
+    }
+
+    copy_required_file(
+        &wasm_candidates,
+        &destination.join("photon_rs_bg.wasm"),
+        "photon_rs_bg.wasm",
+    );
+}
+
 fn build_sidecar() {
-    // Get target information
     let target_os = env::var("CARGO_CFG_TARGET_OS").unwrap();
     let target_triple = env::var("TARGET").unwrap();
-    let manifest_dir = env::var("CARGO_MANIFEST_DIR").unwrap();
+    let manifest_dir = PathBuf::from(env::var("CARGO_MANIFEST_DIR").unwrap());
+    let project_root = manifest_dir
+        .parent()
+        .expect("src-tauri must have a project root parent")
+        .to_path_buf();
 
-    // Only build sidecar for desktop platforms
-    // Skip for mobile builds
     if target_os == "android" || target_os == "ios" {
         println!("cargo:warning=Skipping pi-agent build for mobile target");
         return;
     }
 
-    // Path to pi-mono coding-agent package
-    let pi_mono_path = Path::new(&manifest_dir)
+    let local_pi_mono_path = project_root
         .parent()
-        .unwrap()
-        .parent()
-        .unwrap()
+        .expect("graphone must have a parent directory")
         .join("pi-mono")
         .join("packages")
         .join("coding-agent");
 
-    if !pi_mono_path.exists() {
-        println!("cargo:warning=pi-mono not found at {:?}", pi_mono_path);
-        println!("cargo:warning=Please clone pi-mono at the same level as graphone: ../pi-mono");
-        return;
-    }
+    let npm_package_path = project_root
+        .join("node_modules")
+        .join("@mariozechner")
+        .join("pi-coding-agent");
+
+    let source = detect_sidecar_source(&local_pi_mono_path, &npm_package_path);
 
     println!(
-        "cargo:warning=Building pi-agent binary for target: {}",
-        target_triple
+        "cargo:warning=Building pi-agent binary for target {} from {}: {}",
+        target_triple,
+        source.label(),
+        source.package_root.display()
     );
 
-    // Check if bun is available
-    let bun_check = Command::new("which").arg("bun").status();
+    ensure_bun_installed();
+    ensure_source_is_ready(&source);
 
-    if bun_check.is_err() || !bun_check.unwrap().success() {
-        panic!("bun is not installed. Please install bun: https://bun.sh/docs/installation");
-    }
-
-    // Run npm install in pi-mono if needed
-    if !pi_mono_path.join("node_modules").exists() {
-        println!("cargo:warning=Installing dependencies for pi-mono...");
-        let status = Command::new("npm")
-            .args(&["install"])
-            .current_dir(&pi_mono_path)
-            .status()
-            .expect("Failed to run npm install in pi-mono");
-
-        if !status.success() {
-            panic!("Failed to install pi-mono dependencies");
-        }
-    }
-
-    // Build the binary using npm run build:binary
-    // For cross-compilation, we need to invoke bun directly with the correct --target flag
-    // as bun's --compile supports cross-compilation but npm script doesn't pass target info
     let is_cross_compiling_windows = target_os == "windows" && env::consts::OS != "windows";
 
     if is_cross_compiling_windows {
-        println!("cargo:warning=Cross-compiling for Windows from non-Windows host");
-        println!("cargo:warning=Using bun with --target=bun-windows-x64 for cross-compilation");
-
-        // First run the TypeScript build
-        let status = Command::new("npm")
-            .args(&["run", "build"])
-            .current_dir(&pi_mono_path)
-            .status()
-            .expect("Failed to execute npm run build for pi-agent");
-
-        if !status.success() {
-            panic!("Failed to build pi-agent TypeScript");
-        }
-
-        // Then compile with bun for Windows target
-        let status = Command::new("bun")
-            .args(&[
-                "build",
-                "--compile",
-                "--target=bun-windows-x64",
-                "./dist/cli.js",
-                "--outfile",
-                "dist/pi",
-            ])
-            .current_dir(&pi_mono_path)
-            .status()
-            .expect("Failed to execute bun build --compile for Windows target");
-
-        if !status.success() {
-            panic!("Failed to cross-compile pi-agent binary for Windows");
-        }
-
-        // Copy assets manually (normally done by copy-binary-assets npm script)
-        let status = Command::new("npm")
-            .args(&["run", "copy-binary-assets"])
-            .current_dir(&pi_mono_path)
-            .status()
-            .expect("Failed to copy binary assets");
-
-        if !status.success() {
-            panic!("Failed to copy binary assets");
-        }
-    } else {
-        // Native compilation - use npm script as before
-        let status = Command::new("npm")
-            .args(&["run", "build:binary"])
-            .current_dir(&pi_mono_path)
-            .status()
-            .expect("Failed to execute npm run build:binary for pi-agent");
-
-        if !status.success() {
-            panic!("Failed to build pi-agent binary");
-        }
+        println!("cargo:warning=Cross-compiling sidecar for Windows with --target=bun-windows-x64");
     }
 
-    let dist_path = pi_mono_path.join("dist");
+    let compile_dir = manifest_dir
+        .join("target")
+        .join("pi-agent-build")
+        .join(&target_triple);
 
-    // Determine source binary path
-    // For Windows cross-compilation, bun automatically adds .exe extension
-    let source_binary_name = if is_cross_compiling_windows {
-        "pi.exe"
-    } else {
-        "pi"
-    };
-    let source_binary = dist_path.join(source_binary_name);
+    let source_binary = compile_sidecar_binary(
+        &source,
+        &target_os,
+        is_cross_compiling_windows,
+        &compile_dir,
+    );
 
-    if !source_binary.exists() {
-        panic!("Built binary not found at {:?}", source_binary);
-    }
-
-    // Determine destination path - Tauri expects binaries in src-tauri/binaries/
-    // relative to the Cargo.toml (CARGO_MANIFEST_DIR)
-    let dest_dir = Path::new(&manifest_dir).join("binaries");
-
+    let dest_dir = manifest_dir.join("binaries");
     fs::create_dir_all(&dest_dir).expect("Failed to create binaries directory");
 
-    // Tauri sidecar naming: pi-agent-<target-triple>
-    // Add .exe extension for Windows
     let dest_binary_name = if target_os == "windows" {
         format!("pi-agent-{}.exe", target_triple)
     } else {
         format!("pi-agent-{}", target_triple)
     };
-
     let dest_binary = dest_dir.join(&dest_binary_name);
 
-    // Copy the binary
-    fs::copy(&source_binary, &dest_binary).expect(&format!(
-        "Failed to copy binary from {:?} to {:?}",
-        source_binary, dest_binary
-    ));
+    fs::copy(&source_binary, &dest_binary).unwrap_or_else(|error| {
+        panic!(
+            "Failed to copy sidecar binary from {} to {}: {}",
+            source_binary.display(),
+            dest_binary.display(),
+            error
+        )
+    });
 
-    // Make executable on Unix
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
@@ -179,133 +489,52 @@ fn build_sidecar() {
         fs::set_permissions(&dest_binary, perms).unwrap();
     }
 
-    // Copy supporting assets that the binary needs at runtime
-    println!("cargo:warning=Copying pi-agent assets...");
+    println!("cargo:warning=Copying pi-agent runtime assets...");
+    copy_runtime_assets(&source, &project_root, &dest_dir);
 
-    // Copy package.json
-    fs::copy(
-        dist_path.join("package.json"),
-        dest_dir.join("package.json"),
-    )
-    .expect("Failed to copy package.json");
-
-    // Copy README.md and CHANGELOG.md
-    fs::copy(dist_path.join("README.md"), dest_dir.join("README.md"))
-        .expect("Failed to copy README.md");
-    fs::copy(
-        dist_path.join("CHANGELOG.md"),
-        dest_dir.join("CHANGELOG.md"),
-    )
-    .expect("Failed to copy CHANGELOG.md");
-
-    // Copy theme directory
-    if dist_path.join("theme").exists() {
-        copy_dir_all(dist_path.join("theme"), dest_dir.join("theme"))
-            .expect("Failed to copy theme directory");
-    }
-
-    // Copy export-html directory
-    if dist_path.join("export-html").exists() {
-        copy_dir_all(dist_path.join("export-html"), dest_dir.join("export-html"))
-            .expect("Failed to copy export-html directory");
-    }
-
-    // Copy docs directory
-    if dist_path.join("docs").exists() {
-        copy_dir_all(dist_path.join("docs"), dest_dir.join("docs"))
-            .expect("Failed to copy docs directory");
-    }
-
-    // Copy examples directory
-    if dist_path.join("examples").exists() {
-        copy_dir_all(dist_path.join("examples"), dest_dir.join("examples"))
-            .expect("Failed to copy examples directory");
-    }
-
-    // Copy photon wasm file
-    if dist_path.join("photon_rs_bg.wasm").exists() {
-        fs::copy(
-            dist_path.join("photon_rs_bg.wasm"),
-            dest_dir.join("photon_rs_bg.wasm"),
-        )
-        .expect("Failed to copy photon_rs_bg.wasm");
-    }
-
-    // Also copy assets to target/debug/ for development mode
-    // When running via `cargo run` or `tauri dev`, the sidecar is executed from target/debug/
-    let target_dir = Path::new(&manifest_dir)
-        .join("target")
-        .join(if target_os == "windows" {
-            "debug"
-        } else {
-            "debug"
-        });
-
-    if target_dir.exists() {
-        println!("cargo:warning=Copying assets to target/debug/ for development...");
-
-        // Copy package.json
-        let _ = fs::copy(
-            dist_path.join("package.json"),
-            target_dir.join("package.json"),
-        );
-        // Copy README.md and CHANGELOG.md
-        let _ = fs::copy(dist_path.join("README.md"), target_dir.join("README.md"));
-        let _ = fs::copy(
-            dist_path.join("CHANGELOG.md"),
-            target_dir.join("CHANGELOG.md"),
-        );
-        // Copy theme directory
-        if dist_path.join("theme").exists() {
-            let _ = copy_dir_all(dist_path.join("theme"), target_dir.join("theme"));
-        }
-        // Copy export-html directory
-        if dist_path.join("export-html").exists() {
-            let _ = copy_dir_all(
-                dist_path.join("export-html"),
-                target_dir.join("export-html"),
-            );
-        }
-        // Copy docs directory
-        if dist_path.join("docs").exists() {
-            let _ = copy_dir_all(dist_path.join("docs"), target_dir.join("docs"));
-        }
-        // Copy examples directory
-        if dist_path.join("examples").exists() {
-            let _ = copy_dir_all(dist_path.join("examples"), target_dir.join("examples"));
-        }
-        // Copy photon wasm file
-        let _ = fs::copy(
-            dist_path.join("photon_rs_bg.wasm"),
-            target_dir.join("photon_rs_bg.wasm"),
-        );
+    let target_debug_dir = manifest_dir.join("target").join("debug");
+    if target_debug_dir.exists() {
+        println!("cargo:warning=Copying runtime assets to target/debug for development...");
+        copy_runtime_assets(&source, &project_root, &target_debug_dir);
     }
 
     println!(
-        "cargo:warning=pi-agent built successfully at {:?}",
-        dest_binary
+        "cargo:warning=pi-agent built successfully at {}",
+        dest_binary.display()
     );
 
-    // Rerun if pi-mono source changes
-    println!("cargo:rerun-if-changed={}/src", pi_mono_path.display());
+    println!("cargo:rerun-if-changed={}", project_root.join("package.json").display());
     println!(
-        "cargo:rerun-if-changed={}/package.json",
-        pi_mono_path.display()
+        "cargo:rerun-if-changed={}",
+        project_root.join("package-lock.json").display()
+    );
+
+    println!(
+        "cargo:rerun-if-changed={}",
+        local_pi_mono_path.join("src").display()
+    );
+    println!(
+        "cargo:rerun-if-changed={}",
+        local_pi_mono_path.join("package.json").display()
+    );
+
+    println!(
+        "cargo:rerun-if-changed={}",
+        npm_package_path.join("dist").join("cli.js").display()
+    );
+    println!(
+        "cargo:rerun-if-changed={}",
+        npm_package_path.join("package.json").display()
     );
 }
 
 fn main() {
-    // Tell Cargo to rerun this script if build.rs itself changes
     println!("cargo:rerun-if-changed=build.rs");
 
-    // Get target information
     let target_os = env::var("CARGO_CFG_TARGET_OS").unwrap();
 
-    // Build sidecar FIRST before calling tauri_build
-    // Tauri's build system checks for externalBin resources at build time
     build_sidecar();
 
-    // Run tauri_build with Windows manifest if building for Windows
     if target_os == "windows" {
         let manifest = include_str!("windows-app.manifest");
         let windows = tauri_build::WindowsAttributes::new().app_manifest(manifest);
