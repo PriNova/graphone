@@ -1,4 +1,4 @@
-import type { AgentEvent } from '$lib/types/agent';
+import type { AgentEvent, ContentBlock } from '$lib/types/agent';
 import { messagesStore } from '$lib/stores/messages.svelte';
 import { agentStore } from '$lib/stores/agent.svelte';
 
@@ -33,16 +33,97 @@ export function handleMessageStart(event: Extract<AgentEvent, { type: 'message_s
   }
 }
 
+function upsertContentBlockAtIndex(
+  content: ContentBlock[],
+  index: number,
+  block: ContentBlock,
+): ContentBlock[] {
+  const next = content.slice();
+
+  // If we get an out-of-order index, keep array shape stable.
+  while (next.length <= index) {
+    next.push({ type: 'text', text: '' });
+  }
+
+  next[index] = block;
+  return next;
+}
+
+function applyAssistantMessageDelta(
+  current: ContentBlock[],
+  assistantEvent: Extract<AgentEvent, { type: 'message_update' }>['assistantMessageEvent'],
+): ContentBlock[] {
+  const index = assistantEvent.contentIndex;
+  if (typeof index !== 'number') {
+    return current;
+  }
+
+  switch (assistantEvent.type) {
+    case 'text_start':
+      return upsertContentBlockAtIndex(current, index, { type: 'text', text: '' });
+
+    case 'text_delta': {
+      const existing = current[index];
+      const existingText = existing?.type === 'text' ? existing.text : '';
+      return upsertContentBlockAtIndex(current, index, {
+        type: 'text',
+        text: existingText + (assistantEvent.delta ?? ''),
+      });
+    }
+
+    case 'text_end': {
+      return upsertContentBlockAtIndex(current, index, {
+        type: 'text',
+        text: assistantEvent.content ?? '',
+      });
+    }
+
+    case 'thinking_start':
+      return upsertContentBlockAtIndex(current, index, { type: 'thinking', thinking: '' });
+
+    case 'thinking_delta': {
+      const existing = current[index];
+      const existingThinking = existing?.type === 'thinking' ? existing.thinking : '';
+      return upsertContentBlockAtIndex(current, index, {
+        type: 'thinking',
+        thinking: existingThinking + (assistantEvent.delta ?? ''),
+      });
+    }
+
+    case 'thinking_end': {
+      return upsertContentBlockAtIndex(current, index, {
+        type: 'thinking',
+        thinking: assistantEvent.content ?? assistantEvent.thinking ?? '',
+      });
+    }
+
+    case 'toolcall_end': {
+      if (!assistantEvent.toolCall) {
+        return current;
+      }
+
+      return upsertContentBlockAtIndex(current, index, assistantEvent.toolCall);
+    }
+
+    // For toolcall_start/toolcall_delta we wait for toolcall_end (full object).
+    default:
+      return current;
+  }
+}
+
 export function handleMessageUpdate(event: Extract<AgentEvent, { type: 'message_update' }>): void {
-  const agentMessage = event.message;
-  if (agentMessage.role !== 'assistant') return;
+  if (event.message.role !== 'assistant') return;
 
-  const content = messagesStore.convertAssistantContent(agentMessage.content);
-
-  // Avoid creating empty assistant placeholders
   const streamingId = messagesStore.streamingMessageId;
-  const hasStreamingMessage = !!streamingId && messagesStore.messages.some(m => m.id === streamingId);
-  if (!hasStreamingMessage && content.length === 0) {
+  const hasStreamingMessage = !!streamingId && messagesStore.messages.some((m) => m.id === streamingId);
+
+  const currentMessage = streamingId ? messagesStore.messages.find((m) => m.id === streamingId) : undefined;
+  const currentContent = currentMessage?.type === 'assistant' ? currentMessage.content : [];
+
+  const nextContent = applyAssistantMessageDelta(currentContent, event.assistantMessageEvent);
+
+  // If the delta doesn't change visible content, don't create/update anything.
+  if (!hasStreamingMessage && nextContent === currentContent) {
     return;
   }
 
@@ -50,8 +131,8 @@ export function handleMessageUpdate(event: Extract<AgentEvent, { type: 'message_
     messagesStore.createStreamingMessage();
   }
 
-  if (content.length > 0) {
-    messagesStore.updateStreamingMessage(content);
+  if (nextContent !== currentContent) {
+    messagesStore.updateStreamingMessage(nextContent);
   }
 }
 
