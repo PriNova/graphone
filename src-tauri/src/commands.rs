@@ -3,6 +3,7 @@ use tauri::{AppHandle, State};
 use tokio::sync::Mutex;
 
 use crate::logger;
+use crate::models_static;
 use crate::sidecar::{EventHandler, RpcClient, SidecarManager};
 use crate::state::SidecarState;
 use crate::types::{RpcCommand, RpcResponse};
@@ -144,6 +145,9 @@ pub async fn get_available_models(
         model_id: None,
     };
 
+    // Model registry enumeration returns ALL available models (66KB+ JSON payload).
+    // On Linux, the pipe buffer is 64KB, so the response gets truncated and times out.
+    // Use a short timeout and rely on cycle_model fallback for model enumeration.
     let mut response = RpcClient::send_command_with_response(state.inner(), cmd, id, 3).await?;
 
     // Keep IPC payload compact for webview transport reliability.
@@ -214,4 +218,12 @@ pub async fn cycle_model(
     };
 
     RpcClient::send_command_with_response(state.inner(), cmd, id, 5).await
+}
+
+/// Get static model list from embedded data (bypasses sidecar IPC)
+/// This returns a compact model list without requiring the sidecar to be running,
+/// avoiding the 64KB pipe buffer limit issue on Linux.
+#[tauri::command]
+pub fn get_static_models() -> Vec<models_static::StaticModel> {
+    models_static::get_static_models().to_vec()
 }

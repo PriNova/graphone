@@ -1,5 +1,6 @@
-mod commands;
 mod logger;
+mod models_static;
+mod commands;
 mod sidecar;
 mod state;
 mod types;
@@ -34,7 +35,8 @@ pub fn run() {
             commands::get_state,
             commands::get_available_models,
             commands::set_model,
-            commands::cycle_model
+            commands::cycle_model,
+            commands::get_static_models,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

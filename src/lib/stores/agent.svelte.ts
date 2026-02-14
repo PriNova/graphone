@@ -68,11 +68,43 @@ class AgentStore {
     this.isModelsLoading = true;
 
     try {
-      const models = await this.loadAvailableModelsByCycling();
+      let models: AvailableModel[] = [];
+
+      // First try: Load all models from static embedded data (fastest)
+      // This uses the Rust command that bypasses sidecar IPC
+      try {
+        models = await this.loadAvailableModelsFromStatic();
+        if (models.length > 0) {
+          console.log(`Loaded ${models.length} models from static data`);
+        }
+      } catch (error) {
+        console.warn("Failed to load models from static data:", error);
+      }
+
+      // If no models from static data, try RPC method
+      if (models.length === 0) {
+        try {
+          models = await this.loadAvailableModelsViaRpcList();
+        } catch (error) {
+          console.warn(
+            "Failed to load models via get_available_models (likely large payload / IPC limits). Falling back to cycle_model enumeration:",
+            error,
+          );
+          models = await this.loadAvailableModelsByCycling();
+        }
+      }
+
       this.availableModels = this.sortAvailableModels(models);
     } finally {
       this.isModelsLoading = false;
     }
+  }
+
+  private async loadAvailableModelsFromStatic(): Promise<AvailableModel[]> {
+    // Use the new static models command that embeds model list in the binary
+    // This avoids the 64KB pipe buffer limit issue on Linux
+    const models = await invoke<AvailableModel[]>("get_static_models");
+    return models;
   }
 
   async setModel(provider: string, modelId: string): Promise<void> {
@@ -140,6 +172,43 @@ class AgentStore {
 
   setLoading(loading: boolean): void {
     this.isLoading = loading;
+  }
+
+  private async loadAvailableModelsViaRpcList(): Promise<AvailableModel[]> {
+    const response = await invoke<
+      | { success: true; data: { models: Array<{ provider?: unknown; id?: unknown; name?: unknown }> } }
+      | { success: false; error: string }
+    >("get_available_models");
+
+    if (!(response && typeof response === "object" && "success" in response && response.success)) {
+      const error = response && typeof response === "object" && "error" in response
+        ? response.error
+        : "Failed to get available models";
+      throw new Error(error);
+    }
+
+    const models = response.data?.models;
+    if (!Array.isArray(models)) {
+      return [];
+    }
+
+    return models
+      .map((model) => {
+        const provider = model.provider;
+        const id = model.id;
+        const name = model.name;
+
+        if (typeof provider !== "string" || typeof id !== "string") {
+          return null;
+        }
+
+        return {
+          provider,
+          id,
+          name: typeof name === "string" && name.length > 0 ? name : id,
+        } satisfies AvailableModel;
+      })
+      .filter((model): model is AvailableModel => model !== null);
   }
 
   private async loadAvailableModelsByCycling(): Promise<AvailableModel[]> {
