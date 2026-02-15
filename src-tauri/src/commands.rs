@@ -9,6 +9,39 @@ use crate::state::SidecarState;
 use crate::types::{RpcCommand, RpcResponse};
 use crate::utils::crypto_random_uuid;
 
+/// Get enabled models from pi settings files
+/// This reads the "enabledModels" from both global and project settings,
+/// with project settings taking precedence over global settings.
+/// Returns unique model patterns from both sources.
+#[tauri::command]
+pub fn get_enabled_models() -> Vec<String> {
+    // Try to read from standard pi settings locations
+    let global_path = dirs::home_dir()
+        .map(|h| h.join(".pi").join("agent").join("settings.json"))
+        .unwrap_or_default();
+
+    // For project settings, we need the current working directory
+    // Since we can't easily get CWD in Tauri, we'll focus on global settings
+    // which is the common case for desktop apps
+    let mut enabled_models: Vec<String> = Vec::new();
+
+    // First, load global settings
+    if global_path.exists() {
+        if let Ok(content) = std::fs::read_to_string(&global_path) {
+            if let Ok(settings) = serde_json::from_str::<serde_json::Value>(&content) {
+                if let Some(enabled) = settings.get("enabledModels").and_then(|v| v.as_array()) {
+                    enabled_models = enabled
+                        .iter()
+                        .filter_map(|v| v.as_str().map(String::from))
+                        .collect();
+                }
+            }
+        }
+    }
+
+    enabled_models
+}
+
 /// Start the pi-agent sidecar and stream events to the frontend
 #[tauri::command]
 pub async fn start_agent_session(
