@@ -1,9 +1,9 @@
 <script lang="ts">
   import { cn } from '$lib/utils/cn';
   import type { AvailableModel } from '$lib/stores/agent.svelte';
-  import { scopedModelsStore } from '$lib/stores/scopedModels.svelte';
+  import { enabledModelsStore } from '$lib/stores/enabledModels.svelte';
 
-  type FilterMode = 'all' | 'active';
+  type FilterMode = 'all' | 'enabled';
 
   interface Props {
     models?: AvailableModel[];
@@ -27,10 +27,17 @@
 
   let filterMode = $state<FilterMode>('all');
 
+  const hasEnabledScope = $derived(enabledModelsStore.patterns.length > 0);
+  const enabledKeys = $derived(enabledModelsStore.resolveEnabledModelKeys(models));
+
+  const enabledModels = $derived(
+    models.filter((m) => enabledKeys.has(`${m.provider}/${m.id}`))
+  );
+
+  const enabledCount = $derived(hasEnabledScope ? enabledModels.length : models.length);
+
   const filteredModels = $derived(
-    filterMode === 'active'
-      ? models.filter((m) => scopedModelsStore.isScoped(m.provider, m.id))
-      : models
+    filterMode === 'enabled' && hasEnabledScope ? enabledModels : models
   );
 
   const selectedIndex = $derived(
@@ -40,13 +47,13 @@
   );
 
   const selectedValue = $derived(selectedIndex >= 0 ? String(selectedIndex) : '');
-  const isDisabled = $derived(
+  const isSelectDisabled = $derived(
     disabled || loading || changing || filteredModels.length === 0
   );
-  const activeCount = $derived(scopedModelsStore.count);
-  const currentModelIsScoped = $derived(
-    currentProvider && currentModel
-      ? scopedModelsStore.isScoped(currentProvider, currentModel)
+
+  const currentModelIsEnabled = $derived(
+    hasEnabledScope && currentProvider && currentModel
+      ? enabledKeys.has(`${currentProvider}/${currentModel}`)
       : false
   );
 
@@ -66,10 +73,10 @@
     await onchange?.(next.provider, next.id);
   }
 
-  function toggleCurrentModel(): void {
-    if (currentProvider && currentModel) {
-      scopedModelsStore.toggle(currentProvider, currentModel);
-    }
+  async function toggleCurrentModel(): Promise<void> {
+    if (!currentProvider || !currentModel) return;
+    // Pass the full (unfiltered) model list so we can expand patterns into explicit IDs if needed.
+    await enabledModelsStore.toggleModel(currentProvider, currentModel, models);
   }
 
   function handleFilterChange(mode: FilterMode): void {
@@ -84,20 +91,18 @@
       'max-w-60 bg-input-background border border-border rounded px-2 py-0.5 text-xs text-foreground',
       'focus:outline-none focus:border-ring',
       '[&::-ms-expand]:hidden',
-      isDisabled && 'opacity-60 cursor-not-allowed'
+      isSelectDisabled && 'opacity-60 cursor-not-allowed'
     )}
     value={selectedValue}
-    disabled={isDisabled}
+    disabled={isSelectDisabled}
     onchange={handleChange}
     aria-label="Select model"
   >
     {#if loading}
       <option value="">Loading models...</option>
     {:else if filteredModels.length === 0}
-      {#if filterMode === 'active' && activeCount === 0}
-        <option value="">No active models</option>
-      {:else if filterMode === 'active'}
-        <option value="">No active models available</option>
+      {#if filterMode === 'enabled' && hasEnabledScope}
+        <option value="">No enabled models</option>
       {:else}
         <option value="">No models available</option>
       {/if}
@@ -106,29 +111,36 @@
         <option value="">Select model...</option>
       {/if}
       {#each filteredModels as model, index (`${model.provider}/${model.id}`)}
-        {@const isScoped = scopedModelsStore.isScoped(model.provider, model.id)}
+        {@const key = `${model.provider}/${model.id}`}
+        {@const isEnabled = hasEnabledScope && enabledKeys.has(key)}
         <option value={String(index)}>
-          {model.id}{isScoped ? ' ⭐' : ''} [{model.provider}]
+          {model.id}{isEnabled ? ' ⭐' : ''} [{model.provider}]
         </option>
       {/each}
     {/if}
   </select>
 
-  <!-- Toggle current model as active/inactive -->
+  <!-- Toggle current model enabled/disabled (writes enabledModels in pi settings) -->
   <button
     type="button"
     class={cn(
       'text-xs px-1 py-0.5 rounded border transition-colors',
-      currentModelIsScoped
+      currentModelIsEnabled
         ? 'bg-yellow-500/20 border-yellow-500/50 text-yellow-600 dark:text-yellow-400'
         : 'bg-transparent border-border text-muted-foreground hover:border-foreground hover:text-foreground',
-      (!currentProvider || !currentModel || isDisabled) && 'opacity-40 cursor-not-allowed'
+      (disabled || loading || changing || !currentProvider || !currentModel) && 'opacity-40 cursor-not-allowed'
     )}
     onclick={toggleCurrentModel}
-    disabled={!currentProvider || !currentModel || isDisabled}
-    title={currentModelIsScoped ? 'Remove from active' : 'Add to active'}
+    disabled={disabled || loading || changing || !currentProvider || !currentModel}
+    title={
+      hasEnabledScope
+        ? currentModelIsEnabled
+          ? 'Remove from enabled models'
+          : 'Add to enabled models'
+        : 'All models currently enabled (click to start an enabled models list)'
+    }
   >
-    {currentModelIsScoped ? '⭐' : '☆'}
+    {currentModelIsEnabled ? '⭐' : '☆'}
   </button>
 
   <!-- Filter toggle -->
@@ -151,17 +163,17 @@
       type="button"
       class={cn(
         'px-1.5 py-0.5 rounded transition-colors flex items-center gap-1',
-        filterMode === 'active'
+        filterMode === 'enabled'
           ? 'bg-border text-foreground'
           : 'text-muted-foreground hover:text-foreground'
       )}
-      onclick={() => handleFilterChange('active')}
+      onclick={() => handleFilterChange('enabled')}
       disabled={disabled || loading}
-      title="Show active models only"
+      title={hasEnabledScope ? 'Show enabled models only' : 'Enabled models filter is not configured (shows all)'}
     >
-      Active
-      {#if activeCount > 0}
-        <span class="text-[10px] bg-primary/20 px-1 rounded">{activeCount}</span>
+      Enabled
+      {#if hasEnabledScope}
+        <span class="text-[10px] bg-primary/20 px-1 rounded">{enabledCount}</span>
       {/if}
     </button>
   </div>

@@ -1,4 +1,7 @@
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
+
+use serde::Serialize;
 use tauri::{AppHandle, State};
 use tokio::sync::Mutex;
 
@@ -9,37 +12,198 @@ use crate::state::SidecarState;
 use crate::types::{RpcCommand, RpcResponse};
 use crate::utils::crypto_random_uuid;
 
-/// Get enabled models from pi settings files
-/// This reads the "enabledModels" from both global and project settings,
-/// with project settings taking precedence over global settings.
-/// Returns unique model patterns from both sources.
-#[tauri::command]
-pub fn get_enabled_models() -> Vec<String> {
-    // Try to read from standard pi settings locations
-    let global_path = dirs::home_dir()
-        .map(|h| h.join(".pi").join("agent").join("settings.json"))
-        .unwrap_or_default();
+#[derive(Debug, Clone, Serialize)]
+pub struct EnabledModelsResponse {
+    /// Effective enabledModels patterns as stored in the selected settings file.
+    ///
+    /// Semantics (matching pi): an empty list means "no scoping" (all models enabled).
+    pub patterns: Vec<String>,
+    /// Whether the enabledModels key exists in the selected settings file.
+    pub defined: bool,
+    /// Where the effective setting came from: "project", "global", or "none".
+    pub source: String,
+}
 
-    // For project settings, we need the current working directory
-    // Since we can't easily get CWD in Tauri, we'll focus on global settings
-    // which is the common case for desktop apps
-    let mut enabled_models: Vec<String> = Vec::new();
+fn global_settings_path() -> Option<PathBuf> {
+    dirs::home_dir().map(|h| h.join(".pi").join("agent").join("settings.json"))
+}
 
-    // First, load global settings
-    if global_path.exists() {
-        if let Ok(content) = std::fs::read_to_string(&global_path) {
-            if let Ok(settings) = serde_json::from_str::<serde_json::Value>(&content) {
-                if let Some(enabled) = settings.get("enabledModels").and_then(|v| v.as_array()) {
-                    enabled_models = enabled
-                        .iter()
-                        .filter_map(|v| v.as_str().map(String::from))
-                        .collect();
-                }
-            }
+fn project_settings_path() -> Option<PathBuf> {
+    std::env::current_dir()
+        .ok()
+        .map(|cwd| cwd.join(".pi").join("settings.json"))
+}
+
+fn read_enabled_models_from_settings(path: &Path) -> (bool, Vec<String>) {
+    if !path.exists() {
+        return (false, Vec::new());
+    }
+
+    let content = match std::fs::read_to_string(path) {
+        Ok(c) => c,
+        Err(e) => {
+            logger::log(format!(
+                "Failed to read settings file {}: {}",
+                path.display(),
+                e
+            ));
+            return (false, Vec::new());
+        }
+    };
+
+    let settings = match serde_json::from_str::<serde_json::Value>(&content) {
+        Ok(v) => v,
+        Err(e) => {
+            logger::log(format!(
+                "Failed to parse settings file {} as JSON: {}",
+                path.display(),
+                e
+            ));
+            return (false, Vec::new());
+        }
+    };
+
+    let Some(obj) = settings.as_object() else {
+        return (false, Vec::new());
+    };
+
+    let Some(enabled_models) = obj.get("enabledModels") else {
+        return (false, Vec::new());
+    };
+
+    if enabled_models.is_null() {
+        // Explicit null means "defined, but no scoping".
+        return (true, Vec::new());
+    }
+
+    let Some(arr) = enabled_models.as_array() else {
+        logger::log(format!(
+            "enabledModels in {} is not an array; ignoring",
+            path.display()
+        ));
+        return (false, Vec::new());
+    };
+
+    let patterns = arr
+        .iter()
+        .filter_map(|v| v.as_str().map(|s| s.trim().to_string()))
+        .filter(|s| !s.is_empty())
+        .collect::<Vec<String>>();
+
+    (true, patterns)
+}
+
+fn write_enabled_models_to_settings(path: &Path, patterns: &[String]) -> Result<(), String> {
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent)
+            .map_err(|e| format!("Failed to create settings directory {}: {}", parent.display(), e))?;
+    }
+
+    let mut root: serde_json::Value = if path.exists() {
+        std::fs::read_to_string(path)
+            .ok()
+            .and_then(|c| serde_json::from_str::<serde_json::Value>(&c).ok())
+            .unwrap_or_else(|| serde_json::json!({}))
+    } else {
+        serde_json::json!({})
+    };
+
+    if !root.is_object() {
+        root = serde_json::json!({});
+    }
+
+    let arr = patterns
+        .iter()
+        .map(|s| serde_json::Value::String(s.clone()))
+        .collect::<Vec<_>>();
+
+    root["enabledModels"] = serde_json::Value::Array(arr);
+
+    let serialized =
+        serde_json::to_string_pretty(&root).map_err(|e| format!("Failed to serialize settings: {}", e))?;
+
+    std::fs::write(path, format!("{}\n", serialized))
+        .map_err(|e| format!("Failed to write settings file {}: {}", path.display(), e))?;
+
+    Ok(())
+}
+
+fn load_enabled_models() -> EnabledModelsResponse {
+    let project_path = project_settings_path();
+    if let Some(project_path) = project_path.as_ref() {
+        let (defined, patterns) = read_enabled_models_from_settings(project_path);
+        if defined {
+            return EnabledModelsResponse {
+                patterns,
+                defined,
+                source: "project".to_string(),
+            };
         }
     }
 
-    enabled_models
+    let global_path = global_settings_path();
+    if let Some(global_path) = global_path.as_ref() {
+        let (defined, patterns) = read_enabled_models_from_settings(global_path);
+        if defined {
+            return EnabledModelsResponse {
+                patterns,
+                defined,
+                source: "global".to_string(),
+            };
+        }
+    }
+
+    EnabledModelsResponse {
+        patterns: Vec::new(),
+        defined: false,
+        source: "none".to_string(),
+    }
+}
+
+/// Get enabledModels patterns from pi settings.
+///
+/// Precedence: project settings (./.pi/settings.json) override global settings (~/.pi/agent/settings.json).
+#[tauri::command]
+pub fn get_enabled_models() -> EnabledModelsResponse {
+    load_enabled_models()
+}
+
+/// Persist enabledModels patterns to a pi settings file.
+///
+/// - patterns: the enabledModels array to write. Empty means "no scoping" (all models enabled).
+/// - scope: "auto" (default), "project", or "global".
+#[tauri::command]
+pub fn set_enabled_models(patterns: Vec<String>, scope: Option<String>) -> Result<EnabledModelsResponse, String> {
+    let scope = scope.unwrap_or_else(|| "auto".to_string());
+
+    let project_path = project_settings_path();
+    let global_path = global_settings_path();
+
+    let target_path: PathBuf = match scope.as_str() {
+        "project" => project_path.ok_or_else(|| "Failed to determine project settings path".to_string())?,
+        "global" => global_path.ok_or_else(|| "Failed to determine global settings path".to_string())?,
+        "auto" => {
+            if let Some(p) = project_path.as_ref() {
+                if p.exists() {
+                    p.clone()
+                } else {
+                    global_path.ok_or_else(|| "Failed to determine global settings path".to_string())?
+                }
+            } else {
+                global_path.ok_or_else(|| "Failed to determine global settings path".to_string())?
+            }
+        }
+        other => {
+            return Err(format!(
+                "Invalid scope '{}'. Expected 'auto', 'project', or 'global'",
+                other
+            ));
+        }
+    };
+
+    write_enabled_models_to_settings(&target_path, &patterns)?;
+
+    Ok(load_enabled_models())
 }
 
 /// Start the pi-agent sidecar and stream events to the frontend

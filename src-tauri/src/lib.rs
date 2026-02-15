@@ -38,6 +38,7 @@ pub fn run() {
             commands::cycle_model,
             commands::get_static_models,
             commands::get_enabled_models,
+            commands::set_enabled_models,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
