@@ -9,6 +9,7 @@
   import { messagesStore } from '$lib/stores/messages.svelte';
   import { handleAgentEvent } from '$lib/handlers/agent-events';
   import { handleSlashCommand, handlePromptSubmit } from '$lib/handlers/commands';
+  import { cwdStore } from '$lib/stores/cwd.svelte';
 
   // DOM refs
   let messagesContainerRef = $state<HTMLDivElement | null>(null);
@@ -107,6 +108,9 @@
 
   // Lifecycle
   onMount(async () => {
+    // Load working directory
+    await cwdStore.load();
+
     // Start agent session
     try {
       await agentStore.startSession();
@@ -206,6 +210,8 @@
         modelsLoading={isModelsLoading}
         modelChanging={isSettingModel}
         autofocus={true}
+        cwd={cwdStore.cwd}
+        cwdLoading={cwdStore.loading}
       />
     </section>
   </div>

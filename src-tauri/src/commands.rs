@@ -34,6 +34,14 @@ fn project_settings_path() -> Option<PathBuf> {
         .map(|cwd| cwd.join(".pi").join("settings.json"))
 }
 
+/// Get the current working directory (the directory in which the app executes).
+#[tauri::command]
+pub fn get_working_directory() -> Result<String, String> {
+    std::env::current_dir()
+        .map(|p| p.to_string_lossy().to_string())
+        .map_err(|e| format!("Failed to determine current working directory: {e}"))
+}
+
 fn read_enabled_models_from_settings(path: &Path) -> (bool, Vec<String>) {
     if !path.exists() {
         return (false, Vec::new());

@@ -20,6 +20,8 @@
     models?: AvailableModel[];
     modelsLoading?: boolean;
     modelChanging?: boolean;
+    cwd?: string | null;
+    cwdLoading?: boolean;
   }
 
   let {
@@ -38,6 +40,8 @@
     models = [],
     modelsLoading = false,
     modelChanging = false,
+    cwd = null,
+    cwdLoading = false,
   }: Props = $props();
 
   // Internal state for the input value
@@ -274,7 +278,7 @@
   </div>
   
   <div class="flex justify-between pt-1.5 px-1">
-    <span class="text-xs">
+    <span class="text-xs flex flex-col gap-0.5">
       {#if isSlashCommand}
         {#if isKnownCommand}
           {#if commandHandler === 'local'}
@@ -300,6 +304,18 @@
       {:else}
         <span class="text-muted-foreground/50">Type / for commands</span>
       {/if}
+      <span 
+        class="text-muted-foreground/50 font-mono truncate" 
+        title={cwd ?? undefined}
+      >
+        {#if cwdLoading}
+          cwd: …
+        {:else if cwd}
+          cwd: {cwd}
+        {:else}
+          cwd: (unknown)
+        {/if}
+      </span>
     </span>
     <span class="text-xs text-muted-foreground/70 text-right flex items-center gap-2">
       <ModelSelector
