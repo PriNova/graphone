@@ -6,44 +6,20 @@ use tokio::sync::Mutex;
 
 use crate::logger;
 use crate::state::SidecarState;
-use crate::types::{RpcCommand, RpcResponse};
+use crate::types::{RpcCommand, RpcResponse, SessionEventEnvelope};
 
 pub struct SidecarManager;
 
 impl SidecarManager {
     pub fn build_sidecar_command(
         app: &AppHandle,
-        provider: Option<String>,
-        model: Option<String>,
+        _provider: Option<String>,
+        _model: Option<String>,
     ) -> Result<tauri_plugin_shell::process::Command, String> {
-        let mut args = vec![
-            "--mode".to_string(),
-            "rpc".to_string(),
-            "--no-session".to_string(),
-            "--no-skills".to_string(),
-            // Ensure model cycling scope is not constrained by persisted settings.
-            // This keeps Graphone model fallback enumeration consistent across platforms.
-            "--models".to_string(),
-            "*".to_string(),
-        ];
-
-        if let Some(provider) = provider {
-            args.push("--provider".to_string());
-            args.push(provider);
-        }
-
-        if let Some(model) = model {
-            args.push("--model".to_string());
-            args.push(model);
-        }
-
-        logger::log(format!("Sidecar args: {:?}", args));
-
-        Ok(app
-            .shell()
+        logger::log("Sidecar backend=host args: []");
+        app.shell()
             .sidecar("pi-agent")
-            .map_err(|e| format!("Failed to create sidecar: {}", e))?
-            .args(args))
+            .map_err(|e| format!("Failed to create sidecar: {}", e))
     }
 
     pub async fn spawn_sidecar(
@@ -88,33 +64,19 @@ impl EventHandler {
         tokio::spawn(async move {
             let mut stdout_buffer: Vec<u8> = Vec::new();
             let mut stderr_buffer: Vec<u8> = Vec::new();
-            let mut pending_json: Option<String> = None;
 
             while let Some(event) = event_rx.recv().await {
-                let should_continue = Self::handle_event(
-                    &app_clone,
-                    &state,
-                    event,
-                    &mut stdout_buffer,
-                    &mut pending_json,
-                    &mut stderr_buffer,
-                )
-                .await;
+                let should_continue =
+                    Self::handle_event(&app_clone, &state, event, &mut stdout_buffer, &mut stderr_buffer)
+                        .await;
 
                 if !should_continue {
                     break;
                 }
             }
 
-            Self::flush_stdout_buffer(&app_clone, &state, &mut stdout_buffer, &mut pending_json).await;
+            Self::flush_stdout_buffer(&app_clone, &state, &mut stdout_buffer).await;
             Self::flush_stderr_buffer(&mut stderr_buffer);
-
-            if let Some(remaining) = pending_json {
-                logger::log(format!(
-                    "Dropping unterminated JSON fragment from sidecar stdout (len={})",
-                    remaining.len()
-                ));
-            }
         });
     }
 
@@ -123,12 +85,11 @@ impl EventHandler {
         state: &Arc<Mutex<SidecarState>>,
         event: CommandEvent,
         stdout_buffer: &mut Vec<u8>,
-        pending_json: &mut Option<String>,
         stderr_buffer: &mut Vec<u8>,
     ) -> bool {
         match event {
             CommandEvent::Stdout(chunk) => {
-                Self::handle_stdout(app, state, chunk, stdout_buffer, pending_json).await;
+                Self::handle_stdout(app, state, chunk, stdout_buffer).await;
                 true
             }
             CommandEvent::Stderr(chunk) => {
@@ -136,14 +97,14 @@ impl EventHandler {
                 true
             }
             CommandEvent::Terminated(payload) => {
-                Self::flush_stdout_buffer(app, state, stdout_buffer, pending_json).await;
+                Self::flush_stdout_buffer(app, state, stdout_buffer).await;
                 Self::flush_stderr_buffer(stderr_buffer);
                 logger::log(format!("Sidecar terminated with code: {:?}", payload.code));
                 let _ = app.emit("agent-terminated", payload.code);
                 false
             }
             CommandEvent::Error(e) => {
-                Self::flush_stdout_buffer(app, state, stdout_buffer, pending_json).await;
+                Self::flush_stdout_buffer(app, state, stdout_buffer).await;
                 Self::flush_stderr_buffer(stderr_buffer);
                 logger::log(format!("Sidecar error: {}", e));
                 let _ = app.emit("agent-error", e);
@@ -158,138 +119,28 @@ impl EventHandler {
         state: &Arc<Mutex<SidecarState>>,
         chunk: Vec<u8>,
         buffer: &mut Vec<u8>,
-        pending_json: &mut Option<String>,
     ) {
-        // If there's pending incomplete JSON from previous chunks, prepend it to the new chunk
-        if let Some(partial) = pending_json.take() {
-            // Convert partial to bytes and prepend to current chunk
-            let mut combined = partial.into_bytes();
-            combined.extend_from_slice(&chunk);
-            // Process the combined data
-            buffer.extend_from_slice(&combined);
-        } else {
-            // Accumulate all bytes into buffer
-            buffer.extend_from_slice(&chunk);
+        for line in Self::extract_lines(chunk, buffer) {
+            Self::handle_stdout_line(app, state, line).await;
         }
-        
-        // Try to extract and process complete JSON objects from the buffer
-        // We don't clear the buffer - we keep any unprocessed data for the next chunk
-        Self::process_json_buffer(app, state, buffer, pending_json).await;
     }
 
-    /// Process the accumulated buffer, extracting complete JSON objects
-    async fn process_json_buffer(
-        app: &AppHandle,
-        state: &Arc<Mutex<SidecarState>>,
-        buffer: &mut Vec<u8>,
-        pending_json: &mut Option<String>,
-    ) {
-        // Convert current buffer to string for processing
-        let buffer_str = Self::decode_utf8_lossy(std::mem::take(buffer));
-        
-        if buffer_str.trim().is_empty() {
+    async fn handle_stdout_line(app: &AppHandle, state: &Arc<Mutex<SidecarState>>, line: String) {
+        if line.trim().is_empty() {
             return;
         }
 
-        // Try to extract complete JSON objects from the accumulated data
-        // We need to handle the case where multiple JSON objects are concatenated
-        let mut start_idx = 0;
-        
-        while start_idx < buffer_str.len() {
-            // Skip non-JSON content to find the next JSON object
-            let json_start = buffer_str[start_idx..].find('{').map(|i| start_idx + i);
-            
-            if let Some(start) = json_start {
-                // Try to find a complete JSON object starting from this position
-                if let Some((json_end, complete_json)) = Self::extract_complete_json(&buffer_str[start..]) {
-                    let raw = complete_json.clone();
-                    
-                    if let Some(json) = Self::parse_json_line(&complete_json) {
-                        Self::handle_parsed_json(app, state, raw, json).await;
-                    }
-                    
-                    start_idx = start + json_end;
-                } else {
-                    // Incomplete JSON - buffer the remaining data for next chunk
-                    let remaining = &buffer_str[start..];
-                    if !remaining.trim().is_empty() {
-                        if let Some(partial) = pending_json.as_mut() {
-                            partial.push_str(remaining);
-                        } else {
-                            *pending_json = Some(remaining.to_string());
-                        }
-                    }
-                    // Keep any remaining content in buffer for next time
-                    if start > 0 {
-                        buffer.extend_from_slice(buffer_str[..start].as_bytes());
-                    }
-                    return;
-                }
-            } else {
-                // No JSON found - log as non-JSON output
-                let remaining = &buffer_str[start_idx..];
-                if !remaining.trim().is_empty() {
-                    logger::log(format!(
-                        "Sidecar stdout non-JSON (len={}): {}",
-                        remaining.len(),
-                        Self::shorten_for_log(remaining, 400)
-                    ));
-                }
-                break;
+        match serde_json::from_str::<serde_json::Value>(&line) {
+            Ok(json) => Self::handle_parsed_json(app, state, line, json).await,
+            Err(error) => {
+                logger::log(format!(
+                    "Sidecar stdout invalid NDJSON line (len={}): {} ({})",
+                    line.len(),
+                    Self::shorten_for_log(&line, 400),
+                    error
+                ));
             }
         }
-    }
-
-    /// Extract a complete JSON object from the input, returning (end_position, json_string)
-    /// Returns None if the JSON is incomplete
-    fn extract_complete_json(input: &str) -> Option<(usize, String)> {
-        // Try to parse the entire input as JSON - if it works, we have a complete JSON
-        if serde_json::from_str::<serde_json::Value>(input).is_ok() {
-            return Some((input.len(), input.to_string()));
-        }
-        
-        // Try to find the outermost complete JSON object by tracking depth correctly
-        let mut depth = 0;
-        let mut in_string = false;
-        let mut escape_next = false;
-        let mut json_start = None;
-        let mut json_end = None;
-        
-        for (i, c) in input.char_indices() {
-            if escape_next {
-                escape_next = false;
-                continue;
-            }
-            
-            match c {
-                '\\' if in_string => escape_next = true,
-                '"' => in_string = !in_string,
-                '{' if !in_string => {
-                    if depth == 0 {
-                        json_start = Some(i);
-                    }
-                    depth += 1;
-                }
-                '}' if !in_string => {
-                    depth -= 1;
-                    if depth == 0 {
-                        json_end = Some(i);
-                        break;
-                    }
-                }
-                _ => {}
-            }
-        }
-        
-        if let (Some(start), Some(end)) = (json_start, json_end) {
-            let result = input[start..=end].to_string();
-            // Verify this is valid JSON
-            if serde_json::from_str::<serde_json::Value>(&result).is_ok() {
-                return Some((end + 1, result));
-            }
-        }
-        
-        None
     }
 
     async fn handle_parsed_json(
@@ -298,10 +149,16 @@ impl EventHandler {
         raw: String,
         json: serde_json::Value,
     ) {
-        if json.get("type").and_then(|t| t.as_str()) == Some("response") {
-            let command = json.get("command").and_then(|c| c.as_str()).unwrap_or("unknown").to_string();
+        let top_level_type = json.get("type").and_then(|t| t.as_str());
 
-            match serde_json::from_value::<RpcResponse>(json) {
+        if top_level_type == Some("response") {
+            let command = json
+                .get("command")
+                .and_then(|c| c.as_str())
+                .unwrap_or("unknown")
+                .to_string();
+
+            match serde_json::from_value::<RpcResponse>(json.clone()) {
                 Ok(response) => {
                     if let Some(id) = response.id.clone() {
                         let cmd = response.command.clone();
@@ -332,13 +189,73 @@ impl EventHandler {
             }
         }
 
-        let should_log = json.get("type").and_then(|t| t.as_str()) != Some("message_update");
-        if should_log {
-            logger::log(format!("Sidecar stdout: {}", Self::shorten_for_log(&raw, 2000)));
-        }
-
         // Guard against WebView IPC payload truncation (~64KB on some platforms).
         const MAX_AGENT_EVENT_CHARS: usize = 60_000;
+
+        if top_level_type == Some("session_event") {
+            match serde_json::from_value::<SessionEventEnvelope>(json.clone()) {
+                Ok(envelope) => {
+                    let payload = serde_json::json!({
+                        "sessionId": envelope.session_id,
+                        "event": envelope.event,
+                    });
+
+                    let payload_string = match serde_json::to_string(&payload) {
+                        Ok(value) => value,
+                        Err(error) => {
+                            logger::log(format!(
+                                "Failed to serialize session_event payload for frontend: {}",
+                                error
+                            ));
+                            return;
+                        }
+                    };
+
+                    if payload_string.len() > MAX_AGENT_EVENT_CHARS {
+                        logger::log(format!(
+                            "Skipping emit of oversized session_event payload (len={})",
+                            payload_string.len()
+                        ));
+                        return;
+                    }
+
+                    let should_log = payload
+                        .get("event")
+                        .and_then(|event| event.get("type"))
+                        .and_then(|value| value.as_str())
+                        != Some("message_update");
+
+                    if should_log {
+                        logger::log(format!(
+                            "Sidecar session_event: {}",
+                            Self::shorten_for_log(&payload_string, 2000)
+                        ));
+                    }
+
+                    if let Err(e) = app.emit("agent-event", payload_string) {
+                        logger::log(format!("Failed to emit agent event: {}", e));
+                    }
+                }
+                Err(error) => {
+                    logger::log(format!(
+                        "Failed to deserialize session_event JSON (len={}): {}",
+                        raw.len(),
+                        error
+                    ));
+                }
+            }
+
+            return;
+        }
+
+        let should_log = top_level_type != Some("message_update");
+        if should_log {
+            logger::log(format!(
+                "Sidecar stdout: {}",
+                Self::shorten_for_log(&raw, 2000)
+            ));
+        }
+
         if raw.len() > MAX_AGENT_EVENT_CHARS {
             logger::log(format!(
                 "Skipping emit of oversized agent-event payload (len={})",
@@ -350,20 +267,6 @@ impl EventHandler {
         if let Err(e) = app.emit("agent-event", raw) {
             logger::log(format!("Failed to emit agent event: {}", e));
         }
-    }
-
-    fn parse_json_line(line: &str) -> Option<serde_json::Value> {
-        if let Ok(json) = serde_json::from_str::<serde_json::Value>(line) {
-            return Some(json);
-        }
-
-        let start = line.find('{')?;
-        let end = line.rfind('}')?;
-        if end <= start {
-            return None;
-        }
-
-        serde_json::from_str::<serde_json::Value>(&line[start..=end]).ok()
     }
 
     fn shorten_for_log(value: &str, max_chars: usize) -> String {
@@ -387,14 +290,21 @@ impl EventHandler {
         app: &AppHandle,
         state: &Arc<Mutex<SidecarState>>,
         buffer: &mut Vec<u8>,
-        pending_json: &mut Option<String>,
     ) {
-        if buffer.is_empty() && pending_json.is_none() {
+        if buffer.is_empty() {
             return;
         }
 
-        // Process any remaining buffered data
-        Self::process_json_buffer(app, state, buffer, pending_json).await;
+        let mut line = Self::decode_utf8_lossy(std::mem::take(buffer));
+        if line.ends_with('\r') {
+            line.pop();
+        }
+
+        if line.trim().is_empty() {
+            return;
+        }
+
+        Self::handle_stdout_line(app, state, line).await;
     }
 
     fn flush_stderr_buffer(buffer: &mut Vec<u8>) {

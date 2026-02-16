@@ -1,15 +1,19 @@
 <script lang="ts">
-  import { onMount, onDestroy } from "svelte";
+  import { onDestroy, onMount } from "svelte";
   import { listen, type UnlistenFn } from "@tauri-apps/api/event";
   import { invoke } from "@tauri-apps/api/core";
-  import { PromptInput } from '$lib/components/PromptInput';
-  import { AssistantMessage, UserMessage } from '$lib/components/Messages';
-  import type { AgentEvent } from '$lib/types/agent';
-  import { agentStore } from '$lib/stores/agent.svelte';
-  import { messagesStore } from '$lib/stores/messages.svelte';
-  import { handleAgentEvent } from '$lib/handlers/agent-events';
-  import { handleSlashCommand, handlePromptSubmit } from '$lib/handlers/commands';
-  import { cwdStore } from '$lib/stores/cwd.svelte';
+
+  import { AssistantMessage, UserMessage } from "$lib/components/Messages";
+  import { PromptInput } from "$lib/components/PromptInput";
+  import { handleAgentEvent } from "$lib/handlers/agent-events";
+  import { handlePromptSubmit, handleSlashCommand } from "$lib/handlers/commands";
+  import { createAgentStore } from "$lib/stores/agent.svelte";
+  import { cwdStore } from "$lib/stores/cwd.svelte";
+  import { createEnabledModelsStore } from "$lib/stores/enabledModels.svelte";
+  import { createMessagesStore } from "$lib/stores/messages.svelte";
+  import { sessionsStore, type SessionDescriptor } from "$lib/stores/sessions.svelte";
+  import type { AgentEvent } from "$lib/types/agent";
+  import type { SessionRuntime } from "$lib/types/session";
 
   // DOM refs
   let messagesContainerRef = $state<HTMLDivElement | null>(null);
@@ -19,117 +23,246 @@
   let unlistenError: UnlistenFn | null = null;
   let unlistenTerminated: UnlistenFn | null = null;
 
-  // Reactive state from stores
-  const messages = $derived(messagesStore.messages);
-  const isLoading = $derived(agentStore.isLoading);
-  const sessionStarted = $derived(agentStore.sessionStarted);
-  const currentModel = $derived(agentStore.currentModel);
-  const currentProvider = $derived(agentStore.currentProvider);
-  const availableModels = $derived(agentStore.availableModels);
-  const isModelsLoading = $derived(agentStore.isModelsLoading);
-  const isSettingModel = $derived(agentStore.isSettingModel);
-  const isStreaming = $derived(messagesStore.streamingMessageId !== null);
+  let sessionRuntimes = $state<Record<string, SessionRuntime>>({});
+  let projectDirInput = $state("");
+  let startupError = $state<string | null>(null);
 
-  // Scroll management
+  const sessions = $derived(sessionsStore.sessions);
+  const activeSessionId = $derived(sessionsStore.activeSessionId);
+  const activeRuntime = $derived(activeSessionId ? sessionRuntimes[activeSessionId] ?? null : null);
+
+  const messages = $derived(activeRuntime ? activeRuntime.messages.messages : []);
+  const isLoading = $derived(activeRuntime ? activeRuntime.agent.isLoading : false);
+  const sessionStarted = $derived(activeRuntime ? activeRuntime.agent.sessionStarted : false);
+  const currentModel = $derived(activeRuntime ? activeRuntime.agent.currentModel : "");
+  const currentProvider = $derived(activeRuntime ? activeRuntime.agent.currentProvider : "");
+  const availableModels = $derived(activeRuntime ? activeRuntime.agent.availableModels : []);
+  const isModelsLoading = $derived(activeRuntime ? activeRuntime.agent.isModelsLoading : false);
+  const isSettingModel = $derived(activeRuntime ? activeRuntime.agent.isSettingModel : false);
+  const isStreaming = $derived(activeRuntime ? activeRuntime.messages.streamingMessageId !== null : false);
+  const activeProjectDir = $derived(activeRuntime ? activeRuntime.projectDir : cwdStore.cwd);
+
   function handleScroll(): void {
-    if (messagesContainerRef) {
-      messagesStore.updateScrollPosition(messagesContainerRef);
+    if (messagesContainerRef && activeRuntime) {
+      activeRuntime.messages.updateScrollPosition(messagesContainerRef);
     }
   }
 
   function scrollToBottom(smooth = true): void {
-    messagesStore.scrollToBottom(messagesContainerRef, smooth);
+    activeRuntime?.messages.scrollToBottom(messagesContainerRef, smooth);
   }
 
-  // Load messages from backend
-  async function loadMessages(): Promise<void> {
+  async function loadMessages(runtime: SessionRuntime): Promise<void> {
     try {
       const response = await invoke<
-        { success: true; data: { messages: Array<{ role: string; content: unknown; timestamp?: number }> } } | 
-        { success: false; error: string }
-      >("get_messages");
+        | { success: true; data: { messages: Array<{ role: string; content: unknown; timestamp?: number }> } }
+        | { success: false; error: string }
+      >("get_messages", { sessionId: runtime.sessionId });
 
-      if (response && typeof response === 'object' && 'success' in response && response.success) {
-        messagesStore.loadFromAgentMessages(response.data.messages);
-        requestAnimationFrame(() => scrollToBottom(false));
+      if (response && typeof response === "object" && "success" in response && response.success) {
+        runtime.messages.loadFromAgentMessages(response.data.messages);
       }
     } catch (error) {
-      console.error('Failed to load messages:', error);
+      runtime.messages.addErrorMessage(`Failed to load messages: ${error}`);
     }
   }
 
-  // Handle agent errors
+  async function initializeRuntime(descriptor: SessionDescriptor): Promise<SessionRuntime> {
+    const runtime: SessionRuntime = {
+      sessionId: descriptor.sessionId,
+      projectDir: descriptor.projectDir,
+      title: descriptor.title,
+      agent: createAgentStore(descriptor.sessionId),
+      messages: createMessagesStore(),
+      enabledModels: createEnabledModelsStore(descriptor.projectDir),
+    };
+
+    await runtime.agent.initialize();
+    await loadMessages(runtime);
+    await runtime.agent.loadAvailableModels().catch((error) => {
+      console.warn("Failed to load available models:", error);
+    });
+
+    return runtime;
+  }
+
+  async function ensureRuntime(descriptor: SessionDescriptor): Promise<SessionRuntime> {
+    const existing = sessionRuntimes[descriptor.sessionId];
+    if (existing) {
+      if (existing.projectDir !== descriptor.projectDir) {
+        const updated: SessionRuntime = {
+          ...existing,
+          projectDir: descriptor.projectDir,
+        };
+        updated.enabledModels.setProjectDir(descriptor.projectDir);
+        await updated.enabledModels.refresh().catch(() => undefined);
+        sessionRuntimes = {
+          ...sessionRuntimes,
+          [descriptor.sessionId]: updated,
+        };
+        return updated;
+      }
+      return existing;
+    }
+
+    const runtime = await initializeRuntime(descriptor);
+    sessionRuntimes = {
+      ...sessionRuntimes,
+      [descriptor.sessionId]: runtime,
+    };
+    return runtime;
+  }
+
+  function removeRuntime(sessionId: string): void {
+    const next = { ...sessionRuntimes };
+    delete next[sessionId];
+    sessionRuntimes = next;
+  }
+
+  async function createSession(projectDir: string): Promise<void> {
+    const descriptor = await sessionsStore.createSession(projectDir);
+    await ensureRuntime(descriptor);
+    projectDirInput = "";
+    requestAnimationFrame(() => scrollToBottom(false));
+  }
+
+  async function createSessionFromInput(): Promise<void> {
+    const value = projectDirInput.trim();
+    const fallback = cwdStore.cwd ?? (await invoke<string>("get_working_directory"));
+    const projectDir = value.length > 0 ? value : fallback;
+    await createSession(projectDir);
+  }
+
+  async function closeActiveSession(): Promise<void> {
+    const sessionId = sessionsStore.activeSessionId;
+    if (!sessionId) return;
+
+    await sessionsStore.closeSession(sessionId);
+    removeRuntime(sessionId);
+
+    const nextActive = sessionsStore.activeSession;
+    if (nextActive) {
+      await ensureRuntime(nextActive);
+      requestAnimationFrame(() => scrollToBottom(false));
+    }
+  }
+
   function handleAgentError(errorPayload: string): void {
-    console.error('Agent error:', errorPayload);
-    messagesStore.addErrorMessage(errorPayload);
-    agentStore.setLoading(false);
-    messagesStore.setStreamingMessageId(null);
+    for (const runtime of Object.values(sessionRuntimes)) {
+      runtime.messages.addErrorMessage(errorPayload);
+      runtime.agent.setLoading(false);
+      runtime.messages.setStreamingMessageId(null);
+    }
   }
 
-  // Handle agent termination
   function handleAgentTerminated(exitCode: number | null): void {
-    console.log('Agent terminated with code:', exitCode);
-    agentStore.setLoading(false);
-    messagesStore.setStreamingMessageId(null);
+    console.log("Agent terminated with code:", exitCode);
+    for (const runtime of Object.values(sessionRuntimes)) {
+      runtime.agent.setLoading(false);
+      runtime.messages.setStreamingMessageId(null);
+    }
   }
 
-  // Event handlers from child components
   async function onSubmit(prompt: string): Promise<void> {
-    await handlePromptSubmit(prompt);
+    if (!activeRuntime) return;
+    await handlePromptSubmit(activeRuntime, prompt);
   }
 
   function onCancel(): void {
-    agentStore.abort();
+    activeRuntime?.agent.abort();
   }
 
   async function onModelChange(provider: string, modelId: string): Promise<void> {
+    if (!activeRuntime) return;
+
     try {
-      await agentStore.setModel(provider, modelId);
+      await activeRuntime.agent.setModel(provider, modelId);
     } catch (error) {
-      messagesStore.addErrorMessage(error instanceof Error ? error.message : String(error));
+      activeRuntime.messages.addErrorMessage(error instanceof Error ? error.message : String(error));
     }
   }
 
   async function onSlashCommand(command: string, args: string, fullText: string): Promise<void> {
-    const result = await handleSlashCommand(command, args, fullText);
+    if (!activeRuntime) return;
+
+    const result = await handleSlashCommand(activeRuntime, command, args, fullText);
 
     switch (result.type) {
-      case 'error':
-        messagesStore.addErrorMessage(result.message);
+      case "error":
+        activeRuntime.messages.addErrorMessage(result.message);
         break;
-      case 'submit':
-        await handlePromptSubmit(result.text);
+      case "submit":
+        await handlePromptSubmit(activeRuntime, result.text);
         break;
-      case 'handled':
-        // Nothing to do
+      case "handled":
         break;
     }
   }
 
-  // Lifecycle
-  onMount(async () => {
-    // Load working directory
+  async function bootstrapSessions(): Promise<void> {
     await cwdStore.load();
 
-    // Start agent session
-    try {
-      await agentStore.startSession();
-      await loadMessages();
-      await agentStore.loadAvailableModels().catch((error) => {
-        console.warn('Failed to load available models:', error);
-      });
-    } catch (error) {
-      messagesStore.addErrorMessage(`Failed to start session: ${error}`);
+    await sessionsStore.refreshFromBackend().catch(() => undefined);
+
+    for (const descriptor of sessionsStore.sessions) {
+      await ensureRuntime(descriptor);
     }
 
-    // Subscribe to agent events
-    unlistenEvent = await listen<string>("agent-event", (event) => {
+    if (sessionsStore.sessions.length === 0) {
+      const fallback = cwdStore.cwd ?? (await invoke<string>("get_working_directory"));
+      await createSession(fallback);
+    } else {
+      const active = sessionsStore.activeSession;
+      if (active) {
+        await ensureRuntime(active);
+      }
+    }
+
+    const active = sessionsStore.activeSession;
+    if (active) {
+      projectDirInput = active.projectDir;
+      requestAnimationFrame(() => scrollToBottom(false));
+    }
+  }
+
+  $effect(() => {
+    const active = sessionsStore.activeSession;
+    if (active) {
+      projectDirInput = active.projectDir;
+    }
+  });
+
+  onMount(async () => {
+    try {
+      await bootstrapSessions();
+    } catch (error) {
+      startupError = error instanceof Error ? error.message : String(error);
+    }
+
+    unlistenEvent = await listen<string | { sessionId?: string; event?: AgentEvent }>("agent-event", (event) => {
       try {
-        const data: AgentEvent = JSON.parse(event.payload);
-        handleAgentEvent(data);
-        requestAnimationFrame(() => scrollToBottom(true));
+        const payload =
+          typeof event.payload === "string" ? JSON.parse(event.payload) as unknown : event.payload;
+
+        if (!payload || typeof payload !== "object") {
+          return;
+        }
+
+        const wrapped = payload as { sessionId?: unknown; event?: unknown; type?: unknown };
+
+        if (typeof wrapped.sessionId === "string" && wrapped.event && typeof wrapped.event === "object") {
+          const runtime = sessionRuntimes[wrapped.sessionId];
+          if (!runtime) {
+            return;
+          }
+
+          handleAgentEvent(runtime, wrapped.event as AgentEvent);
+          if (sessionsStore.activeSessionId === wrapped.sessionId) {
+            requestAnimationFrame(() => scrollToBottom(true));
+          }
+        }
       } catch (e) {
-        console.error('Failed to parse agent event:', e, event.payload);
+        console.error("Failed to parse agent event:", e, event.payload);
       }
     });
 
@@ -151,27 +284,81 @@
 
 <main class="flex flex-col items-center w-full h-screen overflow-hidden">
   <div class="flex flex-col w-full h-full max-w-[min(95vw,1200px)] lg:max-w-[min(90vw,1400px)] px-4 py-4">
-    <!-- Header -->
-    <header class="shrink-0 text-center py-4">
-      <h1 class="text-3xl font-semibold tracking-tight mb-1 bg-gradient-to-r from-foreground to-muted-foreground bg-clip-text text-transparent">
-        Graphone
-      </h1>
-      <p class="text-sm text-muted-foreground">Ask me anything</p>
+    <header class="shrink-0 py-2">
+      <div class="flex flex-wrap items-center justify-between gap-3 mb-2">
+        <div>
+          <h1 class="text-3xl font-semibold tracking-tight mb-1 bg-linear-to-r from-foreground to-muted-foreground bg-clip-text text-transparent">
+            Graphone
+          </h1>
+          <p class="text-sm text-muted-foreground">Parallel project sessions</p>
+        </div>
+
+        <div class="flex items-center gap-2">
+          <select
+            class="bg-input-background border border-border rounded px-2 py-1 text-xs max-w-64"
+            value={activeSessionId ?? ""}
+            onchange={(e) => sessionsStore.setActiveSession((e.target as HTMLSelectElement).value)}
+            aria-label="Select active session"
+          >
+            {#if sessions.length === 0}
+              <option value="">No sessions</option>
+            {:else}
+              {#each sessions as session (session.sessionId)}
+                <option value={session.sessionId}>
+                  {session.title} — {session.projectDir}
+                </option>
+              {/each}
+            {/if}
+          </select>
+
+          <button
+            type="button"
+            class="px-2 py-1 text-xs border border-border rounded hover:bg-secondary"
+            onclick={closeActiveSession}
+            disabled={!activeSessionId}
+          >
+            Close
+          </button>
+        </div>
+      </div>
+
+      <div class="flex items-center gap-2">
+        <input
+          class="flex-1 bg-input-background border border-border rounded px-2 py-1 text-xs"
+          placeholder="Project directory for new session"
+          bind:value={projectDirInput}
+        />
+        <button
+          type="button"
+          class="px-2 py-1 text-xs border border-border rounded hover:bg-secondary"
+          onclick={createSessionFromInput}
+          disabled={sessionsStore.creating}
+        >
+          {sessionsStore.creating ? "Creating…" : "New session"}
+        </button>
+      </div>
     </header>
 
-    <!-- Messages area -->
     <div
-      class="flex-1 min-h-0 overflow-y-auto py-4 px-2 flex flex-col gap-4 scroll-smooth"
+      class="flex-1 min-h-0 overflow-y-auto py-4 px-2 flex flex-col gap-2 scroll-smooth"
       bind:this={messagesContainerRef}
       onscroll={handleScroll}
     >
-      {#if messages.length === 0}
+      {#if startupError}
+        <div class="flex items-center justify-center h-full">
+          <p class="text-destructive text-sm">Failed to initialize sessions: {startupError}</p>
+        </div>
+      {:else if !activeRuntime}
+        <div class="flex items-center justify-center h-full">
+          <p class="text-muted-foreground text-sm">Create a session to start chatting.</p>
+        </div>
+      {:else if messages.length === 0}
         <div class="flex items-center justify-center h-full">
           <p class="text-muted-foreground text-sm">Start a conversation by typing below</p>
         </div>
       {:else}
         {#each messages as message (message.id)}
-          {#if message.type === 'user'}
+          {#if message.type === "user"}
             <UserMessage content={message.content} timestamp={message.timestamp} />
           {:else}
             <AssistantMessage
@@ -194,7 +381,6 @@
       {/if}
     </div>
 
-    <!-- Input area fixed at bottom -->
     <section class="shrink-0 w-full px-2 pb-4 pt-2">
       <PromptInput
         onsubmit={onSubmit}
@@ -202,16 +388,21 @@
         onslashcommand={onSlashCommand}
         onmodelchange={onModelChange}
         {isLoading}
-        disabled={!sessionStarted}
-        placeholder={sessionStarted ? "What would you like to know? Try /new, /help..." : "Initializing agent session..."}
+        disabled={!activeRuntime || !sessionStarted}
+        placeholder={
+          activeRuntime && sessionStarted
+            ? "What would you like to know? Try /new, /help..."
+            : "Create a session to begin..."
+        }
         model={currentModel}
         provider={currentProvider}
         models={availableModels}
         modelsLoading={isModelsLoading}
         modelChanging={isSettingModel}
+        enabledModels={activeRuntime?.enabledModels}
         autofocus={true}
-        cwd={cwdStore.cwd}
-        cwdLoading={cwdStore.loading}
+        cwd={activeProjectDir}
+        cwdLoading={cwdStore.loading && !activeRuntime}
       />
     </section>
   </div>

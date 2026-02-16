@@ -15,6 +15,6 @@
   <div class={cn(
     "w-full bg-primary border border-primary text-primary-foreground rounded-lg px-5 py-2 wrap-break-word"
   )}>
-    <pre class="text-[0.9375rem] leading-relaxed whitespace-pre-wrap wrap-break-word font-inherit m-0">{content}</pre>
+    <pre class="text-[0.9375rem] leading-tight whitespace-pre-wrap wrap-break-word font-inherit m-0">{content}</pre>
   </div>
 </div>

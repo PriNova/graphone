@@ -18,14 +18,13 @@
 - `npm run build:windows:portable` - Build Windows .exe + stage portable runtime folder with sidecar assets
 - `npm run build:all` - Build Linux + Windows
 - `npm run run:windows` - Build (if needed), stage portable runtime, and launch Windows app from WSL2
-- `GRAPHONE_PI_AGENT_SOURCE=local npm run build:linux` - Build using local `../pi-mono` sidecar source
 
 ## Stack & Architecture
 - **Frontend**: Svelte 5 + TypeScript + Vite
 - **Backend**: Rust + Tauri 2.0
-- **Sidecar**: `@mariozechner/pi-coding-agent` (npm dependency, compiled with bun)
-- **Pattern**: Desktop uses sidecar (`pi --mode rpc` subprocess via shell plugin)
-- **Reference**: Optional local pi-mono override at `../pi-mono` via `GRAPHONE_PI_AGENT_SOURCE=local`
+- **Sidecar**: Graphone-local SDK host sidecar (`sidecars/pi-agent-host`, compiled with bun)
+- **Pattern**: Desktop uses one host sidecar process that multiplexes multiple in-process agent sessions
+- **SDK source**: Host sidecar consumes `@mariozechner/pi-coding-agent` from npm
 
 ## Project Structure
 ```
@@ -36,7 +35,7 @@ graphone/
 │   ├── binaries/          # Sidecar binaries (auto-populated by build.rs)
 │   ├── capabilities/      # Tauri permissions (desktop.json, mobile.json)
 │   ├── .cargo/config.toml # lld linker settings per-target
-│   ├── build.rs           # Auto-builds pi-agent sidecar with bun (npm first)
+│   ├── build.rs           # Auto-builds host sidecar binary with bun
 │   ├── Cargo.toml
 │   └── tauri.conf.json    # externalBin: ["binaries/pi-agent"]
 ├── docs/
@@ -92,11 +91,11 @@ graphone/
 
 ### Sidecar Build (Automatic)
 - Sidecar is built automatically during Tauri/Cargo builds via `src-tauri/build.rs`
-- Default source: `node_modules/@mariozechner/pi-coding-agent` (pinned npm dependency)
-- Optional local source: `GRAPHONE_PI_AGENT_SOURCE=local` (uses `../pi-mono/packages/coding-agent`)
+- Build source: `sidecars/pi-agent-host` (Graphone-local host multiplexer)
+- Runtime SDK assets: `node_modules/@mariozechner/pi-coding-agent` (pinned npm dependency)
 - Requires **bun**: `curl -fsSL https://bun.sh/install | bash`
 - Binary naming: `pi-agent-<target-triple>` (with `.exe` for Windows)
-- bun compiles `dist/cli.js` to a standalone binary (not cargo/Rust)
+- bun compiles host `dist/cli.js` to a standalone binary (not cargo/Rust)
 
 ### Linker Configuration (.cargo/config.toml)
 - **Linux**: `lld` via `clang -fuse-ld=lld` (2-10x faster than system linker)

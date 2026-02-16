@@ -1,6 +1,5 @@
-mod logger;
-mod models_static;
 mod commands;
+mod logger;
 mod sidecar;
 mod state;
 mod types;
@@ -28,7 +27,9 @@ pub fn run() {
         .manage(sidecar_state)
         .invoke_handler(tauri::generate_handler![
             commands::get_working_directory,
-            commands::start_agent_session,
+            commands::create_agent,
+            commands::close_agent,
+            commands::list_agents,
             commands::send_prompt,
             commands::abort_agent,
             commands::new_session,
@@ -37,7 +38,6 @@ pub fn run() {
             commands::get_available_models,
             commands::set_model,
             commands::cycle_model,
-            commands::get_static_models,
             commands::get_enabled_models,
             commands::set_enabled_models,
         ])

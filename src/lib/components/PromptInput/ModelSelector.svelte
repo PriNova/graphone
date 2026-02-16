@@ -1,7 +1,10 @@
 <script lang="ts">
   import { cn } from '$lib/utils/cn';
   import type { AvailableModel } from '$lib/stores/agent.svelte';
-  import { enabledModelsStore } from '$lib/stores/enabledModels.svelte';
+  import {
+    enabledModelsStore as defaultEnabledModelsStore,
+    type EnabledModelsStore,
+  } from '$lib/stores/enabledModels.svelte';
 
   type FilterMode = 'all' | 'enabled';
 
@@ -12,6 +15,7 @@
     loading?: boolean;
     changing?: boolean;
     disabled?: boolean;
+    enabledModels?: EnabledModelsStore;
     onchange?: (provider: string, modelId: string) => void | Promise<void>;
   }
 
@@ -22,22 +26,23 @@
     loading = false,
     changing = false,
     disabled = false,
+    enabledModels = defaultEnabledModelsStore,
     onchange,
   }: Props = $props();
 
   let filterMode = $state<FilterMode>('all');
 
-  const hasEnabledScope = $derived(enabledModelsStore.patterns.length > 0);
-  const enabledKeys = $derived(enabledModelsStore.resolveEnabledModelKeys(models));
+  const hasEnabledScope = $derived(enabledModels.patterns.length > 0);
+  const enabledKeys = $derived(enabledModels.resolveEnabledModelKeys(models));
 
-  const enabledModels = $derived(
+  const enabledOnlyModels = $derived(
     models.filter((m) => enabledKeys.has(`${m.provider}/${m.id}`))
   );
 
-  const enabledCount = $derived(hasEnabledScope ? enabledModels.length : models.length);
+  const enabledCount = $derived(hasEnabledScope ? enabledOnlyModels.length : models.length);
 
   const filteredModels = $derived(
-    filterMode === 'enabled' && hasEnabledScope ? enabledModels : models
+    filterMode === 'enabled' && hasEnabledScope ? enabledOnlyModels : models
   );
 
   const selectedIndex = $derived(
@@ -76,7 +81,7 @@
   async function toggleCurrentModel(): Promise<void> {
     if (!currentProvider || !currentModel) return;
     // Pass the full (unfiltered) model list so we can expand patterns into explicit IDs if needed.
-    await enabledModelsStore.toggleModel(currentProvider, currentModel, models);
+    await enabledModels.toggleModel(currentProvider, currentModel, models);
   }
 
   function handleFilterChange(mode: FilterMode): void {

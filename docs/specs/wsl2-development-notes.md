@@ -35,12 +35,11 @@ This document addresses the specific considerations, frictions, and workarounds 
 | Android | WSL2 | Android | Requires Android SDK in WSL2 |
 | iOS | ❌ | macOS only | iOS builds **require macOS** |
 
-### 1.3 pi-mono Sidecar Architecture
+### 1.3 Host Sidecar Architecture
 
-**Important:** pi-mono is **NOT** a Rust project. It is:
-- A **Node.js/TypeScript** project located at `../pi-mono`
-- Built using **bun** (`bun build --compile`)
-- Automatically compiled during Tauri builds via `src-tauri/build.rs`
+**Important:** Graphone ships a local host sidecar (`sidecars/pi-agent-host`) and compiles it with bun during Tauri builds.
+
+The host sidecar uses `@mariozechner/pi-coding-agent` as an SDK dependency and multiplexes many in-process sessions.
 
 **Build Flow:**
 ```
@@ -48,12 +47,11 @@ Tauri Build
     ↓
 build.rs executes
     ↓
-Detects desktop target → Runs in pi-mono directory:
-    npm run build:binary
+Detects desktop target → Builds sidecars/pi-agent-host
     ↓
-bun build --compile ./dist/cli.js --outfile dist/pi
+bun build --compile ./dist/cli.js --outfile <compiled binary>
     ↓
-Binary copied to target/<profile>/binaries/
+Binary copied to src-tauri/binaries/
     ↓
 Tauri bundles as sidecar
 ```
@@ -205,7 +203,7 @@ New-NetFirewallRule -DisplayName "WSL2" -Direction Inbound -InterfaceAlias "vEth
 ### 3.1 pi-mono Sidecar Pattern (Desktop)
 
 **Challenge:**
-The sidecar pattern (running `pi --mode rpc` as external binary) requires bun for compilation.
+The sidecar pattern (running the Graphone host sidecar as external binary) requires bun for compilation.
 
 **Architecture Clarification:**
 ```

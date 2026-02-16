@@ -13,23 +13,18 @@ A unified application to interface with the `pi-mono` coding agent across Deskto
 ## 3. Architecture & Requirements
 
 ### A. Desktop (The Sidecar Pattern)
-- **Mechanism:** The Rust backend spawns `pi --mode rpc` as a managed sidecar.
-- **Communication:** [Tauri Command API](https://v2.tauri.app/concept/inter-process-communication/) bridges the Frontend TS and the Rust sidecar `stdin/stdout`.
-- **Packaging:** Include the `pi` binary in the [Tauri Bundle](https://v2.tauri.app/plugin/shell/).
+- **Mechanism:** The Rust backend spawns the Graphone host sidecar (`pi-agent`) as a managed sidecar.
+- **Communication:** [Tauri Command API](https://v2.tauri.app/concept/inter-process-communication/) bridges the frontend and Rust backend; Rust communicates with the sidecar over `stdin/stdout` JSON lines.
+- **Packaging:** Include the `pi-agent` binary in the [Tauri Bundle](https://v2.tauri.app/plugin/shell/).
 
-**Important:** pi-mono is a **Node.js/TypeScript project**, not a Rust project. The sidecar binary is built using **bun**:
-
-```bash
-# pi-mono build process (in ../pi-mono/packages/coding-agent)
-npm run build:binary
-# This runs: bun build --compile ./dist/cli.js --outfile dist/pi
-```
+**Important:** The shipped sidecar is Graphone-local host code (`sidecars/pi-agent-host`) built with **bun** and using `@mariozechner/pi-coding-agent` as its SDK dependency.
 
 The build is automated via `src-tauri/build.rs`, which:
 1. Detects the build target
-2. Runs `npm run build:binary` in the pi-mono directory
-3. Copies the resulting binary to `target/<profile>/binaries/`
-4. Tauri bundles it as a sidecar
+2. Builds `sidecars/pi-agent-host/dist/cli.js`
+3. Compiles it to a standalone binary with `bun build --compile`
+4. Copies runtime assets from `@mariozechner/pi-coding-agent`
+5. Tauri bundles it as a sidecar
 
 ### B. Mobile (The Library Pattern)
 - **Mechanism:** Since Mobile cannot run Node.js subprocesses, the `pi-mono` logic must be bundled as a library within the WebView.
@@ -42,69 +37,48 @@ The build is automated via `src-tauri/build.rs`, which:
 ## 4. Scaffold Structure
 ```text
 .
+├── sidecars/
+│   └── pi-agent-host/       # Graphone host sidecar source (TypeScript)
 ├── src-tauri/               # Rust Backend
 │   ├── src/
-│   │   ├── lib.rs           # Tauri commands, shell plugin setup
+│   │   ├── lib.rs           # Tauri commands and state management
 │   │   └── main.rs          # Entry point
 │   ├── binaries/            # Sidecar binaries (auto-populated by build.rs)
-│   ├── build.rs             # Build script: compiles pi-mono with bun
-│   ├── tauri.conf.json      # Mobile & Desktop capabilities
-│   └── capabilities/        # Permissions for Shell/HTTP
-│       ├── default.json     # Base capabilities
-│       ├── desktop.json     # Desktop: shell plugin, sidecar permissions
-│       └── mobile.json      # Mobile: HTTP plugin
+│   ├── build.rs             # Build script: compiles host sidecar with bun
+│   ├── tauri.conf.json      # Desktop config with externalBin
+│   └── capabilities/        # Permissions for shell/http plugins
 ├── src/                     # Frontend (TypeScript + Svelte)
-│   ├── components/          # Chat UI & Code Views
-│   ├── hooks/               # usePiAgent (Logic switch: RPC vs SDK)
-│   └── services/            # Bridge to Tauri Commands
-├── vscode-extension/        # Separate TS project for VS Code
-│   └── src/extension.ts     # Uses pi-mono logic directly
-└── package.json             # Includes pi-mono dependency
-
-../pi-mono/                  # Node.js/TypeScript project (external)
-└── packages/
-    └── coding-agent/        # Main package
-        ├── src/             # TypeScript source
-        ├── dist/            # Compiled JavaScript
-        └── package.json     # Contains build:binary script
+│   ├── lib/
+│   │   ├── stores/          # Session-scoped stores
+│   │   ├── handlers/        # sessionId event/command routing
+│   │   └── components/      # Chat and prompt UI
+└── package.json             # Includes @mariozechner/pi-coding-agent dependency
 ```
 
-## 5. pi-mono Sidecar Build Process
+## 5. Sidecar Build Process
 
 ### Prerequisites
 - **bun** must be installed: https://bun.sh/docs/installation
-- pi-mono repository at `../pi-mono` (relative to graphone)
+- `@mariozechner/pi-coding-agent` installed in `node_modules`
 
 ### Automatic Build (via build.rs)
-```rust
-// src-tauri/build.rs
-// This script runs automatically during cargo build
-
-1. Check if target is desktop (skip for mobile)
-2. Locate pi-mono at ../pi-mono/packages/coding-agent
-3. Run npm install if node_modules missing
-4. Execute: npm run build:binary
-   - Internally uses: bun build --compile ./dist/cli.js --outfile dist/pi
-5. Copy dist/pi to target/<profile>/binaries/pi-agent-<target-triple>
-6. Set executable permissions
-```
-
-### Manual Build (for debugging)
-```bash
-cd ../pi-mono/packages/coding-agent
-npm install
-npm run build:binary
-# Output: dist/pi (standalone binary)
+```text
+1. Check target platform (skip mobile)
+2. Build sidecars/pi-agent-host/src/cli.ts -> dist/cli.js
+3. Compile with bun build --compile
+4. Copy binary to src-tauri/binaries/pi-agent-<target-triple>
+5. Copy runtime assets from @mariozechner/pi-coding-agent
+6. Tauri bundles sidecar via externalBin
 ```
 
 ### Binary Naming Convention
-Tauri expects sidecar binaries named as:
+Tauri sidecar binaries:
 - Linux: `pi-agent-x86_64-unknown-linux-gnu`
 - Windows: `pi-agent-x86_64-pc-windows-msvc.exe`
 - macOS: `pi-agent-x86_64-apple-darwin` (Intel) or `pi-agent-aarch64-apple-darwin` (Apple Silicon)
 
 ## 6. Development Milestones
-- **Phase 1 (Desktop MVP):** Scaffold Tauri 2.0 and implement the Rust-to-RPC bridge for pi.
+- **Phase 1 (Desktop MVP):** Scaffold Tauri 2.0 and implement the Rust-to-host-sidecar bridge.
 - **Phase 2 (Mobile Adjustments):** Configure Android/iOS build targets and implement the SDK-fallback for environments without exec access.
 - **Phase 3 (UI/UX):** Implement a responsive chat interface that adapts from desktop panels to mobile screens.
 - **Phase 4 (VS Code):** Create the extension wrapper using the core logic refined in Phase 1.

@@ -6,10 +6,10 @@ use tauri::{AppHandle, State};
 use tokio::sync::Mutex;
 
 use crate::logger;
-use crate::models_static;
 use crate::sidecar::{EventHandler, RpcClient, SidecarManager};
 use crate::state::SidecarState;
-use crate::types::{RpcCommand, RpcResponse};
+use crate::types::RpcCommand;
+use crate::types::RpcResponse;
 use crate::utils::crypto_random_uuid;
 
 #[derive(Debug, Clone, Serialize)]
@@ -28,7 +28,11 @@ fn global_settings_path() -> Option<PathBuf> {
     dirs::home_dir().map(|h| h.join(".pi").join("agent").join("settings.json"))
 }
 
-fn project_settings_path() -> Option<PathBuf> {
+fn project_settings_path(project_dir: Option<&str>) -> Option<PathBuf> {
+    if let Some(dir) = project_dir {
+        return Some(PathBuf::from(dir).join(".pi").join("settings.json"));
+    }
+
     std::env::current_dir()
         .ok()
         .map(|cwd| cwd.join(".pi").join("settings.json"))
@@ -103,8 +107,13 @@ fn read_enabled_models_from_settings(path: &Path) -> (bool, Vec<String>) {
 
 fn write_enabled_models_to_settings(path: &Path, patterns: &[String]) -> Result<(), String> {
     if let Some(parent) = path.parent() {
-        std::fs::create_dir_all(parent)
-            .map_err(|e| format!("Failed to create settings directory {}: {}", parent.display(), e))?;
+        std::fs::create_dir_all(parent).map_err(|e| {
+            format!(
+                "Failed to create settings directory {}: {}",
+                parent.display(),
+                e
+            )
+        })?;
     }
 
     let mut root: serde_json::Value = if path.exists() {
@@ -127,8 +136,8 @@ fn write_enabled_models_to_settings(path: &Path, patterns: &[String]) -> Result<
 
     root["enabledModels"] = serde_json::Value::Array(arr);
 
-    let serialized =
-        serde_json::to_string_pretty(&root).map_err(|e| format!("Failed to serialize settings: {}", e))?;
+    let serialized = serde_json::to_string_pretty(&root)
+        .map_err(|e| format!("Failed to serialize settings: {}", e))?;
 
     std::fs::write(path, format!("{}\n", serialized))
         .map_err(|e| format!("Failed to write settings file {}: {}", path.display(), e))?;
@@ -136,8 +145,8 @@ fn write_enabled_models_to_settings(path: &Path, patterns: &[String]) -> Result<
     Ok(())
 }
 
-fn load_enabled_models() -> EnabledModelsResponse {
-    let project_path = project_settings_path();
+fn load_enabled_models(project_dir: Option<&str>) -> EnabledModelsResponse {
+    let project_path = project_settings_path(project_dir);
     if let Some(project_path) = project_path.as_ref() {
         let (defined, patterns) = read_enabled_models_from_settings(project_path);
         if defined {
@@ -170,10 +179,10 @@ fn load_enabled_models() -> EnabledModelsResponse {
 
 /// Get enabledModels patterns from pi settings.
 ///
-/// Precedence: project settings (./.pi/settings.json) override global settings (~/.pi/agent/settings.json).
+/// Precedence: project settings (`<projectDir>/.pi/settings.json`) override global settings (`~/.pi/agent/settings.json`).
 #[tauri::command]
-pub fn get_enabled_models() -> EnabledModelsResponse {
-    load_enabled_models()
+pub fn get_enabled_models(project_dir: Option<String>) -> EnabledModelsResponse {
+    load_enabled_models(project_dir.as_deref())
 }
 
 /// Persist enabledModels patterns to a pi settings file.
@@ -181,21 +190,30 @@ pub fn get_enabled_models() -> EnabledModelsResponse {
 /// - patterns: the enabledModels array to write. Empty means "no scoping" (all models enabled).
 /// - scope: "auto" (default), "project", or "global".
 #[tauri::command]
-pub fn set_enabled_models(patterns: Vec<String>, scope: Option<String>) -> Result<EnabledModelsResponse, String> {
+pub fn set_enabled_models(
+    patterns: Vec<String>,
+    scope: Option<String>,
+    project_dir: Option<String>,
+) -> Result<EnabledModelsResponse, String> {
     let scope = scope.unwrap_or_else(|| "auto".to_string());
 
-    let project_path = project_settings_path();
+    let project_path = project_settings_path(project_dir.as_deref());
     let global_path = global_settings_path();
 
     let target_path: PathBuf = match scope.as_str() {
-        "project" => project_path.ok_or_else(|| "Failed to determine project settings path".to_string())?,
-        "global" => global_path.ok_or_else(|| "Failed to determine global settings path".to_string())?,
+        "project" => {
+            project_path.ok_or_else(|| "Failed to determine project settings path".to_string())?
+        }
+        "global" => {
+            global_path.ok_or_else(|| "Failed to determine global settings path".to_string())?
+        }
         "auto" => {
             if let Some(p) = project_path.as_ref() {
                 if p.exists() {
                     p.clone()
                 } else {
-                    global_path.ok_or_else(|| "Failed to determine global settings path".to_string())?
+                    global_path
+                        .ok_or_else(|| "Failed to determine global settings path".to_string())?
                 }
             } else {
                 global_path.ok_or_else(|| "Failed to determine global settings path".to_string())?
@@ -211,26 +229,22 @@ pub fn set_enabled_models(patterns: Vec<String>, scope: Option<String>) -> Resul
 
     write_enabled_models_to_settings(&target_path, &patterns)?;
 
-    Ok(load_enabled_models())
+    Ok(load_enabled_models(project_dir.as_deref()))
 }
 
-/// Start the pi-agent sidecar and stream events to the frontend
-#[tauri::command]
-pub async fn start_agent_session(
-    app: AppHandle,
-    state: State<'_, Arc<Mutex<SidecarState>>>,
+async fn ensure_sidecar_started(
+    app: &AppHandle,
+    state: &Arc<Mutex<SidecarState>>,
     provider: Option<String>,
     model: Option<String>,
 ) -> Result<(), String> {
     let mut state_guard = state.lock().await;
 
     if state_guard.child.is_some() {
-        logger::log("Agent session already running, reusing existing session");
         return Ok(());
     }
 
-    let sidecar_command = SidecarManager::build_sidecar_command(&app, provider, model)?;
-
+    let sidecar_command = SidecarManager::build_sidecar_command(app, provider, model)?;
     let (event_rx, child) = SidecarManager::spawn_sidecar(sidecar_command).await?;
 
     logger::log("Sidecar spawned successfully");
@@ -239,17 +253,196 @@ pub async fn start_agent_session(
     state_guard.response_tx = Some(response_tx);
 
     let child_arc = Arc::new(Mutex::new(child));
-    state_guard.child = Some(child_arc.clone());
+    state_guard.child = Some(child_arc);
 
     drop(state_guard);
 
-    let state_for_handler = state.inner().clone();
-    EventHandler::spawn_response_handler(state_for_handler, response_rx);
-
-    let state_for_events = state.inner().clone();
-    EventHandler::spawn_event_listener(app, state_for_events, event_rx);
+    EventHandler::spawn_response_handler(state.clone(), response_rx);
+    EventHandler::spawn_event_listener(app.clone(), state.clone(), event_rx);
 
     Ok(())
+}
+
+async fn send_command_with_response(
+    state: &Arc<Mutex<SidecarState>>,
+    command: RpcCommand,
+    timeout_secs: u64,
+) -> Result<RpcResponse, String> {
+    let id = command
+        .id
+        .clone()
+        .ok_or_else(|| "Command id is required for response correlation".to_string())?;
+    RpcClient::send_command_with_response(state, command, id, timeout_secs).await
+}
+
+fn require_session_id(session_id: String, command: &str) -> Result<String, String> {
+    let trimmed = session_id.trim().to_string();
+    if trimmed.is_empty() {
+        return Err(format!("sessionId is required for {}", command));
+    }
+
+    Ok(trimmed)
+}
+
+fn cache_session_from_create_response(state: &mut SidecarState, response: &RpcResponse) {
+    if !response.success {
+        return;
+    }
+
+    let Some(data) = response.data.as_ref() else {
+        return;
+    };
+
+    let Some(session_id) = data.get("sessionId").and_then(|v| v.as_str()) else {
+        return;
+    };
+
+    let Some(cwd) = data.get("cwd").and_then(|v| v.as_str()) else {
+        return;
+    };
+
+    state
+        .session_cwds
+        .insert(session_id.to_string(), cwd.to_string());
+}
+
+fn cache_sessions_from_list_response(state: &mut SidecarState, response: &RpcResponse) {
+    if !response.success {
+        return;
+    }
+
+    let Some(data) = response.data.as_ref() else {
+        return;
+    };
+
+    let Some(sessions) = data.get("sessions").and_then(|value| value.as_array()) else {
+        return;
+    };
+
+    let mut next = std::collections::HashMap::new();
+
+    for session in sessions {
+        let Some(session_id) = session.get("sessionId").and_then(|v| v.as_str()) else {
+            continue;
+        };
+
+        let Some(cwd) = session.get("cwd").and_then(|v| v.as_str()) else {
+            continue;
+        };
+
+        next.insert(session_id.to_string(), cwd.to_string());
+    }
+
+    state.session_cwds = next;
+}
+
+async fn create_session_internal(
+    app: AppHandle,
+    state: &Arc<Mutex<SidecarState>>,
+    project_dir: String,
+    provider: Option<String>,
+    model: Option<String>,
+) -> Result<RpcResponse, String> {
+    ensure_sidecar_started(&app, state, provider.clone(), model.clone()).await?;
+
+    let id = crypto_random_uuid();
+    let command = RpcCommand {
+        id: Some(id),
+        r#type: "create_session".to_string(),
+        session_id: None,
+        cwd: Some(project_dir),
+        message: None,
+        provider,
+        model_id: model,
+        streaming_behavior: None,
+    };
+
+    let response = send_command_with_response(state, command, 10).await?;
+
+    let mut state_guard = state.lock().await;
+    cache_session_from_create_response(&mut state_guard, &response);
+
+    Ok(response)
+}
+
+#[tauri::command]
+pub async fn create_agent(
+    app: AppHandle,
+    state: State<'_, Arc<Mutex<SidecarState>>>,
+    project_dir: String,
+    provider: Option<String>,
+    model: Option<String>,
+) -> Result<RpcResponse, String> {
+    create_session_internal(app, state.inner(), project_dir, provider, model).await
+}
+
+#[tauri::command]
+pub async fn close_agent(
+    state: State<'_, Arc<Mutex<SidecarState>>>,
+    session_id: String,
+) -> Result<RpcResponse, String> {
+    let id = crypto_random_uuid();
+
+    let command = RpcCommand {
+        id: Some(id),
+        r#type: "close_session".to_string(),
+        session_id: Some(session_id.clone()),
+        cwd: None,
+        message: None,
+        provider: None,
+        model_id: None,
+        streaming_behavior: None,
+    };
+
+    let response = send_command_with_response(state.inner(), command, 5).await?;
+
+    if response.success {
+        let mut state_guard = state.lock().await;
+        state_guard.session_cwds.remove(&session_id);
+    }
+
+    Ok(response)
+}
+
+#[tauri::command]
+pub async fn list_agents(
+    state: State<'_, Arc<Mutex<SidecarState>>>,
+) -> Result<RpcResponse, String> {
+    let has_child = {
+        let state_guard = state.lock().await;
+        state_guard.child.is_some()
+    };
+
+    if !has_child {
+        return Ok(RpcResponse {
+            id: None,
+            r#type: "response".to_string(),
+            command: "list_sessions".to_string(),
+            success: true,
+            data: Some(serde_json::json!({ "sessions": [] })),
+            error: None,
+        });
+    }
+
+    let id = crypto_random_uuid();
+
+    let command = RpcCommand {
+        id: Some(id),
+        r#type: "list_sessions".to_string(),
+        session_id: None,
+        cwd: None,
+        message: None,
+        provider: None,
+        model_id: None,
+        streaming_behavior: None,
+    };
+
+    let response = send_command_with_response(state.inner(), command, 5).await?;
+
+    let mut state_guard = state.lock().await;
+    cache_sessions_from_list_response(&mut state_guard, &response);
+
+    Ok(response)
 }
 
 /// Send a prompt to the agent
@@ -257,13 +450,19 @@ pub async fn start_agent_session(
 pub async fn send_prompt(
     state: State<'_, Arc<Mutex<SidecarState>>>,
     prompt: String,
+    session_id: String,
 ) -> Result<(), String> {
+    let session_id = require_session_id(session_id, "prompt")?;
+
     let cmd = RpcCommand {
         id: Some(crypto_random_uuid()),
         r#type: "prompt".to_string(),
+        session_id: Some(session_id),
+        cwd: None,
         message: Some(prompt),
         provider: None,
         model_id: None,
+        streaming_behavior: None,
     };
 
     RpcClient::send_command(state.inner(), cmd).await
@@ -271,13 +470,21 @@ pub async fn send_prompt(
 
 /// Abort the current agent operation
 #[tauri::command]
-pub async fn abort_agent(state: State<'_, Arc<Mutex<SidecarState>>>) -> Result<(), String> {
+pub async fn abort_agent(
+    state: State<'_, Arc<Mutex<SidecarState>>>,
+    session_id: String,
+) -> Result<(), String> {
+    let session_id = require_session_id(session_id, "abort")?;
+
     let cmd = RpcCommand {
         id: Some(crypto_random_uuid()),
         r#type: "abort".to_string(),
+        session_id: Some(session_id),
+        cwd: None,
         message: None,
         provider: None,
         model_id: None,
+        streaming_behavior: None,
     };
 
     RpcClient::send_command(state.inner(), cmd).await
@@ -287,76 +494,91 @@ pub async fn abort_agent(state: State<'_, Arc<Mutex<SidecarState>>>) -> Result<(
 #[tauri::command]
 pub async fn new_session(
     state: State<'_, Arc<Mutex<SidecarState>>>,
+    session_id: String,
 ) -> Result<RpcResponse, String> {
-    let id = crypto_random_uuid();
+    let session_id = require_session_id(session_id, "new_session")?;
 
     let cmd = RpcCommand {
-        id: Some(id.clone()),
+        id: Some(crypto_random_uuid()),
         r#type: "new_session".to_string(),
+        session_id: Some(session_id),
+        cwd: None,
         message: None,
         provider: None,
         model_id: None,
+        streaming_behavior: None,
     };
 
-    RpcClient::send_command_with_response(state.inner(), cmd, id, 5).await
+    send_command_with_response(state.inner(), cmd, 5).await
 }
 
 /// Get messages from the current session
 #[tauri::command]
 pub async fn get_messages(
     state: State<'_, Arc<Mutex<SidecarState>>>,
+    session_id: String,
 ) -> Result<RpcResponse, String> {
-    let id = crypto_random_uuid();
+    let session_id = require_session_id(session_id, "get_messages")?;
 
     let cmd = RpcCommand {
-        id: Some(id.clone()),
+        id: Some(crypto_random_uuid()),
         r#type: "get_messages".to_string(),
+        session_id: Some(session_id),
+        cwd: None,
         message: None,
         provider: None,
         model_id: None,
+        streaming_behavior: None,
     };
 
-    RpcClient::send_command_with_response(state.inner(), cmd, id, 5).await
+    send_command_with_response(state.inner(), cmd, 5).await
 }
 
 /// Get current session state (including selected model/provider)
 #[tauri::command]
-pub async fn get_state(state: State<'_, Arc<Mutex<SidecarState>>>) -> Result<RpcResponse, String> {
-    let id = crypto_random_uuid();
+pub async fn get_state(
+    state: State<'_, Arc<Mutex<SidecarState>>>,
+    session_id: String,
+) -> Result<RpcResponse, String> {
+    let session_id = require_session_id(session_id, "get_state")?;
 
     let cmd = RpcCommand {
-        id: Some(id.clone()),
+        id: Some(crypto_random_uuid()),
         r#type: "get_state".to_string(),
+        session_id: Some(session_id),
+        cwd: None,
         message: None,
         provider: None,
         model_id: None,
+        streaming_behavior: None,
     };
 
-    RpcClient::send_command_with_response(state.inner(), cmd, id, 5).await
+    send_command_with_response(state.inner(), cmd, 5).await
 }
 
 /// Get available models (filtered by configured auth)
 #[tauri::command]
 pub async fn get_available_models(
     state: State<'_, Arc<Mutex<SidecarState>>>,
+    session_id: String,
 ) -> Result<RpcResponse, String> {
-    let id = crypto_random_uuid();
+    let session_id = require_session_id(session_id, "get_available_models")?;
 
     let cmd = RpcCommand {
-        id: Some(id.clone()),
+        id: Some(crypto_random_uuid()),
         r#type: "get_available_models".to_string(),
+        session_id: Some(session_id),
+        cwd: None,
         message: None,
         provider: None,
         model_id: None,
+        streaming_behavior: None,
     };
 
-    // Model registry enumeration returns ALL available models (66KB+ JSON payload).
-    // On Linux, the pipe buffer is 64KB, so the response gets truncated and times out.
-    // Use a short timeout and rely on cycle_model fallback for model enumeration.
-    let mut response = RpcClient::send_command_with_response(state.inner(), cmd, id, 3).await?;
+    let mut response = send_command_with_response(state.inner(), cmd, 5).await?;
 
     // Keep IPC payload compact for webview transport reliability.
-    // Sidecar returns full model objects; frontend only needs provider/id/name.
+    // Host already returns compact models, but we defensively normalize here.
     if response.success {
         if let Some(data) = response.data.take() {
             let compact_models = data
@@ -393,42 +615,43 @@ pub async fn set_model(
     state: State<'_, Arc<Mutex<SidecarState>>>,
     provider: String,
     model_id: String,
+    session_id: String,
 ) -> Result<RpcResponse, String> {
-    let id = crypto_random_uuid();
+    let session_id = require_session_id(session_id, "set_model")?;
 
     let cmd = RpcCommand {
-        id: Some(id.clone()),
+        id: Some(crypto_random_uuid()),
         r#type: "set_model".to_string(),
+        session_id: Some(session_id),
+        cwd: None,
         message: None,
         provider: Some(provider),
         model_id: Some(model_id),
+        streaming_behavior: None,
     };
 
-    RpcClient::send_command_with_response(state.inner(), cmd, id, 5).await
+    send_command_with_response(state.inner(), cmd, 5).await
 }
 
 /// Cycle to next model
 #[tauri::command]
 pub async fn cycle_model(
     state: State<'_, Arc<Mutex<SidecarState>>>,
+    session_id: String,
 ) -> Result<RpcResponse, String> {
-    let id = crypto_random_uuid();
+    let session_id = require_session_id(session_id, "cycle_model")?;
 
     let cmd = RpcCommand {
-        id: Some(id.clone()),
+        id: Some(crypto_random_uuid()),
         r#type: "cycle_model".to_string(),
+        session_id: Some(session_id),
+        cwd: None,
         message: None,
         provider: None,
         model_id: None,
+        streaming_behavior: None,
     };
 
-    RpcClient::send_command_with_response(state.inner(), cmd, id, 5).await
+    send_command_with_response(state.inner(), cmd, 5).await
 }
 
-/// Get static model list from embedded data (bypasses sidecar IPC)
-/// This returns a compact model list without requiring the sidecar to be running,
-/// avoiding the 64KB pipe buffer limit issue on Linux.
-#[tauri::command]
-pub fn get_static_models() -> Vec<models_static::StaticModel> {
-    models_static::get_static_models().to_vec()
-}

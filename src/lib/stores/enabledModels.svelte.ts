@@ -1,9 +1,9 @@
-import { browser } from '$app/environment';
-import { invoke } from '@tauri-apps/api/core';
+import { browser } from "$app/environment";
+import { invoke } from "@tauri-apps/api/core";
 
-import type { AvailableModel } from '$lib/stores/agent.svelte';
+import type { AvailableModel } from "$lib/stores/agent.svelte";
 
-export type EnabledModelsSource = 'project' | 'global' | 'none';
+export type EnabledModelsSource = "project" | "global" | "none";
 
 export interface EnabledModelsResponse {
   patterns: string[];
@@ -11,14 +11,14 @@ export interface EnabledModelsResponse {
   source: EnabledModelsSource | string;
 }
 
-const THINKING_LEVELS = new Set(['off', 'minimal', 'low', 'medium', 'high', 'xhigh']);
+const THINKING_LEVELS = new Set(["off", "minimal", "low", "medium", "high", "xhigh"]);
 
 function hasGlobChars(pattern: string): boolean {
-  return pattern.includes('*') || pattern.includes('?') || pattern.includes('[');
+  return pattern.includes("*") || pattern.includes("?") || pattern.includes("[");
 }
 
 function splitThinkingSuffixIfValid(pattern: string): { base: string; hadSuffix: boolean } {
-  const colonIdx = pattern.lastIndexOf(':');
+  const colonIdx = pattern.lastIndexOf(":");
   if (colonIdx === -1) return { base: pattern, hadSuffix: false };
   const suffix = pattern.slice(colonIdx + 1);
   if (!THINKING_LEVELS.has(suffix)) return { base: pattern, hadSuffix: false };
@@ -31,37 +31,37 @@ function escapeRegexChar(ch: string): string {
 
 function globToRegExp(glob: string): RegExp {
   // Minimal glob -> regex converter, supports: *, ?, and [] character classes.
-  let re = '^';
+  let re = "^";
   let i = 0;
 
   while (i < glob.length) {
     const ch = glob[i]!;
 
-    if (ch === '*') {
-      re += '.*';
+    if (ch === "*") {
+      re += ".*";
       i++;
       continue;
     }
 
-    if (ch === '?') {
-      re += '.';
+    if (ch === "?") {
+      re += ".";
       i++;
       continue;
     }
 
-    if (ch === '[') {
+    if (ch === "[") {
       // Copy character class verbatim until closing ']'.
-      const end = glob.indexOf(']', i + 1);
+      const end = glob.indexOf("]", i + 1);
       if (end === -1) {
         // Unclosed class: treat '[' literally.
-        re += '\\[';
+        re += "\\[";
         i++;
         continue;
       }
 
       const cls = glob.slice(i, end + 1);
       // Escape backslashes inside class to avoid invalid regex sequences.
-      re += cls.replace(/\\/g, '\\\\');
+      re += cls.replace(/\\/g, "\\\\");
       i = end + 1;
       continue;
     }
@@ -70,8 +70,8 @@ function globToRegExp(glob: string): RegExp {
     i++;
   }
 
-  re += '$';
-  return new RegExp(re, 'i');
+  re += "$";
+  return new RegExp(re, "i");
 }
 
 function matchesGlob(value: string, glob: string): boolean {
@@ -84,17 +84,17 @@ function matchesGlob(value: string, glob: string): boolean {
 }
 
 function isAlias(id: string): boolean {
-  if (id.endsWith('-latest')) return true;
+  if (id.endsWith("-latest")) return true;
   return !/-\d{8}$/.test(id);
 }
 
 function resolveNonGlobPatternToSingleModel(pattern: string, models: AvailableModel[]): AvailableModel | undefined {
   // 1) provider/modelId exact match (case-insensitive)
-  if (pattern.includes('/')) {
-    const [provider, ...rest] = pattern.split('/');
-    const modelId = rest.join('/');
+  if (pattern.includes("/")) {
+    const [provider, ...rest] = pattern.split("/");
+    const modelId = rest.join("/");
     const exactProviderMatch = models.find(
-      (m) => m.provider.toLowerCase() === provider.toLowerCase() && m.id.toLowerCase() === modelId.toLowerCase()
+      (m) => m.provider.toLowerCase() === provider.toLowerCase() && m.id.toLowerCase() === modelId.toLowerCase(),
     );
     if (exactProviderMatch) return exactProviderMatch;
   }
@@ -166,7 +166,7 @@ function resolvePatternToKeysNoThinkingSuffix(pattern: string, models: Available
   return out;
 }
 
-class EnabledModelsStore {
+export class EnabledModelsStore {
   /** Effective enabledModels patterns (empty = no scoping / all enabled) */
   patterns = $state<string[]>([]);
 
@@ -174,13 +174,16 @@ class EnabledModelsStore {
   defined = $state(false);
 
   /** Where the effective setting came from */
-  source = $state<EnabledModelsSource>('none');
+  source = $state<EnabledModelsSource>("none");
 
   initialized = $state(false);
 
   private initPromise: Promise<void> | null = null;
+  private projectDir: string | null;
 
-  constructor() {
+  constructor(projectDir?: string | null) {
+    this.projectDir = projectDir ?? null;
+
     if (browser) {
       this.initPromise = this.refresh().finally(() => {
         this.initialized = true;
@@ -188,25 +191,31 @@ class EnabledModelsStore {
     }
   }
 
+  setProjectDir(projectDir: string | null): void {
+    this.projectDir = projectDir;
+  }
+
   private applyResponse(response: EnabledModelsResponse): void {
     this.patterns = Array.isArray(response.patterns) ? response.patterns : [];
     this.defined = Boolean(response.defined);
 
     const src = response.source;
-    this.source = src === 'project' || src === 'global' || src === 'none' ? src : 'none';
+    this.source = src === "project" || src === "global" || src === "none" ? src : "none";
   }
 
   async refresh(): Promise<void> {
     if (!browser) return;
 
     try {
-      const response = await invoke<EnabledModelsResponse>('get_enabled_models');
+      const response = await invoke<EnabledModelsResponse>("get_enabled_models", {
+        projectDir: this.projectDir,
+      });
       this.applyResponse(response);
     } catch (error) {
-      console.warn('Failed to load enabledModels from settings:', error);
+      console.warn("Failed to load enabledModels from settings:", error);
       this.patterns = [];
       this.defined = false;
-      this.source = 'none';
+      this.source = "none";
     }
   }
 
@@ -241,10 +250,6 @@ class EnabledModelsStore {
 
   /**
    * Toggle a concrete model in enabledModels and persist to pi settings.
-   *
-   * If enabledModels currently contains patterns (glob/partial) and a model is enabled through such a pattern,
-   * disabling that single model cannot be expressed without losing the pattern. In that case Graphone expands
-   * the current *resolved* scope into an explicit list of fullIds and then removes the target.
    */
   async toggleModel(provider: string, modelId: string, availableModels?: AvailableModel[]): Promise<void> {
     if (!browser) return;
@@ -279,16 +284,22 @@ class EnabledModelsStore {
     }
 
     try {
-      const response = await invoke<EnabledModelsResponse>('set_enabled_models', {
+      const response = await invoke<EnabledModelsResponse>("set_enabled_models", {
         patterns: nextPatterns,
-        scope: 'auto',
+        scope: "auto",
+        projectDir: this.projectDir,
       });
       this.applyResponse(response);
     } catch (error) {
-      console.warn('Failed to persist enabledModels to settings:', error);
+      console.warn("Failed to persist enabledModels to settings:", error);
       // Keep local state unchanged on failure.
     }
   }
 }
 
-export const enabledModelsStore = new EnabledModelsStore();
+export function createEnabledModelsStore(projectDir?: string | null): EnabledModelsStore {
+  return new EnabledModelsStore(projectDir);
+}
+
+// Legacy singleton compatibility for old imports.
+export const enabledModelsStore = createEnabledModelsStore();

@@ -19,11 +19,11 @@ fn copy_dir_all(src: impl AsRef<Path>, dst: impl AsRef<Path>) -> std::io::Result
 
 #[derive(Debug, Clone, Copy)]
 enum SidecarSourceKind {
+    GraphoneHost,
     NpmDependency,
-    LocalPiMono,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 struct SidecarSource {
     kind: SidecarSourceKind,
     package_root: PathBuf,
@@ -32,8 +32,8 @@ struct SidecarSource {
 impl SidecarSource {
     fn label(&self) -> &'static str {
         match self.kind {
+            SidecarSourceKind::GraphoneHost => "graphone local host",
             SidecarSourceKind::NpmDependency => "npm dependency",
-            SidecarSourceKind::LocalPiMono => "local pi-mono",
         }
     }
 }
@@ -73,99 +73,46 @@ fn ensure_bun_installed() {
     }
 }
 
-fn detect_sidecar_source(local_path: &Path, npm_path: &Path) -> SidecarSource {
-    let local_exists = local_path.exists();
-    let npm_exists = npm_path.exists();
-
-    let requested_source = env::var("GRAPHONE_PI_AGENT_SOURCE").unwrap_or_else(|_| "auto".to_string());
-
-    match requested_source.as_str() {
-        "npm" => {
-            if !npm_exists {
-                panic!(
-                    "GRAPHONE_PI_AGENT_SOURCE=npm, but package not found at {}. Run 'npm install'.",
-                    npm_path.display()
-                );
-            }
-            SidecarSource {
-                kind: SidecarSourceKind::NpmDependency,
-                package_root: npm_path.to_path_buf(),
-            }
-        }
-        "local" => {
-            if !local_exists {
-                panic!(
-                    "GRAPHONE_PI_AGENT_SOURCE=local, but pi-mono not found at {}.",
-                    local_path.display()
-                );
-            }
-            SidecarSource {
-                kind: SidecarSourceKind::LocalPiMono,
-                package_root: local_path.to_path_buf(),
-            }
-        }
-        "auto" => {
-            if npm_exists {
-                SidecarSource {
-                    kind: SidecarSourceKind::NpmDependency,
-                    package_root: npm_path.to_path_buf(),
-                }
-            } else if local_exists {
-                SidecarSource {
-                    kind: SidecarSourceKind::LocalPiMono,
-                    package_root: local_path.to_path_buf(),
-                }
-            } else {
-                panic!(
-                    "Could not find pi-coding-agent source.\nChecked npm path: {}\nChecked local path: {}\n\nEither run 'npm install' (recommended) or clone pi-mono next to graphone.",
-                    npm_path.display(),
-                    local_path.display()
-                );
-            }
-        }
-        other => {
-            panic!(
-                "Invalid GRAPHONE_PI_AGENT_SOURCE='{}'. Expected one of: auto, npm, local",
-                other
-            );
-        }
-    }
-}
-
 fn ensure_source_is_ready(source: &SidecarSource) {
     let dist_cli = source.package_root.join("dist").join("cli.js");
 
     match source.kind {
-        SidecarSourceKind::NpmDependency => {
-            if !dist_cli.exists() {
+        SidecarSourceKind::GraphoneHost => {
+            if !source.package_root.exists() {
                 panic!(
-                    "Expected dist/cli.js in npm package at {}. Run 'npm install' again.",
-                    dist_cli.display()
-                );
-            }
-        }
-        SidecarSourceKind::LocalPiMono => {
-            if !source.package_root.join("node_modules").exists() {
-                println!("cargo:warning=Installing dependencies for local pi-mono...");
-                run_command(
-                    "npm",
-                    &["install".to_string()],
-                    &source.package_root,
-                    "install local pi-mono dependencies",
+                    "Graphone host source not found at {}",
+                    source.package_root.display()
                 );
             }
 
-            println!("cargo:warning=Building local pi-mono TypeScript...");
+            println!("cargo:warning=Building Graphone host sidecar TypeScript...");
             run_command(
-                "npm",
-                &["run".to_string(), "build".to_string()],
+                "bun",
+                &[
+                    "build".to_string(),
+                    "./src/cli.ts".to_string(),
+                    "--target".to_string(),
+                    "node".to_string(),
+                    "--format".to_string(),
+                    "esm".to_string(),
+                    "--outfile".to_string(),
+                    "./dist/cli.js".to_string(),
+                ],
                 &source.package_root,
-                "build local pi-mono dist",
+                "build Graphone host sidecar dist",
             );
 
             if !dist_cli.exists() {
                 panic!(
-                    "Local pi-mono build did not produce dist/cli.js at {}",
+                    "Graphone host build did not produce dist/cli.js at {}",
+                    dist_cli.display()
+                );
+            }
+        }
+        SidecarSourceKind::NpmDependency => {
+            if !dist_cli.exists() {
+                panic!(
+                    "Expected dist/cli.js in npm package at {}. Run 'npm install' again.",
                     dist_cli.display()
                 );
             }
@@ -267,8 +214,9 @@ fn remove_path_if_exists(path: &Path) {
     }
 
     if path.is_dir() {
-        fs::remove_dir_all(path)
-            .unwrap_or_else(|error| panic!("Failed to remove directory {}: {}", path.display(), error));
+        fs::remove_dir_all(path).unwrap_or_else(|error| {
+            panic!("Failed to remove directory {}: {}", path.display(), error)
+        });
     } else {
         fs::remove_file(path)
             .unwrap_or_else(|error| panic!("Failed to remove file {}: {}", path.display(), error));
@@ -276,17 +224,21 @@ fn remove_path_if_exists(path: &Path) {
 }
 
 fn copy_required_file(candidates: &[PathBuf], destination: &Path, label: &str) {
-    let source = candidates.iter().find(|candidate| candidate.exists()).unwrap_or_else(|| {
-        panic!(
-            "Missing required {}. Checked:\n{}",
-            label,
-            format_candidates(candidates)
-        )
-    });
+    let source = candidates
+        .iter()
+        .find(|candidate| candidate.exists())
+        .unwrap_or_else(|| {
+            panic!(
+                "Missing required {}. Checked:\n{}",
+                label,
+                format_candidates(candidates)
+            )
+        });
 
     if let Some(parent) = destination.parent() {
-        fs::create_dir_all(parent)
-            .unwrap_or_else(|error| panic!("Failed to create directory {}: {}", parent.display(), error));
+        fs::create_dir_all(parent).unwrap_or_else(|error| {
+            panic!("Failed to create directory {}: {}", parent.display(), error)
+        });
     }
 
     fs::copy(source, destination).unwrap_or_else(|error| {
@@ -301,13 +253,16 @@ fn copy_required_file(candidates: &[PathBuf], destination: &Path, label: &str) {
 }
 
 fn copy_required_dir(candidates: &[PathBuf], destination: &Path, label: &str) {
-    let source = candidates.iter().find(|candidate| candidate.exists()).unwrap_or_else(|| {
-        panic!(
-            "Missing required {} directory. Checked:\n{}",
-            label,
-            format_candidates(candidates)
-        )
-    });
+    let source = candidates
+        .iter()
+        .find(|candidate| candidate.exists())
+        .unwrap_or_else(|| {
+            panic!(
+                "Missing required {} directory. Checked:\n{}",
+                label,
+                format_candidates(candidates)
+            )
+        });
 
     remove_path_if_exists(destination);
 
@@ -357,7 +312,10 @@ fn copy_runtime_assets(source: &SidecarSource, project_root: &Path, destination:
     );
 
     copy_required_file(
-        &[source.package_root.join("README.md"), dist_path.join("README.md")],
+        &[
+            source.package_root.join("README.md"),
+            dist_path.join("README.md"),
+        ],
         &destination.join("README.md"),
         "README.md",
     );
@@ -396,7 +354,10 @@ fn copy_runtime_assets(source: &SidecarSource, project_root: &Path, destination:
     );
 
     copy_required_dir(
-        &[dist_path.join("examples"), source.package_root.join("examples")],
+        &[
+            dist_path.join("examples"),
+            source.package_root.join("examples"),
+        ],
         &destination.join("examples"),
         "examples",
     );
@@ -444,19 +405,29 @@ fn build_sidecar() {
         return;
     }
 
-    let local_pi_mono_path = project_root
-        .parent()
-        .expect("graphone must have a parent directory")
-        .join("pi-mono")
-        .join("packages")
-        .join("coding-agent");
-
     let npm_package_path = project_root
         .join("node_modules")
         .join("@mariozechner")
         .join("pi-coding-agent");
 
-    let source = detect_sidecar_source(&local_pi_mono_path, &npm_package_path);
+    if !npm_package_path.exists() {
+        panic!(
+            "Host backend requires @mariozechner/pi-coding-agent at {}. Run 'npm install'.",
+            npm_package_path.display()
+        );
+    }
+
+    let graphone_host_path = project_root.join("sidecars").join("pi-agent-host");
+
+    let source = SidecarSource {
+        kind: SidecarSourceKind::GraphoneHost,
+        package_root: graphone_host_path.clone(),
+    };
+
+    let runtime_assets_source = SidecarSource {
+        kind: SidecarSourceKind::NpmDependency,
+        package_root: npm_package_path.clone(),
+    };
 
     println!(
         "cargo:warning=Building pi-agent binary for target {} from {}: {}",
@@ -515,12 +486,12 @@ fn build_sidecar() {
     }
 
     println!("cargo:warning=Copying pi-agent runtime assets...");
-    copy_runtime_assets(&source, &project_root, &dest_dir);
+    copy_runtime_assets(&runtime_assets_source, &project_root, &dest_dir);
 
     let target_debug_dir = manifest_dir.join("target").join("debug");
     if target_debug_dir.exists() {
         println!("cargo:warning=Copying runtime assets to target/debug for development...");
-        copy_runtime_assets(&source, &project_root, &target_debug_dir);
+        copy_runtime_assets(&runtime_assets_source, &project_root, &target_debug_dir);
     }
 
     println!(
@@ -528,7 +499,12 @@ fn build_sidecar() {
         dest_binary.display()
     );
 
-    println!("cargo:rerun-if-changed={}", project_root.join("package.json").display());
+    println!("cargo:rerun-if-env-changed=GRAPHONE_PI_AGENT_BUN_TARGET");
+
+    println!(
+        "cargo:rerun-if-changed={}",
+        project_root.join("package.json").display()
+    );
     println!(
         "cargo:rerun-if-changed={}",
         project_root.join("package-lock.json").display()
@@ -536,11 +512,11 @@ fn build_sidecar() {
 
     println!(
         "cargo:rerun-if-changed={}",
-        local_pi_mono_path.join("src").display()
+        graphone_host_path.join("package.json").display()
     );
     println!(
         "cargo:rerun-if-changed={}",
-        local_pi_mono_path.join("package.json").display()
+        graphone_host_path.join("src").display()
     );
 
     println!(

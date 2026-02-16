@@ -12,6 +12,7 @@ pub struct SidecarState {
     pub child: Option<Arc<Mutex<tauri_plugin_shell::process::CommandChild>>>,
     pub pending_requests: HashMap<String, PendingRequest>,
     pub response_tx: Option<mpsc::Sender<(String, RpcResponse)>>,
+    pub session_cwds: HashMap<String, String>,
 }
 
 impl SidecarState {
@@ -20,6 +21,7 @@ impl SidecarState {
             child: None,
             pending_requests: HashMap::new(),
             response_tx: None,
+            session_cwds: HashMap::new(),
         }
     }
 }

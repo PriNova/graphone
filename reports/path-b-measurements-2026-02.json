@@ -1,0 +1,88 @@
+{
+  "timestamp": "2026-02-16T16:27:17.667Z",
+  "machine": {
+    "platform": "linux",
+    "arch": "x64",
+    "node": "v22.22.0"
+  },
+  "promptText": "Reply with exactly: OK",
+  "results": [
+    {
+      "architecture": "host",
+      "sessionCount": 1,
+      "processCount": 1,
+      "rssKbTotal": 180840,
+      "createLatencyMsAvg": 807.909559,
+      "createLatencyMsTotal": 807.913983,
+      "getStateLatencyMsAvg": 0.6263310000001638,
+      "promptWallMs": 891.9842919999999
+    },
+    {
+      "architecture": "legacy",
+      "sessionCount": 1,
+      "processCount": 1,
+      "rssKbTotal": 182868,
+      "createLatencyMsAvg": 1047.3101400000003,
+      "createLatencyMsTotal": 1049.005713,
+      "getStateLatencyMsAvg": 0.4912939999999253,
+      "promptWallMs": 996.8881580000002
+    },
+    {
+      "architecture": "host",
+      "sessionCount": 2,
+      "processCount": 1,
+      "rssKbTotal": 183644,
+      "createLatencyMsAvg": 473.70527800000013,
+      "createLatencyMsTotal": 947.4383659999999,
+      "getStateLatencyMsAvg": 0.5429595000000518,
+      "promptWallMs": 1077.355579
+    },
+    {
+      "architecture": "legacy",
+      "sessionCount": 2,
+      "processCount": 2,
+      "rssKbTotal": 363348,
+      "createLatencyMsAvg": 966.7662909999999,
+      "createLatencyMsTotal": 1936.5489880000005,
+      "getStateLatencyMsAvg": 0.5041240000000471,
+      "promptWallMs": 2196.0461990000003
+    },
+    {
+      "architecture": "host",
+      "sessionCount": 4,
+      "processCount": 1,
+      "rssKbTotal": 189528,
+      "createLatencyMsAvg": 309.00588649999963,
+      "createLatencyMsTotal": 1236.0423179999998,
+      "getStateLatencyMsAvg": 0.7073040000000219,
+      "promptWallMs": 1663.1975120000006
+    },
+    {
+      "architecture": "legacy",
+      "sessionCount": 4,
+      "processCount": 4,
+      "rssKbTotal": 711596,
+      "createLatencyMsAvg": 996.9442452500007,
+      "createLatencyMsTotal": 3993.9366440000013,
+      "getStateLatencyMsAvg": 0.4757557499979157,
+      "promptWallMs": 1903.5576629999996
+    }
+  ],
+  "comparisons": [
+    {
+      "sessionCount": 1,
+      "rssReductionPercent": 1.108996653323709,
+      "promptWallImprovementPercent": 10.523132927013897
+    },
+    {
+      "sessionCount": 2,
+      "rssReductionPercent": 49.457820051300686,
+      "promptWallImprovementPercent": 50.941124121587755
+    },
+    {
+      "sessionCount": 4,
+      "rssReductionPercent": 73.36578620453179,
+      "promptWallImprovementPercent": 12.626890987961575
+    }
+  ]
+}

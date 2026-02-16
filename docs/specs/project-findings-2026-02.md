@@ -88,7 +88,7 @@ Tauri 2.0 is built on trust boundaries between frontend and backend:
 |------|----------|-------------------|
 | **Interactive** | TUI experience | Not applicable for embedded use |
 | **Print/JSON** | Scripting, one-shot | `pi -p "query"` or `--mode json` |
-| **RPC** | Process integration | `pi --mode rpc` over stdin/stdout |
+| **RPC** | Process integration | historical direct RPC CLI over stdin/stdout |
 | **SDK** | Embedded applications | NPM import, direct Node.js |
 
 ### 2.3 SDK Integration Pattern (Mobile/Library Approach)
@@ -109,14 +109,14 @@ const { session } = await createAgentSession({
 await session.prompt("What files are in the current directory?");
 ```
 
-### 2.4 RPC Protocol Pattern (Desktop/Sidecar Approach)
-```bash
-# Spawn sidecar
-pi --mode rpc --no-session
+### 2.4 Host Sidecar Protocol Pattern (Desktop/Graphone)
+```text
+# Graphone runtime
+Rust backend <-> pi-agent-host sidecar <-> in-process SDK sessions
 ```
-- JSON-RPC over stdin/stdout
-- Suitable for cross-language integration
-- Process isolation
+- newline-delimited JSON protocol over stdin/stdout
+- session-scoped envelopes with `sessionId`
+- one host process multiplexing many sessions
 
 ### 2.5 Key SDK Components
 
@@ -295,8 +295,8 @@ Recommended options for chat interfaces:
 
 ### Phase 1: Desktop MVP (Weeks 1-4)
 1. Scaffold Tauri 2.0 with React
-2. Configure sidecar for `pi --mode rpc`
-3. Implement Rust-to-RPC bridge
+2. Configure Graphone host sidecar packaging and spawn
+3. Implement Rust-to-host-protocol bridge
 4. Basic chat UI with message streaming
 5. Shell plugin configuration
 

@@ -1,0 +1,17 @@
+{
+  "name": "@graphone/pi-agent-host",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Graphone-local SDK host sidecar for multiplexed AgentSession routing",
+  "scripts": {
+    "build": "bun build ./src/cli.ts --target node --format esm --outfile ./dist/cli.js",
+    "check": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@mariozechner/pi-coding-agent": "^0.52.12"
+  },
+  "devDependencies": {
+    "typescript": "^5.6.2"
+  }
+}

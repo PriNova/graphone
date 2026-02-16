@@ -3,6 +3,7 @@
   import { parseSlashCommand, isKnownSlashCommand, ALL_SLASH_COMMANDS, getCommandHandler } from '$lib/slash-commands';
   import ModelSelector from './ModelSelector.svelte';
   import type { AvailableModel } from '$lib/stores/agent.svelte';
+  import type { EnabledModelsStore } from '$lib/stores/enabledModels.svelte';
   
   interface Props {
     value?: string;
@@ -20,6 +21,7 @@
     models?: AvailableModel[];
     modelsLoading?: boolean;
     modelChanging?: boolean;
+    enabledModels?: EnabledModelsStore;
     cwd?: string | null;
     cwdLoading?: boolean;
   }
@@ -40,6 +42,7 @@
     models = [],
     modelsLoading = false,
     modelChanging = false,
+    enabledModels,
     cwd = null,
     cwdLoading = false,
   }: Props = $props();
@@ -325,6 +328,7 @@
         loading={modelsLoading}
         changing={modelChanging}
         disabled={modelSelectorDisabled}
+        enabledModels={enabledModels}
         onchange={onmodelchange}
       />
       {#if isLoading}
