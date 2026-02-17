@@ -5,8 +5,7 @@ import { resolve } from "node:path";
 
 const host = process.env.TAURI_DEV_HOST;
 const workspaceRoot = searchForWorkspaceRoot(process.cwd());
-const webSrcPath = resolve(process.cwd(), "apps/desktop/web/src");
-const webStaticPath = resolve(process.cwd(), "apps/desktop/web/static");
+const repoRoot = resolve(process.cwd(), "../../..");
 
 // https://vite.dev/config/
 export default defineConfig(async () => ({
@@ -15,7 +14,7 @@ export default defineConfig(async () => ({
     tailwindcss(),
   ],
   build: {
-    target: 'esnext',
+    target: "esnext",
   },
 
   // Vite options tailored for Tauri development and only applied in `tauri dev` or `tauri build`
@@ -39,10 +38,8 @@ export default defineConfig(async () => ({
       ignored: ["**/src-tauri/**"],
     },
     fs: {
-      // Allow serving symlink target paths after repo restructure.
-      // SvelteKit resolves modules through `src -> apps/desktop/web/src`,
-      // which may otherwise be blocked as outside the default allow list.
-      allow: [workspaceRoot, webSrcPath, webStaticPath],
+      // Explicitly allow the frontend workspace and repo root (hoisted node_modules).
+      allow: [workspaceRoot, repoRoot],
     },
   },
 }));

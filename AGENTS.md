@@ -9,6 +9,7 @@
 - `npm install` - Install dependencies
 - `npm run check` - Type check Svelte/TypeScript (runs automatically on build)
 - `npm run check:watch` - Type check in watch mode (for development)
+- `npm run check:repo` - Run repository guardrails (legacy path/symlink regression checks)
 - `npm run dev:linux` - Dev server (Linux native)
 - `npm run dev:windows` - Dev server (Windows cross-compile)
 - `npm run build` - Type check + build frontend (runs `check` first)
@@ -47,14 +48,21 @@ graphone/
 ├── tooling/
 │   └── scripts/                 # Build/run/verify scripts
 ├── docs/
+│   ├── plans/
 │   ├── specs/
 │   └── tasks/
 └── package.json
 ```
 
-Compatibility symlinks at repo root:
-- `src -> apps/desktop/web/src`
-- `static -> apps/desktop/web/static`
+Frontend canonical paths:
+- `apps/desktop/web/src`
+- `apps/desktop/web/static`
+
+Canonical repo map (quick):
+- `apps/desktop/web` → Svelte frontend workspace
+- `src-tauri` → Rust/Tauri shell backend
+- `services/agent-host` → host sidecar source (bun)
+- `tooling/scripts` → helper scripts
 
 ## Environment Status (February 2026)
 

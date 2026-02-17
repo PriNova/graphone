@@ -4,10 +4,10 @@
   "version": "0.1.0",
   "identifier": "com.prinova.graphone",
   "build": {
-    "beforeDevCommand": "npm run dev",
+    "beforeDevCommand": "npm --prefix apps/desktop/web run dev --",
     "devUrl": "http://localhost:1420",
-    "beforeBuildCommand": "npm run build",
-    "frontendDist": "../build"
+    "beforeBuildCommand": "npm --prefix apps/desktop/web run build",
+    "frontendDist": "../apps/desktop/web/build"
   },
   "app": {
     "windows": [

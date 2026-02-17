@@ -25,7 +25,8 @@ Graphone provides a desktop interface for the pi-mono coding agent using Tauri's
 - 📦 **Auto-Bundled Agent** - pi-mono binary is built automatically during Tauri build
 
 Contributor notes:
-- See `CONTRIBUTING.md` for Git staging guidance around `src`/`static` symlinks and the long-term repository maintenance refactor plan.
+- See `CONTRIBUTING.md` for repository workflow and staging guidance.
+- See `docs/plans/repository-restructure-roadmap-2026-02.md` for the repository maintenance refactor plan.
 
 ---
 
@@ -207,15 +208,18 @@ graphone/
 │   ├── tasks/
 │   └── plans/
 ├── reports/
-├── package.json
-└── vite.config.js
+└── package.json
 ```
 
-Compatibility links at repository root:
-- `src -> apps/desktop/web/src`
-- `static -> apps/desktop/web/static`
+Frontend canonical paths:
+- `apps/desktop/web/src`
+- `apps/desktop/web/static`
 
-These keep SvelteKit defaults intact while the canonical frontend location is `apps/desktop/web`.
+Canonical repo map (quick):
+- `apps/desktop/web` → Svelte frontend workspace
+- `src-tauri` → Rust/Tauri desktop shell
+- `services/agent-host` → bun-compiled host sidecar source
+- `tooling/scripts` → build/run/verification helpers
 
 ---
 
