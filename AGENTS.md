@@ -22,30 +22,39 @@
 ## Stack & Architecture
 - **Frontend**: Svelte 5 + TypeScript + Vite
 - **Backend**: Rust + Tauri 2.0
-- **Sidecar**: Graphone-local SDK host sidecar (`sidecars/pi-agent-host`, compiled with bun)
+- **Sidecar**: Graphone-local SDK host sidecar (`services/agent-host`, compiled with bun)
 - **Pattern**: Desktop uses one host sidecar process that multiplexes multiple in-process agent sessions
 - **SDK source**: Host sidecar consumes `@mariozechner/pi-coding-agent` from npm
 
 ## Project Structure
 ```
 graphone/
-├── src/                    # Svelte frontend
-├── src-tauri/
-│   ├── src/               # Rust backend
-│   ├── binaries/          # Sidecar binaries (auto-populated by build.rs)
-│   ├── capabilities/      # Tauri permissions (desktop.json, mobile.json)
-│   ├── .cargo/config.toml # lld linker settings per-target
-│   ├── build.rs           # Auto-builds host sidecar binary with bun
+├── apps/
+│   └── desktop/
+│       └── web/                 # Svelte frontend app
+│           ├── src/
+│           └── static/
+├── src-tauri/                   # Rust/Tauri backend shell
+│   ├── src/                     # Rust backend
+│   ├── binaries/                # Sidecar binaries (auto-populated by build.rs)
+│   ├── capabilities/            # Tauri permissions (desktop.json, mobile.json)
+│   ├── .cargo/config.toml       # lld linker settings per-target
+│   ├── build.rs                 # Auto-builds host sidecar binary with bun
 │   ├── Cargo.toml
-│   └── tauri.conf.json    # externalBin: ["binaries/pi-agent"]
+│   └── tauri.conf.json          # externalBin: ["binaries/pi-agent"]
+├── services/
+│   └── agent-host/              # Graphone host sidecar source
+├── tooling/
+│   └── scripts/                 # Build/run/verify scripts
 ├── docs/
-│   ├── specs/            # wsl2-development-notes.md, project-findings-2026-02.md
-│   └── tasks/            # scaffolding-tasks.md (setup history)
-├── scripts/
-│   ├── run-windows.sh            # Launch Windows app from WSL2
-│   └── stage-windows-portable.sh # Stage portable Windows runtime folder
+│   ├── specs/
+│   └── tasks/
 └── package.json
 ```
+
+Compatibility symlinks at repo root:
+- `src -> apps/desktop/web/src`
+- `static -> apps/desktop/web/static`
 
 ## Environment Status (February 2026)
 
@@ -91,7 +100,7 @@ graphone/
 
 ### Sidecar Build (Automatic)
 - Sidecar is built automatically during Tauri/Cargo builds via `src-tauri/build.rs`
-- Build source: `sidecars/pi-agent-host` (Graphone-local host multiplexer)
+- Build source: `services/agent-host` (Graphone-local host multiplexer)
 - Runtime SDK assets: `node_modules/@mariozechner/pi-coding-agent` (pinned npm dependency)
 - Requires **bun**: `curl -fsSL https://bun.sh/install | bash`
 - Binary naming: `pi-agent-<target-triple>` (with `.exe` for Windows)
@@ -150,6 +159,7 @@ html, body { overflow: hidden; }
 **Key classes**: `shrink-0` (fixed elements), `flex-1 min-h-0` (scrollable area), `overflow-hidden` (container)
 
 ## Documentation
+- `docs/specs/repository-structure-2026-02.md` - Current repository architecture and naming
 - `docs/specs/project-findings-2026-02.md` - Tech research & patterns
 - `docs/specs/wsl2-development-notes.md` - WSL2 development guide
 - `docs/tasks/scaffolding-tasks.md` - Complete setup history

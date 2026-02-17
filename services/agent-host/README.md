@@ -68,7 +68,7 @@ Transport: newline-delimited JSON over stdio.
 ## Local development
 
 ```bash
-cd sidecars/pi-agent-host
+cd services/agent-host
 bun run build
 node dist/cli.js
 ```

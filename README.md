@@ -24,6 +24,9 @@ Graphone provides a desktop interface for the pi-mono coding agent using Tauri's
 - 🔒 **Local-First** - Works with local and remote LLM providers
 - 📦 **Auto-Bundled Agent** - pi-mono binary is built automatically during Tauri build
 
+Contributor notes:
+- See `CONTRIBUTING.md` for Git staging guidance around `src`/`static` symlinks and the long-term repository maintenance refactor plan.
+
 ---
 
 ## Architecture
@@ -40,11 +43,11 @@ Frontend (Svelte) ←→ Tauri Commands ←→ Rust Backend ←→ Graphone host
 
 The host sidecar is built automatically during Tauri builds via `src-tauri/build.rs`.
 
-Graphone compiles `sidecars/pi-agent-host/dist/cli.js` to a standalone binary with bun.
+Graphone compiles `services/agent-host/dist/cli.js` to a standalone binary with bun.
 Runtime SDK assets are copied from the pinned npm dependency (`node_modules/@mariozechner/pi-coding-agent`).
 
 **Build Process:**
-1. Build host sidecar source (`sidecars/pi-agent-host`)
+1. Build host sidecar source (`services/agent-host`)
 2. Compile `dist/cli.js` using `bun build --compile`
 3. Copy binary + runtime assets to `src-tauri/binaries/`
 4. Tauri bundles the binary as a sidecar for distribution
@@ -135,7 +138,7 @@ npm install
 ### 2. Build Sidecar (Automatic)
 
 The sidecar is built automatically when you run Tauri commands. The build script (`src-tauri/build.rs`) handles:
-- Building Graphone host sidecar source (`sidecars/pi-agent-host`)
+- Building Graphone host sidecar source (`services/agent-host`)
 - Compiling `dist/cli.js` with `bun build --compile`
 - Copying binary + runtime assets to the Tauri binaries directory
 
@@ -181,30 +184,38 @@ npm run tauri build -- --target x86_64-pc-windows-msvc
 
 ```
 graphone/
-├── src/                      # Frontend (Svelte + TypeScript)
-│   ├── components/           # UI components
-│   ├── hooks/                # Reactive state and logic
-│   └── services/             # Tauri command bridge
-├── src-tauri/                # Rust backend
-│   ├── src/
-│   │   ├── lib.rs            # Main library with commands
-│   │   └── main.rs           # Entry point
-│   ├── binaries/             # Sidecar binaries (auto-populated)
-│   ├── capabilities/         # Permissions
-│   │   ├── default.json      # Base capabilities
-│   │   ├── desktop.json      # Desktop-specific (shell plugin)
-│   │   └── mobile.json       # Mobile-specific (HTTP plugin)
-│   ├── build.rs              # Build script (builds pi-agent sidecar)
-│   ├── Cargo.toml            # Rust dependencies
-│   └── tauri.conf.json       # Tauri configuration
-├── management/
-│   └── specs/                # Project documentation
-│       ├── project-specs.md
-│       ├── wsl2-development-notes.md
-│       └── tasks.md
-├── package.json              # Node dependencies
-└── vite.config.js            # Vite configuration
+├── apps/
+│   └── desktop/
+│       └── web/                      # Svelte frontend application
+│           ├── src/                  # Routes, components, stores, handlers
+│           └── static/               # Static frontend assets
+├── src-tauri/                        # Rust/Tauri desktop shell
+│   ├── src/                          # Commands, sidecar bridge, state
+│   ├── binaries/                     # Sidecar binaries + runtime assets (auto-populated)
+│   ├── capabilities/                 # Tauri permissions (desktop/mobile)
+│   ├── build.rs                      # Builds bundled sidecar binary via bun
+│   ├── Cargo.toml
+│   └── tauri.conf.json
+├── services/
+│   └── agent-host/                   # Graphone host sidecar source (TypeScript)
+│       ├── src/
+│       └── dist/
+├── tooling/
+│   └── scripts/                      # Build/run/verification helpers
+├── docs/
+│   ├── specs/
+│   ├── tasks/
+│   └── plans/
+├── reports/
+├── package.json
+└── vite.config.js
 ```
+
+Compatibility links at repository root:
+- `src -> apps/desktop/web/src`
+- `static -> apps/desktop/web/static`
+
+These keep SvelteKit defaults intact while the canonical frontend location is `apps/desktop/web`.
 
 ---
 
@@ -212,7 +223,7 @@ graphone/
 
 ### WSL2 Development
 
-This project is developed in **WSL2 on Windows 11**. See [`management/specs/wsl2-development-notes.md`](management/specs/wsl2-development-notes.md) for detailed guidance.
+This project is developed in **WSL2 on Windows 11**. See [`docs/specs/wsl2-development-notes.md`](docs/specs/wsl2-development-notes.md) for detailed guidance.
 
 **Critical:** Keep the project in the **Linux filesystem** (e.g., `/home/username/projects/`), NOT in `/mnt/c/` (Windows filesystem) - performance difference is 10-100x.
 
@@ -221,7 +232,7 @@ This project is developed in **WSL2 on Windows 11**. See [`management/specs/wsl2
 The sidecar binary is built automatically via `src-tauri/build.rs`:
 
 1. **Dependency Check**: Verifies bun is installed
-2. **Host Build**: Builds Graphone host source (`sidecars/pi-agent-host`)
+2. **Host Build**: Builds Graphone host source (`services/agent-host`)
 3. **Compile**: Runs `bun build --compile ./dist/cli.js`
    - Uses an explicit bun target when cross-compiling Windows from Linux
 4. **Copy**: Places the binary in `src-tauri/binaries/` with Tauri sidecar naming
@@ -455,9 +466,10 @@ If you get "Windows cannot find..." errors when running `npm run run:windows`:
 
 | Document | Description |
 |----------|-------------|
-| [`management/specs/project-specs.md`](management/specs/project-specs.md) | Original project specification |
-| [`management/specs/wsl2-development-notes.md`](management/specs/wsl2-development-notes.md) | WSL2 development environment guide |
-| [`management/specs/tasks.md`](management/specs/tasks.md) | Setup tasks and checklist |
+| [`docs/specs/project-specs.md`](docs/specs/project-specs.md) | Original project specification |
+| [`docs/specs/repository-structure-2026-02.md`](docs/specs/repository-structure-2026-02.md) | Current repository architecture and naming |
+| [`docs/specs/wsl2-development-notes.md`](docs/specs/wsl2-development-notes.md) | WSL2 development environment guide |
+| [`docs/tasks/scaffolding-tasks.md`](docs/tasks/scaffolding-tasks.md) | Setup tasks and checklist |
 
 ### External References
 
@@ -470,11 +482,11 @@ If you get "Windows cannot find..." errors when running `npm run run:windows`:
 
 ## Contributing
 
-Graphone builds and ships a local host sidecar from `sidecars/pi-agent-host`.
+Graphone builds and ships a local host sidecar from `services/agent-host`.
 
 To develop sidecar behavior:
-1. Edit `sidecars/pi-agent-host/src/*`
-2. Test with `node scripts/verify-path-b-host.mjs`
+1. Edit `services/agent-host/src/*`
+2. Test with `node tooling/scripts/verify-path-b-host.mjs`
 3. Build with `npm run build:linux` (or `cargo build --manifest-path src-tauri/Cargo.toml`)
 
 ---

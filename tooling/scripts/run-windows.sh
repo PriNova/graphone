@@ -53,7 +53,7 @@ fi
 
 # Stage portable runtime (graphone + sidecar + sidecar assets)
 echo "Staging portable runtime..."
-bash scripts/stage-windows-portable.sh "$TARGET_TRIPLE"
+bash tooling/scripts/stage-windows-portable.sh "$TARGET_TRIPLE"
 
 if [ ! -f "${PORTABLE_DIR}/graphone.exe" ]; then
   echo -e "${RED}Portable runtime staging failed (graphone.exe missing).${NC}"

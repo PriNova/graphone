@@ -4,7 +4,7 @@
 
 Measured on:
 - WSL2 Linux (`x64`), Node `v22.22.0`
-- Graphone host sidecar: `sidecars/pi-agent-host`
+- Graphone host sidecar: `services/agent-host`
 - Legacy baseline: one `@mariozechner/pi-coding-agent` RPC process per session
 
 Result: **Path B host implementation is functionally working and now the Graphone runtime backend.**
@@ -12,8 +12,8 @@ Result: **Path B host implementation is functionally working and now the Graphon
 ## What was measured
 
 Scripts:
-- `scripts/measure-path-b.mjs`
-- `scripts/verify-path-b-host.mjs`
+- `tooling/scripts/measure-path-b.mjs`
+- `tooling/scripts/verify-path-b-host.mjs`
 
 Scenarios per architecture:
 - 1, 2, and 4 concurrent sessions
@@ -68,4 +68,4 @@ Switched to host-only flow in:
 - `src-tauri/src/sidecar.rs`
 - `src-tauri/src/commands.rs`
 
-Legacy comparison remains available only in `scripts/measure-path-b.mjs` (for benchmark runs), not in Graphone runtime.
+Legacy comparison remains available only in `tooling/scripts/measure-path-b.mjs` (for benchmark runs), not in Graphone runtime.

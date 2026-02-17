@@ -173,7 +173,7 @@ function mean(values) {
 }
 
 async function runHostScenario(sessionCount) {
-  const client = new JsonLineClient("node", ["sidecars/pi-agent-host/dist/cli.js"], { cwd: projectRoot });
+  const client = new JsonLineClient("node", ["services/agent-host/dist/cli.js"], { cwd: projectRoot });
 
   const createLatenciesMs = [];
   const sessionIds = [];
@@ -329,7 +329,7 @@ async function runLegacyScenario(sessionCount) {
 
 async function ensureHostBuilt() {
   const builder = new JsonLineClient("bun", ["build", "./src/cli.ts", "--target", "node", "--format", "esm", "--outfile", "./dist/cli.js"], {
-    cwd: resolve(projectRoot, "sidecars/pi-agent-host"),
+    cwd: resolve(projectRoot, "services/agent-host"),
   });
   await new Promise((resolveDone, rejectDone) => {
     builder.child.on("exit", (code) => {

@@ -15,7 +15,7 @@ function delay(ms) {
 
 class HostClient {
   constructor() {
-    this.child = spawn("node", ["sidecars/pi-agent-host/dist/cli.js"], {
+    this.child = spawn("node", ["services/agent-host/dist/cli.js"], {
       cwd: projectRoot,
       stdio: ["pipe", "pipe", "pipe"],
     });
@@ -125,7 +125,7 @@ async function main() {
     const builder = spawn(
       "bun",
       ["build", "./src/cli.ts", "--target", "node", "--format", "esm", "--outfile", "./dist/cli.js"],
-      { cwd: resolve(projectRoot, "sidecars/pi-agent-host"), stdio: "inherit" },
+      { cwd: resolve(projectRoot, "services/agent-host"), stdio: "inherit" },
     );
     builder.on("exit", (code) => {
       if (code === 0) resolveDone();
@@ -146,7 +146,7 @@ async function main() {
       id: "create-2",
       type: "create_session",
       sessionId: "sess-B",
-      cwd: resolve(projectRoot, "src"),
+      cwd: resolve(projectRoot, "apps/desktop/web/src"),
     });
 
     if (!c1.success || !c2.success) {

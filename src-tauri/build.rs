@@ -417,7 +417,7 @@ fn build_sidecar() {
         );
     }
 
-    let graphone_host_path = project_root.join("sidecars").join("pi-agent-host");
+    let graphone_host_path = project_root.join("services").join("agent-host");
 
     let source = SidecarSource {
         kind: SidecarSourceKind::GraphoneHost,

@@ -1,6 +1,6 @@
 #!/bin/bash
 # Stage a portable Windows runtime folder with graphone + pi-agent sidecar assets.
-# Usage: bash scripts/stage-windows-portable.sh [target-triple] [profile]
+# Usage: bash tooling/scripts/stage-windows-portable.sh [target-triple] [profile]
 
 set -euo pipefail
 
