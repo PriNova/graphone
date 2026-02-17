@@ -20,6 +20,7 @@
     "build:linux": "tauri build",
     "build:windows": "bash -c 'source ~/.cargo/env && cargo tauri build --target x86_64-pc-windows-msvc --runner cargo-xwin'",
     "build:all": "npm run build:linux && npm run build:windows",
+    "clean": "cargo clean --manifest-path src-tauri/Cargo.toml && rm -rf src-tauri/binaries services/agent-host/dist apps/desktop/web/build apps/desktop/web/.svelte-kit",
     "run:windows": "bash tooling/scripts/run-windows.sh"
   },
   "license": "MIT",
