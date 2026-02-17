@@ -5,6 +5,7 @@
 
   import { AssistantMessage, UserMessage } from "$lib/components/Messages";
   import { PromptInput } from "$lib/components/PromptInput";
+  import { SessionSidebar } from "$lib/components/SessionSidebar";
   import { handleAgentEvent } from "$lib/handlers/agent-events";
   import { handlePromptSubmit, handleSlashCommand } from "$lib/handlers/commands";
   import { createAgentStore } from "$lib/stores/agent.svelte";
@@ -26,6 +27,7 @@
   let sessionRuntimes = $state<Record<string, SessionRuntime>>({});
   let projectDirInput = $state("");
   let startupError = $state<string | null>(null);
+  let sidebarCollapsed = $state(false);
 
   const sessions = $derived(sessionsStore.sessions);
   const activeSessionId = $derived(sessionsStore.activeSessionId);
@@ -40,7 +42,7 @@
   const isModelsLoading = $derived(activeRuntime ? activeRuntime.agent.isModelsLoading : false);
   const isSettingModel = $derived(activeRuntime ? activeRuntime.agent.isSettingModel : false);
   const isStreaming = $derived(activeRuntime ? activeRuntime.messages.streamingMessageId !== null : false);
-  const activeProjectDir = $derived(activeRuntime ? activeRuntime.projectDir : cwdStore.cwd);
+  const activeProjectDir = $derived(activeRuntime ? activeRuntime.projectDir : null);
 
   function handleScroll(): void {
     if (messagesContainerRef && activeRuntime) {
@@ -133,17 +135,26 @@
     await createSession(projectDir);
   }
 
-  async function closeActiveSession(): Promise<void> {
-    const sessionId = sessionsStore.activeSessionId;
-    if (!sessionId) return;
+  function toggleSidebar(): void {
+    sidebarCollapsed = !sidebarCollapsed;
+  }
+
+  function onProjectDirInputChange(value: string): void {
+    projectDirInput = value;
+  }
+
+  async function closeSessionById(sessionId: string): Promise<void> {
+    const wasActive = sessionsStore.activeSessionId === sessionId;
 
     await sessionsStore.closeSession(sessionId);
     removeRuntime(sessionId);
 
-    const nextActive = sessionsStore.activeSession;
-    if (nextActive) {
-      await ensureRuntime(nextActive);
-      requestAnimationFrame(() => scrollToBottom(false));
+    if (wasActive) {
+      const nextActive = sessionsStore.activeSession;
+      if (nextActive) {
+        await ensureRuntime(nextActive);
+        requestAnimationFrame(() => scrollToBottom(false));
+      }
     }
   }
 
@@ -282,128 +293,95 @@
   });
 </script>
 
-<main class="flex flex-col items-center w-full h-screen overflow-hidden">
-  <div class="flex flex-col w-full h-full max-w-[min(95vw,1200px)] lg:max-w-[min(90vw,1400px)] px-4 py-4">
-    <header class="shrink-0 py-2">
-      <div class="flex flex-wrap items-center justify-between gap-3 mb-2">
-        <div>
-          <h1 class="text-3xl font-semibold tracking-tight mb-1 bg-linear-to-r from-foreground to-muted-foreground bg-clip-text text-transparent">
-            Graphone
-          </h1>
-          <p class="text-sm text-muted-foreground">Parallel project sessions</p>
-        </div>
+<main class="flex w-full h-screen overflow-hidden">
+  <SessionSidebar
+    {sessions}
+    {activeSessionId}
+    {projectDirInput}
+    creating={sessionsStore.creating}
+    collapsed={sidebarCollapsed}
+    ontoggle={toggleSidebar}
+    onprojectdirinput={onProjectDirInputChange}
+    oncreatesession={createSessionFromInput}
+    onselectsession={(sessionId) => sessionsStore.setActiveSession(sessionId)}
+    onclosesession={closeSessionById}
+  />
 
-        <div class="flex items-center gap-2">
-          <select
-            class="bg-input-background border border-border rounded px-2 py-1 text-xs max-w-64"
-            value={activeSessionId ?? ""}
-            onchange={(e) => sessionsStore.setActiveSession((e.target as HTMLSelectElement).value)}
-            aria-label="Select active session"
-          >
-            {#if sessions.length === 0}
-              <option value="">No sessions</option>
-            {:else}
-              {#each sessions as session (session.sessionId)}
-                <option value={session.sessionId}>
-                  {session.title} — {session.projectDir}
-                </option>
-              {/each}
-            {/if}
-          </select>
+  <section class="flex-1 min-w-0 h-full flex items-stretch justify-center overflow-hidden">
+    <div class="flex flex-col w-full h-full max-w-[min(95vw,1200px)] lg:max-w-[min(88vw,1360px)] px-4 py-4">
+      <header class="shrink-0 py-2 text-center">
+        <h1 class="text-3xl font-semibold tracking-tight mb-1 bg-linear-to-r from-foreground to-muted-foreground bg-clip-text text-transparent">
+          Graphone
+        </h1>
+        <p class="text-sm text-muted-foreground">Parallel project sessions</p>
+      </header>
 
-          <button
-            type="button"
-            class="px-2 py-1 text-xs border border-border rounded hover:bg-secondary"
-            onclick={closeActiveSession}
-            disabled={!activeSessionId}
-          >
-            Close
-          </button>
-        </div>
-      </div>
-
-      <div class="flex items-center gap-2">
-        <input
-          class="flex-1 bg-input-background border border-border rounded px-2 py-1 text-xs"
-          placeholder="Project directory for new session"
-          bind:value={projectDirInput}
-        />
-        <button
-          type="button"
-          class="px-2 py-1 text-xs border border-border rounded hover:bg-secondary"
-          onclick={createSessionFromInput}
-          disabled={sessionsStore.creating}
-        >
-          {sessionsStore.creating ? "Creating…" : "New session"}
-        </button>
-      </div>
-    </header>
-
-    <div
-      class="flex-1 min-h-0 overflow-y-auto py-4 px-2 flex flex-col gap-2 scroll-smooth"
-      bind:this={messagesContainerRef}
-      onscroll={handleScroll}
-    >
-      {#if startupError}
-        <div class="flex items-center justify-center h-full">
-          <p class="text-destructive text-sm">Failed to initialize sessions: {startupError}</p>
-        </div>
-      {:else if !activeRuntime}
-        <div class="flex items-center justify-center h-full">
-          <p class="text-muted-foreground text-sm">Create a session to start chatting.</p>
-        </div>
-      {:else if messages.length === 0}
-        <div class="flex items-center justify-center h-full">
-          <p class="text-muted-foreground text-sm">Start a conversation by typing below</p>
-        </div>
-      {:else}
-        {#each messages as message (message.id)}
-          {#if message.type === "user"}
-            <UserMessage content={message.content} timestamp={message.timestamp} />
-          {:else}
-            <AssistantMessage
-              content={message.content}
-              timestamp={message.timestamp}
-              isStreaming={message.isStreaming}
-            />
-          {/if}
-        {/each}
-
-        {#if isLoading && !isStreaming}
-          <div class="flex justify-start animate-fade-in">
-            <div class="flex gap-1 py-2">
-              <span class="w-2 h-2 bg-muted-foreground rounded-full animate-bounce [animation-delay:-0.32s]"></span>
-              <span class="w-2 h-2 bg-muted-foreground rounded-full animate-bounce [animation-delay:-0.16s]"></span>
-              <span class="w-2 h-2 bg-muted-foreground rounded-full animate-bounce"></span>
-            </div>
+      <div
+        class="flex-1 min-h-0 overflow-y-auto py-4 px-2 flex flex-col gap-2 scroll-smooth"
+        bind:this={messagesContainerRef}
+        onscroll={handleScroll}
+      >
+        {#if startupError}
+          <div class="flex items-center justify-center h-full">
+            <p class="text-destructive text-sm">Failed to initialize sessions: {startupError}</p>
           </div>
-        {/if}
-      {/if}
-    </div>
+        {:else if !activeRuntime}
+          <div class="flex items-center justify-center h-full">
+            <p class="text-muted-foreground text-sm">Create a session to start chatting.</p>
+          </div>
+        {:else if messages.length === 0}
+          <div class="flex items-center justify-center h-full">
+            <p class="text-muted-foreground text-sm">Start a conversation by typing below</p>
+          </div>
+        {:else}
+          {#each messages as message (message.id)}
+            {#if message.type === "user"}
+              <UserMessage content={message.content} timestamp={message.timestamp} />
+            {:else}
+              <AssistantMessage
+                content={message.content}
+                timestamp={message.timestamp}
+                isStreaming={message.isStreaming}
+              />
+            {/if}
+          {/each}
 
-    <section class="shrink-0 w-full px-2 pb-4 pt-2">
-      <PromptInput
-        onsubmit={onSubmit}
-        oncancel={onCancel}
-        onslashcommand={onSlashCommand}
-        onmodelchange={onModelChange}
-        {isLoading}
-        disabled={!activeRuntime || !sessionStarted}
-        placeholder={
-          activeRuntime && sessionStarted
-            ? "What would you like to know? Try /new, /help..."
-            : "Create a session to begin..."
-        }
-        model={currentModel}
-        provider={currentProvider}
-        models={availableModels}
-        modelsLoading={isModelsLoading}
-        modelChanging={isSettingModel}
-        enabledModels={activeRuntime?.enabledModels}
-        autofocus={true}
-        cwd={activeProjectDir}
-        cwdLoading={cwdStore.loading && !activeRuntime}
-      />
-    </section>
-  </div>
+          {#if isLoading && !isStreaming}
+            <div class="flex justify-start animate-fade-in">
+              <div class="flex gap-1 py-2">
+                <span class="w-2 h-2 bg-muted-foreground rounded-full animate-bounce [animation-delay:-0.32s]"></span>
+                <span class="w-2 h-2 bg-muted-foreground rounded-full animate-bounce [animation-delay:-0.16s]"></span>
+                <span class="w-2 h-2 bg-muted-foreground rounded-full animate-bounce"></span>
+              </div>
+            </div>
+          {/if}
+        {/if}
+      </div>
+
+      <section class="shrink-0 w-full px-2 pb-4 pt-2">
+        <PromptInput
+          onsubmit={onSubmit}
+          oncancel={onCancel}
+          onslashcommand={onSlashCommand}
+          onmodelchange={onModelChange}
+          {isLoading}
+          disabled={!activeRuntime || !sessionStarted}
+          placeholder={
+            activeRuntime && sessionStarted
+              ? "What would you like to know? Try /new, /help..."
+              : "Create a session to begin..."
+          }
+          model={currentModel}
+          provider={currentProvider}
+          models={availableModels}
+          modelsLoading={isModelsLoading}
+          modelChanging={isSettingModel}
+          enabledModels={activeRuntime?.enabledModels}
+          autofocus={true}
+          cwd={activeProjectDir}
+          cwdLoading={false}
+        />
+      </section>
+    </div>
+  </section>
 </main>

@@ -312,11 +312,11 @@
         title={cwd ?? undefined}
       >
         {#if cwdLoading}
-          cwd: …
+          Session: …
         {:else if cwd}
-          cwd: {cwd}
+          Session: {cwd}
         {:else}
-          cwd: (unknown)
+          Session: No active session
         {/if}
       </span>
     </span>
