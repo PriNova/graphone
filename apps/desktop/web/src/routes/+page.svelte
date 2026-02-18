@@ -317,7 +317,6 @@
   async function onSubmit(prompt: string): Promise<void> {
     if (!activeRuntime) return;
     await handlePromptSubmit(activeRuntime, prompt);
-    scheduleSessionSidebarRefresh(900);
   }
 
   function onCancel(): void {
@@ -367,12 +366,8 @@
         break;
       case "submit":
         await handlePromptSubmit(activeRuntime, result.text);
-        scheduleSessionSidebarRefresh(900);
         break;
       case "handled":
-        if (command === "new") {
-          scheduleSessionSidebarRefresh(250);
-        }
         break;
     }
   }
@@ -449,17 +444,20 @@
           }
 
           const agentEvent = wrapped.event as AgentEvent;
+          const hasUserMessagesBeforeEvent = runtime.messages.messages.some(
+            (message) => message.type === "user",
+          );
+
           handleAgentEvent(runtime, agentEvent);
 
           if (
-            agentEvent.type === "turn_end" ||
-            agentEvent.type === "agent_end" ||
-            (agentEvent.type === "message_start" &&
-              agentEvent.message.role === "user")
+            agentEvent.type === "message_start" &&
+            agentEvent.message.role === "user" &&
+            !hasUserMessagesBeforeEvent
           ) {
-            scheduleSessionSidebarRefresh(
-              agentEvent.type === "message_start" ? 220 : 300,
-            );
+            // Refresh sidebar metadata only when the very first user message
+            // starts for a session (session files/scopes may become persisted).
+            scheduleSessionSidebarRefresh(220);
           }
 
           if (sessionsStore.activeSessionId === wrapped.sessionId) {
