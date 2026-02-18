@@ -21,7 +21,15 @@
     "build:windows": "bash -c 'source ~/.cargo/env && cargo tauri build --target x86_64-pc-windows-msvc --runner cargo-xwin'",
     "build:all": "npm run build:linux && npm run build:windows",
     "clean": "cargo clean --manifest-path src-tauri/Cargo.toml && rm -rf src-tauri/binaries services/agent-host/dist apps/desktop/web/build apps/desktop/web/.svelte-kit",
-    "run:windows": "bash tooling/scripts/run-windows.sh"
+    "run:windows": "bash tooling/scripts/run-windows.sh",
+    "format": "npm run format:svelte && npm run format:ts && npm run format:rust",
+    "format:svelte": "prettier --write 'apps/desktop/web/src/**/*.svelte'",
+    "format:ts": "prettier --write 'apps/desktop/web/src/**/*.ts' 'services/agent-host/src/**/*.ts'",
+    "format:rust": "cargo fmt --manifest-path src-tauri/Cargo.toml",
+    "format:check": "npm run format:check:svelte && npm run format:check:ts && npm run format:check:rust",
+    "format:check:svelte": "prettier --check 'apps/desktop/web/src/**/*.svelte'",
+    "format:check:ts": "prettier --check 'apps/desktop/web/src/**/*.ts' 'services/agent-host/src/**/*.ts'",
+    "format:check:rust": "cargo fmt --manifest-path src-tauri/Cargo.toml -- --check"
   },
   "license": "MIT",
   "dependencies": {
@@ -36,6 +44,8 @@
     "@tailwindcss/vite": "^4.1.18",
     "@tauri-apps/cli": "^2",
     "clsx": "^2.1.1",
+    "prettier": "^3.3.2",
+    "prettier-plugin-svelte": "^3.2.6",
     "svelte": "^5.0.0",
     "svelte-check": "^4.0.0",
     "tailwind-merge": "^3.4.0",

@@ -1,0 +1,36 @@
+name: Format Check
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+jobs:
+  format-check:
+    name: Check Code Formatting
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install npm dependencies
+        run: npm ci
+
+      - name: Check Prettier formatting (Svelte & TypeScript)
+        run: npx prettier --check 'apps/desktop/web/src/**/*.svelte' 'apps/desktop/web/src/**/*.ts' 'services/agent-host/src/**/*.ts'
+
+      - name: Install Rust (stable)
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt
+
+      - name: Check Rust formatting
+        run: cargo fmt --manifest-path src-tauri/Cargo.toml -- --check
