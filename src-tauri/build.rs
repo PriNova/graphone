@@ -386,19 +386,71 @@ fn copy_runtime_assets(source: &SidecarSource, project_root: &Path, destination:
     );
 }
 
+fn sidecar_destination_binary_path(manifest_dir: &Path, target_os: &str, target_triple: &str) -> PathBuf {
+    let dest_dir = manifest_dir.join("binaries");
+    let dest_binary_name = if target_os == "windows" {
+        format!("pi-agent-{}.exe", target_triple)
+    } else {
+        format!("pi-agent-{}", target_triple)
+    };
+
+    dest_dir.join(dest_binary_name)
+}
+
+fn ensure_sidecar_placeholder_binary(manifest_dir: &Path, target_os: &str, target_triple: &str) {
+    let dest_binary = sidecar_destination_binary_path(manifest_dir, target_os, target_triple);
+
+    if dest_binary.exists() {
+        return;
+    }
+
+    if let Some(parent) = dest_binary.parent() {
+        fs::create_dir_all(parent).unwrap_or_else(|error| {
+            panic!(
+                "Failed to create binaries directory {}: {}",
+                parent.display(),
+                error
+            )
+        });
+    }
+
+    fs::write(&dest_binary, b"graphone ci placeholder sidecar binary").unwrap_or_else(|error| {
+        panic!(
+            "Failed to create placeholder sidecar binary at {}: {}",
+            dest_binary.display(),
+            error
+        )
+    });
+
+    #[cfg(unix)]
+    if target_os != "windows" {
+        use std::os::unix::fs::PermissionsExt;
+        let mut perms = fs::metadata(&dest_binary).unwrap().permissions();
+        perms.set_mode(0o755);
+        fs::set_permissions(&dest_binary, perms).unwrap();
+    }
+
+    println!(
+        "cargo:warning=Created placeholder pi-agent binary at {}",
+        dest_binary.display()
+    );
+}
+
 fn build_sidecar() {
     println!("cargo:rerun-if-env-changed=GRAPHONE_PI_AGENT_BUN_TARGET");
+
+    let target_os = env::var("CARGO_CFG_TARGET_OS").unwrap();
+    let target_triple = env::var("TARGET").unwrap();
+    let manifest_dir = PathBuf::from(env::var("CARGO_MANIFEST_DIR").unwrap());
 
     if env_flag("GRAPHONE_SKIP_SIDECAR_BUILD") {
         println!(
             "cargo:warning=Skipping pi-agent build because GRAPHONE_SKIP_SIDECAR_BUILD is set"
         );
+        ensure_sidecar_placeholder_binary(&manifest_dir, &target_os, &target_triple);
         return;
     }
 
-    let target_os = env::var("CARGO_CFG_TARGET_OS").unwrap();
-    let target_triple = env::var("TARGET").unwrap();
-    let manifest_dir = PathBuf::from(env::var("CARGO_MANIFEST_DIR").unwrap());
     let project_root = manifest_dir
         .parent()
         .expect("src-tauri must have a project root parent")
@@ -462,15 +514,12 @@ fn build_sidecar() {
         &compile_dir,
     );
 
-    let dest_dir = manifest_dir.join("binaries");
+    let dest_binary = sidecar_destination_binary_path(&manifest_dir, &target_os, &target_triple);
+    let dest_dir = dest_binary
+        .parent()
+        .expect("sidecar destination should always have a parent directory")
+        .to_path_buf();
     fs::create_dir_all(&dest_dir).expect("Failed to create binaries directory");
-
-    let dest_binary_name = if target_os == "windows" {
-        format!("pi-agent-{}.exe", target_triple)
-    } else {
-        format!("pi-agent-{}", target_triple)
-    };
-    let dest_binary = dest_dir.join(&dest_binary_name);
 
     fs::copy(&source_binary, &dest_binary).unwrap_or_else(|error| {
         panic!(
