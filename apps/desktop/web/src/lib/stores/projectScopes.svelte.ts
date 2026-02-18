@@ -13,6 +13,12 @@ interface SessionProjectScopesResponse {
   histories?: unknown;
 }
 
+function normalizeScopePath(path: string): string {
+  return path.trim().replace(/[\\/]+$/, "");
+}
+
+export { normalizeScopePath };
+
 function normalizeScopes(value: unknown): string[] {
   if (!Array.isArray(value)) {
     return [];
@@ -25,12 +31,12 @@ function normalizeScopes(value: unknown): string[] {
       continue;
     }
 
-    const trimmed = entry.trim();
-    if (!trimmed) {
+    const normalized = normalizeScopePath(entry);
+    if (!normalized) {
       continue;
     }
 
-    dedup.add(trimmed);
+    dedup.add(normalized);
   }
 
   return [...dedup].sort((a, b) => a.localeCompare(b));
@@ -49,7 +55,7 @@ function normalizeHistories(value: unknown): Record<string, PersistedSessionHist
     }
 
     const scopeValue = (entry as { scope?: unknown }).scope;
-    const scope = typeof scopeValue === "string" ? scopeValue.trim() : "";
+    const scope = typeof scopeValue === "string" ? normalizeScopePath(scopeValue) : "";
     if (!scope) {
       continue;
     }
@@ -148,6 +154,12 @@ export class ProjectScopesStore {
     } finally {
       this.loading = false;
     }
+  }
+
+  async deleteScope(projectDir: string): Promise<number> {
+    const deletedCount = await invoke<number>("delete_project_scope", { projectDir });
+    await this.refresh();
+    return deletedCount;
   }
 }
 

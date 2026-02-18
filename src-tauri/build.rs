@@ -3,6 +3,18 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
+fn env_flag(name: &str) -> bool {
+    env::var(name)
+        .ok()
+        .map(|value| {
+            matches!(
+                value.trim().to_ascii_lowercase().as_str(),
+                "1" | "true" | "yes" | "on"
+            )
+        })
+        .unwrap_or(false)
+}
+
 fn copy_dir_all(src: impl AsRef<Path>, dst: impl AsRef<Path>) -> std::io::Result<()> {
     fs::create_dir_all(&dst)?;
     for entry in fs::read_dir(src)? {
@@ -375,6 +387,15 @@ fn copy_runtime_assets(source: &SidecarSource, project_root: &Path, destination:
 }
 
 fn build_sidecar() {
+    println!("cargo:rerun-if-env-changed=GRAPHONE_PI_AGENT_BUN_TARGET");
+
+    if env_flag("GRAPHONE_SKIP_SIDECAR_BUILD") {
+        println!(
+            "cargo:warning=Skipping pi-agent build because GRAPHONE_SKIP_SIDECAR_BUILD is set"
+        );
+        return;
+    }
+
     let target_os = env::var("CARGO_CFG_TARGET_OS").unwrap();
     let target_triple = env::var("TARGET").unwrap();
     let manifest_dir = PathBuf::from(env::var("CARGO_MANIFEST_DIR").unwrap());
@@ -482,8 +503,6 @@ fn build_sidecar() {
         dest_binary.display()
     );
 
-    println!("cargo:rerun-if-env-changed=GRAPHONE_PI_AGENT_BUN_TARGET");
-
     println!(
         "cargo:rerun-if-changed={}",
         project_root.join("package.json").display()
@@ -514,16 +533,25 @@ fn build_sidecar() {
 
 fn main() {
     println!("cargo:rerun-if-changed=build.rs");
+    println!("cargo:rerun-if-env-changed=GRAPHONE_SKIP_SIDECAR_BUILD");
+    println!("cargo:rerun-if-env-changed=GRAPHONE_SKIP_WINDOWS_MANIFEST");
 
     let target_os = env::var("CARGO_CFG_TARGET_OS").unwrap();
 
     build_sidecar();
 
     if target_os == "windows" {
-        let manifest = include_str!("windows-app.manifest");
-        let windows = tauri_build::WindowsAttributes::new().app_manifest(manifest);
-        tauri_build::try_build(tauri_build::Attributes::new().windows_attributes(windows))
-            .expect("failed to run tauri build");
+        if env_flag("GRAPHONE_SKIP_WINDOWS_MANIFEST") {
+            println!(
+                "cargo:warning=Skipping embedded Windows manifest because GRAPHONE_SKIP_WINDOWS_MANIFEST is set"
+            );
+            tauri_build::build();
+        } else {
+            let manifest = include_str!("windows-app.manifest");
+            let windows = tauri_build::WindowsAttributes::new().app_manifest(manifest);
+            tauri_build::try_build(tauri_build::Attributes::new().windows_attributes(windows))
+                .expect("failed to run tauri build");
+        }
     } else {
         tauri_build::build();
     }

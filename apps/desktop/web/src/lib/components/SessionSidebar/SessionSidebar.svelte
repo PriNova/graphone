@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { SvelteSet } from "svelte/reactivity";
   import type { PersistedSessionHistoryItem } from "$lib/stores/projectScopes.svelte";
   import { cn } from "$lib/utils/cn";
 
@@ -14,6 +15,7 @@
     onselectscope?: (projectDir: string) => void | Promise<void>;
     onselecthistory?: (projectDir: string, history: PersistedSessionHistoryItem) => void | Promise<void>;
     onprojectdirinput?: (value: string) => void;
+    onremovescope?: (projectDir: string) => void | Promise<void>;
   }
 
   let {
@@ -28,7 +30,26 @@
     onselectscope,
     onselecthistory,
     onprojectdirinput,
+    onremovescope,
   }: Props = $props();
+
+  // Per-scope collapsed state: a projectDir in this set means its history is hidden
+  const collapsedScopes = new SvelteSet<string>();
+  // Per-scope pending deletion state: a projectDir in this set is awaiting confirmation
+  const pendingDeletionScopes = new SvelteSet<string>();
+
+  function toggleScopeCollapse(projectDir: string, event: MouseEvent): void {
+    event.stopPropagation();
+    if (collapsedScopes.has(projectDir)) {
+      collapsedScopes.delete(projectDir);
+    } else {
+      collapsedScopes.add(projectDir);
+    }
+  }
+
+  function isScopeCollapsed(projectDir: string): boolean {
+    return collapsedScopes.has(projectDir);
+  }
 
   function toScopeTitle(projectDir: string): string {
     const trimmed = projectDir.replace(/[\\/]+$/, "");
@@ -98,6 +119,26 @@
   function handleProjectDirInput(event: Event): void {
     const target = event.target as HTMLInputElement;
     onprojectdirinput?.(target.value);
+  }
+
+  function startDeleteScope(projectDir: string, event: MouseEvent): void {
+    event.stopPropagation();
+    pendingDeletionScopes.add(projectDir);
+  }
+
+  function cancelDeleteScope(projectDir: string, event: MouseEvent): void {
+    event.stopPropagation();
+    pendingDeletionScopes.delete(projectDir);
+  }
+
+  async function confirmDeleteScope(projectDir: string, event: MouseEvent): Promise<void> {
+    event.stopPropagation();
+    pendingDeletionScopes.delete(projectDir);
+    await onremovescope?.(projectDir);
+  }
+
+  function isPendingDeletion(projectDir: string): boolean {
+    return pendingDeletionScopes.has(projectDir);
   }
 </script>
 
@@ -173,6 +214,7 @@
     {:else}
       {#each projectScopes as projectDir (projectDir)}
         {@const scopeHistory = getHistoryForScope(projectDir)}
+        {@const scopeIsCollapsed = isScopeCollapsed(projectDir)}
         {#if collapsed}
           <button
             type="button"
@@ -189,34 +231,108 @@
         {:else}
           <div
             class={cn(
-              "rounded border p-2 transition-colors hover:bg-secondary/40",
+              "rounded border transition-colors hover:bg-secondary/40 group",
               projectDir === activeProjectDir ? "border-foreground/70 bg-secondary/60" : "border-border"
             )}
           >
-            <button
-              type="button"
-              class={cn(
-                "w-full text-left",
-                projectDir === activeProjectDir && "text-foreground"
-              )}
-              onclick={() => onselectscope?.(projectDir)}
-              aria-label={`Open ${toScopeTitle(projectDir)}`}
-            >
-              <div class="flex items-start justify-between gap-2">
-                <div class="min-w-0">
-                  <p class="text-sm font-medium truncate">{toScopeTitle(projectDir)}</p>
-                  <p class="text-xs text-muted-foreground truncate">{projectDir}</p>
-                </div>
-                {#if scopeHistory.length > 0}
-                  <span class="text-[10px] px-1.5 py-0.5 rounded border border-border text-muted-foreground shrink-0">
-                    {scopeHistory.length}
-                  </span>
-                {/if}
-              </div>
-            </button>
+            <!-- Scope header row -->
+            <div class="flex items-center gap-1 p-2">
+              <!-- Chevron toggle (only shown when there is history) -->
+              {#if scopeHistory.length > 0}
+                <button
+                  type="button"
+                  class="shrink-0 inline-flex h-5 w-5 items-center justify-center rounded text-muted-foreground hover:text-foreground hover:bg-secondary"
+                  onclick={(e) => toggleScopeCollapse(projectDir, e)}
+                  aria-label={scopeIsCollapsed ? `Expand ${toScopeTitle(projectDir)} history` : `Collapse ${toScopeTitle(projectDir)} history`}
+                  aria-expanded={!scopeIsCollapsed}
+                >
+                  <svg
+                    class={cn("h-3 w-3 transition-transform duration-150", scopeIsCollapsed ? "-rotate-90" : "rotate-0")}
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="2.5"
+                  >
+                    <polyline points="6 9 12 15 18 9"></polyline>
+                  </svg>
+                </button>
+              {:else}
+                <!-- Spacer so title aligns with scopes that have history -->
+                <span class="shrink-0 w-5"></span>
+              {/if}
 
-            {#if scopeHistory.length > 0}
-              <div class="mt-2 ml-1 pl-2 border-l border-border/70 space-y-1">
+              <!-- Scope title / select button -->
+              <button
+                type="button"
+                class={cn(
+                  "min-w-0 flex-1 text-left",
+                  projectDir === activeProjectDir && "text-foreground"
+                )}
+                onclick={() => onselectscope?.(projectDir)}
+                aria-label={`Open ${toScopeTitle(projectDir)}`}
+              >
+                <div class="flex items-start justify-between gap-2">
+                  <div class="min-w-0">
+                    <p class="text-sm font-medium truncate">{toScopeTitle(projectDir)}</p>
+                    <p class="text-xs text-muted-foreground truncate">{projectDir}</p>
+                  </div>
+                  {#if scopeHistory.length > 0}
+                    <span class="text-[10px] px-1.5 py-0.5 rounded border border-border text-muted-foreground shrink-0">
+                      {scopeHistory.length}
+                    </span>
+                  {/if}
+                </div>
+              </button>
+
+              <!-- Delete button / confirmation -->
+              {#if onremovescope}
+                {#if isPendingDeletion(projectDir)}
+                  <div class="shrink-0 flex items-center gap-1">
+                    <span class="text-[10px] text-muted-foreground">Delete?</span>
+                    <button
+                      type="button"
+                      class="inline-flex h-5 w-5 items-center justify-center rounded text-destructive hover:bg-destructive/10"
+                      onclick={(e) => confirmDeleteScope(projectDir, e)}
+                      aria-label="Confirm delete"
+                      title="Confirm delete"
+                    >
+                      <svg class="h-3 w-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                        <polyline points="20 6 9 17 4 12"></polyline>
+                      </svg>
+                    </button>
+                    <button
+                      type="button"
+                      class="inline-flex h-5 w-5 items-center justify-center rounded text-muted-foreground hover:bg-secondary"
+                      onclick={(e) => cancelDeleteScope(projectDir, e)}
+                      aria-label="Cancel delete"
+                      title="Cancel"
+                    >
+                      <svg class="h-3 w-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                        <line x1="18" y1="6" x2="6" y2="18"></line>
+                        <line x1="6" y1="6" x2="18" y2="18"></line>
+                      </svg>
+                    </button>
+                  </div>
+                {:else}
+                  <button
+                    type="button"
+                    class="shrink-0 inline-flex h-5 w-5 items-center justify-center rounded text-muted-foreground hover:text-destructive hover:bg-destructive/10 opacity-0 group-hover:opacity-100 transition-opacity"
+                    onclick={(e) => startDeleteScope(projectDir, e)}
+                    aria-label="Delete scope"
+                    title="Delete scope"
+                  >
+                    <svg class="h-3 w-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                      <polyline points="3 6 5 6 21 6"></polyline>
+                      <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+                    </svg>
+                  </button>
+                {/if}
+              {/if}
+            </div>
+
+            <!-- History list (hidden when scope is collapsed) -->
+            {#if scopeHistory.length > 0 && !scopeIsCollapsed}
+              <div class="px-2 pb-2 ml-6 pl-2 border-l border-border/70 space-y-1">
                 {#each scopeHistory.slice(0, 6) as history (history.filePath)}
                   <button
                     type="button"

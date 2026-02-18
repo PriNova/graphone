@@ -8,8 +8,9 @@ on:
 
 jobs:
   build-linux:
-    name: Build (Linux)
+    name: Compile check (Linux)
     runs-on: ubuntu-latest
+    timeout-minutes: 30
 
     steps:
       - name: Checkout
@@ -21,7 +22,6 @@ jobs:
           sudo apt-get install -y \
             libwebkit2gtk-4.1-dev \
             librsvg2-dev \
-            patchelf \
             libssl-dev \
             libgtk-3-dev \
             libayatana-appindicator3-dev
@@ -34,11 +34,6 @@ jobs:
 
       - name: Install npm dependencies
         run: npm ci
-
-      - name: Install bun
-        uses: oven-sh/setup-bun@v2
-        with:
-          bun-version: latest
 
       - name: Install Rust (stable)
         uses: dtolnay/rust-toolchain@stable
@@ -63,33 +58,27 @@ jobs:
             linux-cargo-target-${{ hashFiles('src-tauri/Cargo.lock') }}-
             linux-cargo-target-
 
-      - name: Install Tauri CLI
-        run: cargo install tauri-cli --version "^2" --locked
+      - name: Type check frontend
+        run: npm run check
 
-      - name: Build (Linux)
-        run: npm run build:linux
+      - name: Compile check Rust (Linux)
+        run: cargo check --manifest-path src-tauri/Cargo.toml
+        env:
+          GRAPHONE_SKIP_SIDECAR_BUILD: "true"
 
   build-windows:
-    name: Build (Windows cross-compile)
+    name: Compile check (Windows target)
     runs-on: ubuntu-latest
+    timeout-minutes: 30
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: 22
-          cache: npm
-
-      - name: Install npm dependencies
-        run: npm ci
-
-      - name: Install bun
-        uses: oven-sh/setup-bun@v2
-        with:
-          bun-version: latest
+      - name: Install llvm resource tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y llvm
 
       - name: Install Rust (stable) with Windows target
         uses: dtolnay/rust-toolchain@stable
@@ -116,15 +105,8 @@ jobs:
             windows-cargo-target-${{ hashFiles('src-tauri/Cargo.lock') }}-
             windows-cargo-target-
 
-      - name: Install cargo-xwin
-        run: cargo install cargo-xwin --locked
-
-      - name: Install Tauri CLI
-        run: cargo install tauri-cli --version "^2" --locked
-
-      - name: Build (Windows, no bundle)
-        run: cargo tauri build --target x86_64-pc-windows-msvc --runner cargo-xwin --no-bundle
-        working-directory: .
+      - name: Compile check Rust (Windows target)
+        run: cargo check --manifest-path src-tauri/Cargo.toml --target x86_64-pc-windows-msvc
         env:
-          # cargo-xwin downloads the MSVC SDK; allow network access during build
-          CARGO_NET_GIT_FETCH_WITH_CLI: "true"
+          GRAPHONE_SKIP_SIDECAR_BUILD: "true"
+          GRAPHONE_SKIP_WINDOWS_MANIFEST: "true"

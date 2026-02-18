@@ -250,6 +250,12 @@ fn extract_first_user_message(entry: &serde_json::Value) -> Option<String> {
     extract_text_from_message_content(content)
 }
 
+/// Normalize a path for comparison: trim whitespace and remove trailing slashes.
+fn normalize_path_for_comparison(path: &str) -> String {
+    let trimmed = path.trim();
+    trimmed.trim_end_matches(|c| c == '/' || c == '\\').to_string()
+}
+
 fn extract_session_header_from_file(path: &Path) -> Option<SessionFileHeader> {
     let file = std::fs::File::open(path).ok()?;
     let mut reader = BufReader::new(file);
@@ -272,11 +278,9 @@ fn extract_session_header_from_file(path: &Path) -> Option<SessionFileHeader> {
         return None;
     }
 
-    let scope = header
-        .get("cwd")
-        .and_then(|v| v.as_str())?
-        .trim()
-        .to_string();
+    let scope = normalize_path_for_comparison(
+        header.get("cwd").and_then(|v| v.as_str())?
+    );
     if scope.is_empty() {
         return None;
     }
@@ -479,6 +483,132 @@ pub fn list_session_project_scopes() -> SessionProjectScopesResponse {
         .collect::<Vec<_>>();
 
     SessionProjectScopesResponse { scopes, histories }
+}
+
+/// Encode a cwd path into the directory name format used by pi-mono.
+/// Format: `--<encoded-path>--` where the path has leading slashes removed
+/// and all slashes, backslashes, and colons replaced with dashes.
+fn encode_scope_dir_name(cwd: &str) -> String {
+    let normalized = cwd
+        .trim()
+        .trim_start_matches(|c| c == '/' || c == '\\')
+        .replace(|c| c == '/' || c == '\\' || c == ':', "-");
+    format!("--{}--", normalized)
+}
+
+/// Delete all session files and the scope directory for a given project scope.
+///
+/// Finds all JSONL session files whose header cwd matches the project_dir,
+/// deletes them from disk, and also removes the scope's session directory.
+/// Returns the count of deleted files.
+#[tauri::command]
+pub fn delete_project_scope(project_dir: String) -> Result<usize, String> {
+    let normalized_scope = normalize_path_for_comparison(&project_dir);
+    if normalized_scope.is_empty() {
+        return Err("project_dir cannot be empty".to_string());
+    }
+
+    let mut roots = candidate_session_roots();
+    roots.extend(local_session_roots_for_scope(&normalized_scope));
+
+    let mut seen_roots = HashSet::<String>::new();
+    let mut deleted_count = 0;
+
+    // First pass: delete individual JSONL files by matching header cwd
+    for root in roots {
+        let root_key = root.path.to_string_lossy().to_string();
+        if !seen_roots.insert(root_key) {
+            continue;
+        }
+
+        let mut session_files = Vec::new();
+        collect_session_files_from_root(&root.path, &mut session_files);
+
+        for session_file in session_files {
+            if let Some(header) = extract_session_header_from_file(&session_file) {
+                let header_scope = normalize_path_for_comparison(&header.scope);
+                if header_scope == normalized_scope {
+                    match std::fs::remove_file(&session_file) {
+                        Ok(()) => {
+                            logger::log(format!(
+                                "Deleted session file for scope '{}': {}",
+                                normalized_scope,
+                                session_file.display()
+                            ));
+                            deleted_count += 1;
+                        }
+                        Err(e) => {
+                            logger::log(format!(
+                                "Failed to delete session file {}: {}",
+                                session_file.display(),
+                                e
+                            ));
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // Second pass: delete scope directories under global session roots
+    // pi-mono encodes the cwd into a directory name like `--home-user-project--`
+    let encoded_dir_name = encode_scope_dir_name(&normalized_scope);
+
+    if let Some(home) = dirs::home_dir() {
+        let global_session_roots = vec![
+            home.join(".pi").join("agent").join("sessions"),
+            home.join(".pi").join("sessions"),
+        ];
+
+        for sessions_root in global_session_roots {
+            let scope_dir = sessions_root.join(&encoded_dir_name);
+            if scope_dir.exists() && scope_dir.is_dir() {
+                match std::fs::remove_dir_all(&scope_dir) {
+                    Ok(()) => {
+                        logger::log(format!(
+                            "Deleted scope directory for '{}': {}",
+                            normalized_scope,
+                            scope_dir.display()
+                        ));
+                    }
+                    Err(e) => {
+                        logger::log(format!(
+                            "Failed to delete scope directory {}: {}",
+                            scope_dir.display(),
+                            e
+                        ));
+                    }
+                }
+            }
+        }
+    }
+
+    // Also delete encoded local scope directories if they exist.
+    // Important: do NOT remove the whole local sessions root, because it may
+    // contain other scope directories.
+    for local_root in local_session_roots_for_scope(&normalized_scope) {
+        let scope_dir = local_root.path.join(&encoded_dir_name);
+        if scope_dir.exists() && scope_dir.is_dir() {
+            match std::fs::remove_dir_all(&scope_dir) {
+                Ok(()) => {
+                    logger::log(format!(
+                        "Deleted local encoded scope directory for '{}': {}",
+                        normalized_scope,
+                        scope_dir.display()
+                    ));
+                }
+                Err(e) => {
+                    logger::log(format!(
+                        "Failed to delete local encoded scope directory {}: {}",
+                        scope_dir.display(),
+                        e
+                    ));
+                }
+            }
+        }
+    }
+
+    Ok(deleted_count)
 }
 
 /// Get the current working directory (the directory in which the app executes).

@@ -28,6 +28,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             commands::get_working_directory,
             commands::list_session_project_scopes,
+            commands::delete_project_scope,
             commands::create_agent,
             commands::close_agent,
             commands::list_agents,

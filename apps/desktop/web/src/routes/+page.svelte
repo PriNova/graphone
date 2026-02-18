@@ -12,7 +12,7 @@
   import { cwdStore } from "$lib/stores/cwd.svelte";
   import { createEnabledModelsStore } from "$lib/stores/enabledModels.svelte";
   import { createMessagesStore } from "$lib/stores/messages.svelte";
-  import { projectScopesStore, type PersistedSessionHistoryItem } from "$lib/stores/projectScopes.svelte";
+  import { projectScopesStore, type PersistedSessionHistoryItem, normalizeScopePath } from "$lib/stores/projectScopes.svelte";
   import { sessionsStore, type SessionDescriptor } from "$lib/stores/sessions.svelte";
   import type { AgentEvent } from "$lib/types/agent";
   import type { SessionRuntime } from "$lib/types/session";
@@ -35,10 +35,12 @@
   const activeSessionId = $derived(sessionsStore.activeSessionId);
   const persistedProjectScopes = $derived(projectScopesStore.scopes);
   const scopeHistoryByProject = $derived(projectScopesStore.historyByScope);
+
   const projectScopes = $derived(
-    [...new Set([...persistedProjectScopes, ...sessions.map((session) => session.projectDir)])].sort((a, b) =>
-      a.localeCompare(b)
-    )
+    [...new Set([
+      ...persistedProjectScopes.map(normalizeScopePath),
+      ...sessions.map((session) => normalizeScopePath(session.projectDir)),
+    ])].sort((a, b) => a.localeCompare(b))
   );
   const activeRuntime = $derived(activeSessionId ? sessionRuntimes[activeSessionId] ?? null : null);
 
@@ -51,7 +53,9 @@
   const isModelsLoading = $derived(activeRuntime ? activeRuntime.agent.isModelsLoading : false);
   const isSettingModel = $derived(activeRuntime ? activeRuntime.agent.isSettingModel : false);
   const isStreaming = $derived(activeRuntime ? activeRuntime.messages.streamingMessageId !== null : false);
-  const activeProjectDir = $derived(activeRuntime ? activeRuntime.projectDir : null);
+  const activeProjectDir = $derived(
+    activeRuntime ? normalizeScopePath(activeRuntime.projectDir) : null
+  );
 
   function handleScroll(): void {
     if (messagesContainerRef && activeRuntime) {
@@ -182,6 +186,45 @@
     }
 
     await createSession(projectDir, history.filePath);
+  }
+
+  async function onRemoveScope(projectDir: string): Promise<void> {
+    // Normalize project dir for comparison (remove trailing slashes)
+    const normalizedProjectDir = projectDir.replace(/[\\/]+$/, "");
+
+    // Close all sessions for this scope via backend
+    const sessionsToClose = sessionsStore.sessions.filter(
+      (session) => session.projectDir.replace(/[\\/]+$/, "") === normalizedProjectDir
+    );
+    for (const session of sessionsToClose) {
+      try {
+        await sessionsStore.closeSession(session.sessionId);
+      } catch {
+        // Ignore close errors - session may not exist in backend
+      }
+      // Clean up runtime state
+      delete sessionRuntimes[session.sessionId];
+    }
+
+    // Delete the scope (session files) via backend
+    await projectScopesStore.deleteScope(normalizedProjectDir);
+
+    // Refresh session list
+    await sessionsStore.refreshFromBackend().catch(() => undefined);
+
+    // If no sessions remain, create a new one with the current cwd
+    if (sessionsStore.sessions.length === 0) {
+      const fallback = cwdStore.cwd ?? (await invoke<string>("get_working_directory"));
+      await createSession(fallback);
+    } else if (!sessionsStore.activeSession) {
+      // Switch to first available session
+      const first = sessionsStore.sessions[0];
+      if (first) {
+        sessionsStore.setActiveSession(first.sessionId);
+        await ensureRuntime(first);
+        requestAnimationFrame(() => scrollToBottom(false));
+      }
+    }
   }
 
   function handleAgentError(errorPayload: string): void {
@@ -353,6 +396,7 @@
     oncreatesession={createSessionFromInput}
     onselectscope={onSelectScope}
     onselecthistory={onSelectHistory}
+    onremovescope={onRemoveScope}
   />
 
   <section class="flex-1 min-w-0 h-full flex items-stretch justify-center overflow-hidden">
