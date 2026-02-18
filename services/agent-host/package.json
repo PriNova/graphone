@@ -5,7 +5,7 @@
   "type": "module",
   "description": "Graphone-local SDK host sidecar for multiplexed AgentSession routing",
   "scripts": {
-    "build": "bun build ./src/cli.ts --target node --format esm --outfile ./dist/cli.js",
+    "build": "bun build ./src/cli.ts --target node --format esm --outdir ./dist",
     "check": "tsc --noEmit"
   },
   "dependencies": {

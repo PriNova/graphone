@@ -78,34 +78,12 @@ fn ensure_source_is_ready(source: &SidecarSource) {
 
     match source.kind {
         SidecarSourceKind::GraphoneHost => {
-            if !source.package_root.exists() {
-                panic!(
-                    "Graphone host source not found at {}",
-                    source.package_root.display()
-                );
-            }
+            let source_cli = source.package_root.join("src").join("cli.ts");
 
-            println!("cargo:warning=Building Graphone host sidecar TypeScript...");
-            run_command(
-                "bun",
-                &[
-                    "build".to_string(),
-                    "./src/cli.ts".to_string(),
-                    "--target".to_string(),
-                    "node".to_string(),
-                    "--format".to_string(),
-                    "esm".to_string(),
-                    "--outfile".to_string(),
-                    "./dist/cli.js".to_string(),
-                ],
-                &source.package_root,
-                "build Graphone host sidecar dist",
-            );
-
-            if !dist_cli.exists() {
+            if !source_cli.exists() {
                 panic!(
-                    "Graphone host build did not produce dist/cli.js at {}",
-                    dist_cli.display()
+                    "Graphone host source entrypoint not found at {}",
+                    source_cli.display()
                 );
             }
         }
@@ -186,7 +164,12 @@ fn compile_sidecar_binary(
         args.push(format!("--target={}", target));
     }
 
-    args.push("./dist/cli.js".to_string());
+    let entrypoint = match source.kind {
+        SidecarSourceKind::GraphoneHost => "./src/cli.ts",
+        SidecarSourceKind::NpmDependency => "./dist/cli.js",
+    };
+
+    args.push(entrypoint.to_string());
     args.push("--outfile".to_string());
     args.push(output_stem.to_string_lossy().to_string());
 
