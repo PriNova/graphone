@@ -66,9 +66,14 @@ impl EventHandler {
             let mut stderr_buffer: Vec<u8> = Vec::new();
 
             while let Some(event) = event_rx.recv().await {
-                let should_continue =
-                    Self::handle_event(&app_clone, &state, event, &mut stdout_buffer, &mut stderr_buffer)
-                        .await;
+                let should_continue = Self::handle_event(
+                    &app_clone,
+                    &state,
+                    event,
+                    &mut stdout_buffer,
+                    &mut stderr_buffer,
+                )
+                .await;
 
                 if !should_continue {
                     break;
@@ -375,6 +380,11 @@ impl RpcClient {
         Ok(())
     }
 
+    async fn remove_pending_request(state: &Arc<Mutex<SidecarState>>, id: &str) {
+        let mut state_guard = state.lock().await;
+        state_guard.pending_requests.remove(id);
+    }
+
     pub async fn send_command_with_response(
         state: &Arc<Mutex<SidecarState>>,
         command: RpcCommand,
@@ -403,19 +413,32 @@ impl RpcClient {
             .map_err(|e| format!("Failed to serialize command: {}", e))?;
 
         let mut child_guard = child_arc.lock().await;
-        child_guard
-            .write(json.as_bytes())
-            .map_err(|e| format!("Failed to write to sidecar: {}", e))?;
-        child_guard
-            .write(b"\n")
-            .map_err(|e| format!("Failed to write newline to sidecar: {}", e))?;
+        if let Err(e) = child_guard.write(json.as_bytes()) {
+            drop(child_guard);
+            Self::remove_pending_request(state, &id).await;
+            return Err(format!("Failed to write to sidecar: {}", e));
+        }
+
+        if let Err(e) = child_guard.write(b"\n") {
+            drop(child_guard);
+            Self::remove_pending_request(state, &id).await;
+            return Err(format!("Failed to write newline to sidecar: {}", e));
+        }
 
         drop(child_guard);
 
-        let response = tokio::time::timeout(std::time::Duration::from_secs(timeout_secs), rx)
-            .await
-            .map_err(|_| "Timeout waiting for response")?
-            .map_err(|_| "Response channel closed")?;
+        let response =
+            match tokio::time::timeout(std::time::Duration::from_secs(timeout_secs), rx).await {
+                Ok(Ok(response)) => response,
+                Ok(Err(_)) => {
+                    Self::remove_pending_request(state, &id).await;
+                    return Err("Response channel closed".to_string());
+                }
+                Err(_) => {
+                    Self::remove_pending_request(state, &id).await;
+                    return Err("Timeout waiting for response".to_string());
+                }
+            };
 
         Ok(response)
     }

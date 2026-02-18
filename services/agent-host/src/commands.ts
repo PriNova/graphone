@@ -111,6 +111,10 @@ export async function handleHostCommand(runtime: HostRuntime, command: HostComma
         return success(requestId, "shutdown");
       }
 
+      case "ping": {
+        return success(requestId, "ping", { ready: true });
+      }
+
       default: {
         const unknownType = (command as { type?: string }).type ?? "unknown";
         return failure(requestId, unknownType, `Unknown command: ${unknownType}`);

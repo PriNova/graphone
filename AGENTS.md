@@ -87,6 +87,7 @@ Canonical repo map (quick):
 | librsvg2-dev | 2.58.0 | ✅ |
 | DISPLAY | :0 | ✅ WSLg |
 | WAYLAND_DISPLAY | wayland-0 | ✅ WSLg |
+| Python3 | 3.13 | ✅ python3 |
 
 ### Rust Targets
 | Target | Status |

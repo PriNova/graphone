@@ -14,7 +14,8 @@ export type HostCommandType =
   | "set_model"
   | "cycle_model"
   | "get_available_models"
-  | "shutdown";
+  | "shutdown"
+  | "ping";
 
 export interface HostCommandBase {
   id?: string;
@@ -61,7 +62,8 @@ export type HostCommand =
         | "get_state"
         | "cycle_model"
         | "get_available_models"
-        | "shutdown";
+        | "shutdown"
+        | "ping";
     });
 
 export interface HostResponse {

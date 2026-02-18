@@ -56,6 +56,7 @@ Transport: newline-delimited JSON over stdio.
 - `cycle_model`
 - `get_available_models`
 - `shutdown`
+- `ping` (health/readiness check)
 
 ## MVP behavior
 

@@ -4,6 +4,7 @@ use std::sync::Arc;
 use serde::Serialize;
 use tauri::{AppHandle, State};
 use tokio::sync::Mutex;
+use tokio::time::{sleep, Duration};
 
 use crate::logger;
 use crate::sidecar::{EventHandler, RpcClient, SidecarManager};
@@ -23,6 +24,13 @@ pub struct EnabledModelsResponse {
     /// Where the effective setting came from: "project", "global", or "none".
     pub source: String,
 }
+
+const SIDECAR_READY_TIMEOUT_SECS: u64 = 20;
+const SIDECAR_READY_ATTEMPTS: usize = 3;
+const SIDECAR_READY_RETRY_DELAY_MS: u64 = 500;
+const CREATE_SESSION_TIMEOUT_SECS: u64 = 20;
+const CREATE_SESSION_ATTEMPTS: usize = 3;
+const CREATE_SESSION_RETRY_DELAY_MS: u64 = 600;
 
 fn global_settings_path() -> Option<PathBuf> {
     dirs::home_dir().map(|h| h.join(".pi").join("agent").join("settings.json"))
@@ -238,8 +246,16 @@ async fn ensure_sidecar_started(
     provider: Option<String>,
     model: Option<String>,
 ) -> Result<(), String> {
-    let mut state_guard = state.lock().await;
+    let has_child = {
+        let state_guard = state.lock().await;
+        state_guard.child.is_some()
+    };
 
+    if has_child {
+        return Ok(());
+    }
+
+    let mut state_guard = state.lock().await;
     if state_guard.child.is_some() {
         return Ok(());
     }
@@ -260,7 +276,53 @@ async fn ensure_sidecar_started(
     EventHandler::spawn_response_handler(state.clone(), response_rx);
     EventHandler::spawn_event_listener(app.clone(), state.clone(), event_rx);
 
-    Ok(())
+    wait_for_sidecar_ready(state, SIDECAR_READY_ATTEMPTS, SIDECAR_READY_TIMEOUT_SECS).await
+}
+
+async fn wait_for_sidecar_ready(
+    state: &Arc<Mutex<SidecarState>>,
+    attempts: usize,
+    timeout_secs: u64,
+) -> Result<(), String> {
+    let mut last_error = String::from("unknown sidecar readiness failure");
+
+    for attempt in 1..=attempts {
+        let cmd = RpcCommand {
+            id: Some(crypto_random_uuid()),
+            r#type: "ping".to_string(),
+            session_id: None,
+            cwd: None,
+            message: None,
+            provider: None,
+            model_id: None,
+            streaming_behavior: None,
+        };
+
+        match send_command_with_response(state, cmd, timeout_secs).await {
+            Ok(response) if response.success => return Ok(()),
+            Ok(response) => {
+                last_error = response
+                    .error
+                    .unwrap_or_else(|| "Sidecar readiness ping failed".to_string());
+            }
+            Err(error) => {
+                last_error = error;
+            }
+        }
+
+        if attempt < attempts {
+            sleep(Duration::from_millis(SIDECAR_READY_RETRY_DELAY_MS)).await;
+        }
+    }
+
+    Err(format!(
+        "Sidecar failed readiness check after {} attempts: {}",
+        attempts, last_error
+    ))
+}
+
+fn is_timeout_error(error: &str) -> bool {
+    error.contains("Timeout waiting for response")
 }
 
 async fn send_command_with_response(
@@ -345,24 +407,47 @@ async fn create_session_internal(
 ) -> Result<RpcResponse, String> {
     ensure_sidecar_started(&app, state, provider.clone(), model.clone()).await?;
 
-    let id = crypto_random_uuid();
-    let command = RpcCommand {
-        id: Some(id),
-        r#type: "create_session".to_string(),
-        session_id: None,
-        cwd: Some(project_dir),
-        message: None,
-        provider,
-        model_id: model,
-        streaming_behavior: None,
-    };
+    let requested_session_id = crypto_random_uuid();
+    let mut last_error = "Failed to create session".to_string();
 
-    let response = send_command_with_response(state, command, 10).await?;
+    for attempt in 1..=CREATE_SESSION_ATTEMPTS {
+        let command = RpcCommand {
+            id: Some(crypto_random_uuid()),
+            r#type: "create_session".to_string(),
+            session_id: Some(requested_session_id.clone()),
+            cwd: Some(project_dir.clone()),
+            message: None,
+            provider: provider.clone(),
+            model_id: model.clone(),
+            streaming_behavior: None,
+        };
 
-    let mut state_guard = state.lock().await;
-    cache_session_from_create_response(&mut state_guard, &response);
+        match send_command_with_response(state, command, CREATE_SESSION_TIMEOUT_SECS).await {
+            Ok(response) => {
+                let mut state_guard = state.lock().await;
+                cache_session_from_create_response(&mut state_guard, &response);
+                return Ok(response);
+            }
+            Err(error) => {
+                last_error = error;
 
-    Ok(response)
+                let should_retry =
+                    is_timeout_error(&last_error) && attempt < CREATE_SESSION_ATTEMPTS;
+                if should_retry {
+                    logger::log(format!(
+                        "create_session timed out (attempt {}/{}), retrying with same sessionId {}",
+                        attempt, CREATE_SESSION_ATTEMPTS, requested_session_id
+                    ));
+                    sleep(Duration::from_millis(CREATE_SESSION_RETRY_DELAY_MS)).await;
+                    continue;
+                }
+
+                return Err(last_error);
+            }
+        }
+    }
+
+    Err(last_error)
 }
 
 #[tauri::command]
@@ -654,4 +739,3 @@ pub async fn cycle_model(
 
     send_command_with_response(state.inner(), cmd, 5).await
 }
-

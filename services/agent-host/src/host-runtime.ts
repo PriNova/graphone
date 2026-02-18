@@ -15,7 +15,7 @@ import type { HostedSessionInfo, SessionEventEnvelope } from "./protocol.js";
 
 export class HostRuntime {
   private readonly sessions = new Map<string, HostedSession>();
-  private readonly authStorage = new AuthStorage();
+  private readonly authStorage = AuthStorage.create();
   private readonly modelRegistry = new ModelRegistry(this.authStorage);
 
   constructor(private readonly emitSessionEvent: (event: SessionEventEnvelope) => void) {}
@@ -31,8 +31,12 @@ export class HostRuntime {
       throw new Error("sessionId cannot be empty");
     }
 
-    if (this.sessions.has(sessionId)) {
-      throw new Error(`Session already exists: ${sessionId}`);
+    const existing = this.sessions.get(sessionId);
+    if (existing) {
+      return {
+        sessionId: existing.sessionId,
+        cwd: existing.cwd,
+      };
     }
 
     const cwd = this.validateCwd(args.cwd);
