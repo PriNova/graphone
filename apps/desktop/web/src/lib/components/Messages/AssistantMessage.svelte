@@ -13,6 +13,10 @@
   // State for collapsible thinking blocks (default collapsed)
   let thinkingCollapsed = $state<Record<number, boolean>>({});
 
+  // Limits for tool result display (UI-level safety truncation)
+  const MAX_RESULT_LINES = 10;
+  const MAX_RESULT_BYTES = 10 * 1024; // 10KB
+
   function isThinkingCollapsed(index: number): boolean {
     // Default collapsed when we haven't seen/toggled this block yet.
     return thinkingCollapsed[index] ?? true;
@@ -22,8 +26,120 @@
     thinkingCollapsed[index] = !isThinkingCollapsed(index);
   }
 
-  function formatToolArguments(args: Record<string, unknown>): string {
-    return JSON.stringify(args, null, 2);
+  /**
+   * Truncate tool result for display.
+   * Returns the truncated result and truncation info.
+   */
+  function truncateResult(result: string): { text: string; truncated: boolean; totalLines: number; truncatedBy: 'lines' | 'bytes' | null } {
+    const totalBytes = new TextEncoder().encode(result).length;
+    const lines = result.split('\n');
+    const totalLines = lines.length;
+
+    // No truncation needed
+    if (totalLines <= MAX_RESULT_LINES && totalBytes <= MAX_RESULT_BYTES) {
+      return { text: result, truncated: false, totalLines, truncatedBy: null };
+    }
+
+    // Truncate by lines (take first N lines that fit in bytes)
+    const outputLines: string[] = [];
+    let outputBytes = 0;
+    let truncatedBy: 'lines' | 'bytes' = 'lines';
+
+    for (const line of lines) {
+      const lineBytes = new TextEncoder().encode(line).length + (outputLines.length > 0 ? 1 : 0); // +1 for newline
+
+      if (outputLines.length >= MAX_RESULT_LINES) {
+        truncatedBy = 'lines';
+        break;
+      }
+
+      if (outputBytes + lineBytes > MAX_RESULT_BYTES) {
+        truncatedBy = 'bytes';
+        break;
+      }
+
+      outputLines.push(line);
+      outputBytes += lineBytes;
+    }
+
+    return {
+      text: outputLines.join('\n'),
+      truncated: true,
+      totalLines,
+      truncatedBy,
+    };
+  }
+
+  function stringifyToolArg(value: unknown): string | null {
+    if (value === null || value === undefined) return null;
+    if (typeof value === 'string') return value;
+    if (typeof value === 'number' || typeof value === 'boolean') return String(value);
+
+    try {
+      return JSON.stringify(value);
+    } catch {
+      return null;
+    }
+  }
+
+  function ellipsize(value: string, max = 140): string {
+    const normalized = value.replace(/\s+/g, ' ').trim();
+    if (normalized.length <= max) return normalized;
+    return `${normalized.slice(0, max - 1)}…`;
+  }
+
+  function getToolCallSummary(block: ToolCall): string | null {
+    const args = block.arguments ?? {};
+
+    const arg = (key: string) => stringifyToolArg(args[key]);
+
+    switch (block.name) {
+      case 'bash': {
+        const command = arg('command');
+        return command ? ellipsize(command, 160) : null;
+      }
+
+      case 'read': {
+        const path = arg('path');
+        const offset = arg('offset');
+        const limit = arg('limit');
+
+        if (!path && !offset && !limit) return null;
+
+        const meta: string[] = [];
+        if (offset) meta.push(`offset=${offset}`);
+        if (limit) meta.push(`limit=${limit}`);
+
+        return ellipsize(`${path ?? ''}${meta.length > 0 ? ` (${meta.join(', ')})` : ''}`, 160);
+      }
+
+      case 'write':
+      case 'edit':
+      case 'ls':
+      case 'find': {
+        const path = arg('path');
+        return path ? ellipsize(path, 160) : null;
+      }
+
+      case 'grep': {
+        const pattern = arg('pattern');
+        const path = arg('path');
+        if (pattern && path) return ellipsize(`${pattern} (${path})`, 160);
+        return pattern ? ellipsize(pattern, 160) : path ? ellipsize(path, 160) : null;
+      }
+
+      default: {
+        const fallback =
+          arg('path') ??
+          arg('command') ??
+          arg('url') ??
+          arg('query') ??
+          arg('pattern') ??
+          arg('filePattern');
+
+        return fallback ? ellipsize(fallback, 160) : null;
+      }
+    }
   }
 
   function isThinkingBlock(block: ContentBlock): block is ThinkingBlock {
@@ -46,10 +162,6 @@
   "w-full wrap-break-word",
   isStreaming && "opacity-90"
 )}>
-    <!-- <div class="mb-2">
-      <span class="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Assistant</span>
-    </div> -->
-    
     <!-- Render blocks in the order they arrive -->
     {#each content as block, blockIndex (block.type === 'toolCall' ? block.id : block)}
       {#if isThinkingBlock(block)}
@@ -80,15 +192,56 @@
           {/if}
         </div>
       {:else if isToolCall(block)}
-        <div class="mb-2 last:mb-0 bg-foreground/3 dark:bg-f6fff5/[0.03] border border-border rounded overflow-hidden">
-          <div class="flex items-center gap-2 px-3 py-2 bg-foreground/5 dark:bg-f6fff5/[0.05] border-b border-border text-xs font-semibold text-muted-foreground uppercase tracking-wider">
-            <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+        {@const hasResult = block.result !== undefined}
+        {@const truncated = hasResult ? truncateResult(block.result!) : null}
+        {@const callSummary = getToolCallSummary(block)}
+        <div class={cn(
+          "mb-2 last:mb-0 border rounded overflow-hidden",
+          !hasResult && "bg-foreground/3 dark:bg-f6fff5/[0.03] border-border",
+          hasResult && !block.isError && "bg-emerald-500/[0.03] dark:bg-emerald-500/[0.03] border-emerald-500/20",
+          hasResult && block.isError && "bg-destructive/3 dark:bg-destructive/3 border-destructive/20"
+        )}>
+          <div class={cn(
+            "flex items-center gap-2 px-3 py-2 border-b text-xs font-semibold uppercase tracking-wider",
+            !hasResult && "bg-foreground/5 dark:bg-f6fff5/[0.05] border-border text-muted-foreground",
+            hasResult && !block.isError && "bg-emerald-500/10 border-emerald-500/20 text-emerald-600 dark:text-emerald-400",
+            hasResult && block.isError && "bg-destructive/10 border-destructive/20 text-destructive"
+          )}>
+            <svg class="w-3.5 h-3.5 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor">
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
             </svg>
-            <span>Tool: {block.name}</span>
+            <div class="min-w-0 flex-1 flex items-center gap-1 overflow-hidden">
+              <span class="shrink-0">{block.name}</span>
+              {#if callSummary}
+                <span class="normal-case font-normal tracking-normal opacity-80 truncate">• {callSummary}</span>
+              {/if}
+            </div>
+            {#if !hasResult}
+              <span class="ml-auto text-muted-foreground normal-case shrink-0">Running...</span>
+            {:else if block.isError}
+              <span class="ml-auto normal-case shrink-0">Error</span>
+            {:else}
+              <span class="ml-auto normal-case opacity-60 shrink-0">Done</span>
+            {/if}
           </div>
-          <pre class="p-3 font-mono text-[0.8125rem] leading-normal text-foreground whitespace-pre-wrap wrap-break-word m-0 max-h-50 overflow-y-auto">{formatToolArguments(block.arguments)}</pre>
+          {#if hasResult && truncated}
+            <pre class="p-3 font-mono text-[0.8125rem] leading-normal text-foreground whitespace-pre-wrap wrap-break-word m-0 max-h-75 overflow-y-auto">{truncated.text}</pre>
+            {#if truncated.truncated}
+              <div class={cn(
+                "px-3 py-1.5 text-xs border-t",
+                block.isError 
+                  ? "bg-destructive/5 border-destructive/10 text-destructive/80" 
+                  : "bg-emerald-500/5 border-emerald-500/10 text-emerald-600/70 dark:text-emerald-400/70"
+              )}>
+                {#if truncated.truncatedBy === 'lines'}
+                  Truncated: showing {truncated.text.split('\n').length} of {truncated.totalLines} lines
+                {:else}
+                  Truncated: {MAX_RESULT_BYTES / 1024}KB limit reached
+                {/if}
+              </div>
+            {/if}
+          {/if}
         </div>
       {:else if isTextBlock(block)}
         <div class="bg-card border border-border rounded-lg px-5 py-2 mb-2 last:mb-0">

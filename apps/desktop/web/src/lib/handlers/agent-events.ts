@@ -38,6 +38,20 @@ export function handleMessageStart(
 ): void {
   if (event.message.role === "user") {
     runtime.messages.addUserMessage(event.message);
+    return;
+  }
+
+  // Fallback path: toolResult messages contain the same payload as tool_execution_end
+  // and can be used to attach results if a tool_execution event was dropped.
+  if (event.message.role === "toolResult") {
+    const toolCallId = typeof event.message.toolCallId === "string" ? event.message.toolCallId : null;
+    if (!toolCallId) return;
+
+    runtime.messages.updateToolCallResult(
+      toolCallId,
+      formatToolResult(event.message.content),
+      event.message.isError === true,
+    );
   }
 }
 
@@ -176,6 +190,79 @@ export function handleTurnEnd(runtime: SessionRuntimeForEvents): void {
   runtime.messages.finalizeStreamingMessage();
 }
 
+/**
+ * Convert tool result to a displayable string.
+ * Handles various result types (string, object, array, etc.)
+ */
+function formatToolResult(result: unknown): string {
+  if (result === null || result === undefined) {
+    return "";
+  }
+
+  if (typeof result === "string") {
+    return result;
+  }
+
+  if (typeof result === "object") {
+    // Handle content array format from pi-mono AgentToolResult
+    if (Array.isArray(result)) {
+      const textParts: string[] = [];
+      for (const block of result) {
+        if (typeof block === "string") {
+          textParts.push(block);
+        } else if (block && typeof block === "object") {
+          const typedBlock = block as { type?: string; text?: string };
+          if (typedBlock.type === "text" && typeof typedBlock.text === "string") {
+            textParts.push(typedBlock.text);
+          }
+        }
+      }
+      if (textParts.length > 0) {
+        return textParts.join("\n");
+      }
+    }
+
+    // Handle { content: [...] } format
+    const obj = result as { content?: unknown; details?: unknown };
+    if (obj.content && Array.isArray(obj.content)) {
+      const textParts: string[] = [];
+      for (const block of obj.content) {
+        if (typeof block === "string") {
+          textParts.push(block);
+        } else if (block && typeof block === "object") {
+          const typedBlock = block as { type?: string; text?: string };
+          if (typedBlock.type === "text" && typeof typedBlock.text === "string") {
+            textParts.push(typedBlock.text);
+          }
+        }
+      }
+      if (textParts.length > 0) {
+        return textParts.join("\n");
+      }
+    }
+
+    // Fallback to JSON
+    try {
+      return JSON.stringify(result, null, 2);
+    } catch {
+      return "[Unable to display result]";
+    }
+  }
+
+  return String(result);
+}
+
+export function handleToolExecutionEnd(
+  runtime: SessionRuntimeForEvents,
+  event: Extract<AgentEvent, { type: "tool_execution_end" }>,
+): void {
+  runtime.messages.updateToolCallResult(
+    event.toolCallId,
+    formatToolResult(event.result),
+    event.isError,
+  );
+}
+
 // Main event router
 export function handleAgentEvent(runtime: SessionRuntimeForEvents, event: AgentEvent): void {
   switch (event.type) {
@@ -205,6 +292,10 @@ export function handleAgentEvent(runtime: SessionRuntimeForEvents, event: AgentE
 
     case "turn_end":
       handleTurnEnd(runtime);
+      break;
+
+    case "tool_execution_end":
+      handleToolExecutionEnd(runtime, event);
       break;
   }
 }

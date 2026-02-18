@@ -5,6 +5,9 @@ export interface ToolCall {
   id: string;
   name: string;
   arguments: Record<string, unknown>;
+  // Result populated when tool execution completes
+  result?: string;
+  isError?: boolean;
 }
 
 export interface ThinkingBlock {
@@ -102,6 +105,14 @@ export interface TurnEndEvent {
   toolResults: unknown[];
 }
 
+export interface ToolExecutionEndEvent {
+  type: 'tool_execution_end';
+  toolCallId: string;
+  toolName: string;
+  result: unknown;
+  isError: boolean;
+}
+
 export type AgentEvent = 
   | AgentMessageStartEvent 
   | AgentMessageUpdateEvent 
@@ -109,4 +120,5 @@ export type AgentEvent =
   | AgentStartEvent 
   | AgentEndEvent 
   | TurnStartEvent 
-  | TurnEndEvent;
+  | TurnEndEvent
+  | ToolExecutionEndEvent;

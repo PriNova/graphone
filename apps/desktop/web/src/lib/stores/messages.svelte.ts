@@ -34,9 +34,26 @@ export class MessagesStore {
     this.streamingMessageId = id;
   }
 
-  // Convert agent messages from backend to our Message format
-  loadFromAgentMessages(agentMessages: Array<{ role: string; content: unknown; timestamp?: number }>): void {
+  // Convert agent messages from backend to our Message format.
+  // Tool results are stored as separate messages in pi; we merge them back into
+  // assistant toolCall blocks by toolCallId so the UI can render inline results.
+  loadFromAgentMessages(
+    agentMessages: Array<{ role: string; content: unknown; timestamp?: number; [key: string]: unknown }>,
+  ): void {
     const loadedMessages: Message[] = [];
+
+    const toolResultsByCallId = new Map<string, { result: string; isError: boolean }>();
+    for (const msg of agentMessages) {
+      if (msg.role !== "toolResult") continue;
+
+      const toolCallId = typeof msg.toolCallId === "string" ? msg.toolCallId : null;
+      if (!toolCallId) continue;
+
+      toolResultsByCallId.set(toolCallId, {
+        result: MessagesStore.formatToolResultContent(msg.content),
+        isError: msg.isError === true,
+      });
+    }
 
     for (const msg of agentMessages) {
       const timestamp = msg.timestamp ? new Date(msg.timestamp) : new Date();
@@ -48,11 +65,27 @@ export class MessagesStore {
           content: this.convertUserContent(msg.content),
           timestamp,
         });
-      } else if (msg.role === "assistant") {
+        continue;
+      }
+
+      if (msg.role === "assistant") {
+        const content = this.convertAssistantContent(msg.content).map((block) => {
+          if (block.type !== "toolCall") return block;
+
+          const toolResult = toolResultsByCallId.get(block.id);
+          if (!toolResult) return block;
+
+          return {
+            ...block,
+            result: toolResult.result,
+            isError: toolResult.isError,
+          };
+        });
+
         loadedMessages.push({
           id: crypto.randomUUID(),
           type: "assistant",
-          content: this.convertAssistantContent(msg.content),
+          content,
           timestamp,
           isStreaming: false,
         });
@@ -107,6 +140,40 @@ export class MessagesStore {
     this.streamingMessageId = null;
   }
 
+  // Update a tool call with its result.
+  // We resolve by toolCallId (not by current streaming message) because tool_execution_end
+  // is emitted after assistant message_end in pi-agent-core.
+  updateToolCallResult(toolCallId: string, result: string, isError: boolean): void {
+    let updated = false;
+
+    // Prefer most recent assistant message first.
+    for (let i = this.messages.length - 1; i >= 0; i--) {
+      const message = this.messages[i];
+      if (!message || message.type !== "assistant") continue;
+
+      let messageChanged = false;
+      const updatedContent = message.content.map((block) => {
+        if (block.type === "toolCall" && block.id === toolCallId) {
+          messageChanged = true;
+          updated = true;
+          return { ...block, result, isError };
+        }
+        return block;
+      });
+
+      if (messageChanged) {
+        this.messages = this.messages.map((m, idx) =>
+          idx === i && m.type === "assistant" ? { ...m, content: updatedContent } : m,
+        );
+        break;
+      }
+    }
+
+    if (!updated) {
+      console.warn("Tool result received for unknown toolCallId:", toolCallId);
+    }
+  }
+
   // Add error message
   addErrorMessage(errorText: string): void {
     this.addMessage({
@@ -126,6 +193,41 @@ export class MessagesStore {
       timestamp: new Date(),
       isStreaming: false,
     });
+  }
+
+  static formatToolResultContent(content: unknown): string {
+    if (content === null || content === undefined) {
+      return "";
+    }
+
+    if (typeof content === "string") {
+      return content;
+    }
+
+    if (Array.isArray(content)) {
+      const textParts = content
+        .map((block) => {
+          if (typeof block === "string") return block;
+          if (typeof block === "object" && block !== null && "type" in block) {
+            const typed = block as { type?: string; text?: string };
+            if (typed.type === "text" && typeof typed.text === "string") {
+              return typed.text;
+            }
+          }
+          return "";
+        })
+        .filter((part) => part.length > 0);
+
+      if (textParts.length > 0) {
+        return textParts.join("\n");
+      }
+    }
+
+    try {
+      return JSON.stringify(content, null, 2);
+    } catch {
+      return "[Unable to display result]";
+    }
   }
 
   convertAssistantContent(content: unknown): ContentBlock[] {
