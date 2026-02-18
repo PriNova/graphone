@@ -60,7 +60,8 @@ Transport: newline-delimited JSON over stdio.
 
 ## MVP behavior
 
-- Sessions are **in-memory** (`SessionManager.inMemory()`), no persisted session files.
+- Sessions are **persisted** to disk via pi-coding-agent session files (JSONL format).
+- Sessions can be **restored** by passing an optional `sessionFile` parameter to `create_session`, allowing continuation of a previous conversation from its saved JSONL file.
 - Each session has isolated `cwd`.
 - Shared host-level `AuthStorage` + `ModelRegistry` are reused across sessions.
 - `get_available_models` returns a compact model list `{ provider, id, name }`.
