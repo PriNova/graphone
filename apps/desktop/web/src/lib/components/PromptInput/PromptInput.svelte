@@ -20,6 +20,7 @@
       args: string,
       fullText: string,
     ) => void | Promise<void>;
+    onnewchat?: () => void | Promise<void>;
     onmodelchange?: (provider: string, modelId: string) => void | Promise<void>;
     placeholder?: string;
     disabled?: boolean;
@@ -33,6 +34,7 @@
     enabledModels?: EnabledModelsStore;
     cwd?: string | null;
     cwdLoading?: boolean;
+    chatHasMessages?: boolean;
   }
 
   let {
@@ -41,6 +43,7 @@
     oninput,
     oncancel,
     onslashcommand,
+    onnewchat,
     onmodelchange,
     placeholder = "Ask anything...",
     disabled = false,
@@ -54,6 +57,7 @@
     enabledModels,
     cwd = null,
     cwdLoading = false,
+    chatHasMessages = false,
   }: Props = $props();
 
   // Internal state for the input value
@@ -67,6 +71,7 @@
   const hasContent = $derived(internalValue.trim().length > 0);
   const canSubmit = $derived(hasContent && !disabled && !isLoading);
   const canCancel = $derived(isLoading);
+  const canStartNewChat = $derived(!disabled && !isLoading && chatHasMessages);
   const modelSelectorDisabled = $derived(
     disabled || isLoading || modelChanging,
   );
@@ -149,6 +154,19 @@
     internalValue = "";
     if (textareaRef) {
       textareaRef.style.height = "auto";
+    }
+  }
+
+  async function handleNewChat(): Promise<void> {
+    if (!canStartNewChat) return;
+
+    if (onnewchat) {
+      await onnewchat();
+      return;
+    }
+
+    if (onslashcommand) {
+      await onslashcommand("new", "", "/new");
     }
   }
 
@@ -267,7 +285,7 @@
       {placeholder}
       {disabled}
       class={cn(
-        "w-full min-h-11 max-h-[40vh] py-3 px-4 pr-12 bg-transparent border-none outline-none resize-none text-foreground overflow-y-auto text-base leading-normal",
+        "w-full min-h-11 max-h-[40vh] py-3 px-4 pr-22 bg-transparent border-none outline-none resize-none text-foreground overflow-y-auto text-base leading-normal",
         "placeholder:text-muted-foreground/60",
         disabled && "cursor-not-allowed",
       )}
@@ -279,8 +297,38 @@
     ></textarea>
 
     <div
-      class="absolute right-2 top-1/2 -translate-y-1/2 flex items-center gap-2"
+      class="absolute right-2 top-1/2 -translate-y-1/2 flex items-center gap-1.5"
     >
+      <button
+        type="button"
+        class={cn(
+          "flex items-center justify-center w-8 h-8 p-0 rounded border transition-all duration-150",
+          canStartNewChat
+            ? "bg-transparent border-border text-muted-foreground hover:bg-secondary hover:border-foreground hover:text-foreground cursor-pointer"
+            : "bg-transparent border-border/70 text-muted-foreground/50 cursor-not-allowed opacity-50",
+        )}
+        disabled={!canStartNewChat}
+        onclick={handleNewChat}
+        aria-label="Start new chat"
+        title={canStartNewChat
+          ? "Start new chat"
+          : "New chat is available after responses finish and when chat has messages"}
+      >
+        <svg
+          class="w-4 h-4"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+        >
+          <path
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            stroke-width="2"
+            d="M12 5v14M5 12h14"
+          />
+        </svg>
+      </button>
+
       <button
         type="button"
         class={cn(

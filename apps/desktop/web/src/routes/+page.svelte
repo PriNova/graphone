@@ -87,6 +87,7 @@
   const isStreaming = $derived(
     activeRuntime ? activeRuntime.messages.streamingMessageId !== null : false,
   );
+  const chatHasMessages = $derived(messages.length > 0);
   const activeProjectDir = $derived(
     activeRuntime ? normalizeScopePath(activeRuntime.projectDir) : null,
   );
@@ -321,6 +322,14 @@
 
   function onCancel(): void {
     activeRuntime?.agent.abort();
+  }
+
+  async function onNewChat(): Promise<void> {
+    if (!activeRuntime || isLoading || !chatHasMessages) {
+      return;
+    }
+
+    await onSlashCommand("new", "", "/new");
   }
 
   async function onModelChange(
@@ -581,6 +590,7 @@
           onsubmit={onSubmit}
           oncancel={onCancel}
           onslashcommand={onSlashCommand}
+          onnewchat={onNewChat}
           onmodelchange={onModelChange}
           {isLoading}
           disabled={!activeRuntime || !sessionStarted}
@@ -596,6 +606,7 @@
           autofocus={true}
           cwd={activeProjectDir}
           cwdLoading={false}
+          {chatHasMessages}
         />
       </section>
     </div>

@@ -560,7 +560,7 @@
 
   {#if historyTooltip.visible}
     <div
-      class="fixed z-50 pointer-events-none px-2 py-1 rounded border border-border bg-input-background text-foreground text-[11px] shadow-xl whitespace-pre-wrap break-words"
+      class="fixed z-50 pointer-events-none px-2 py-1 rounded border border-border bg-input-background text-foreground text-[11px] shadow-xl whitespace-pre-wrap wrap-break-word"
       style={`left: ${historyTooltip.x}px; top: ${historyTooltip.y}px; max-width: min(420px, calc(100vw - 16px));`}
       role="tooltip"
     >
