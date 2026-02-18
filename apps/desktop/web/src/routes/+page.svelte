@@ -33,6 +33,8 @@
 
   const sessions = $derived(sessionsStore.sessions);
   const activeSessionId = $derived(sessionsStore.activeSessionId);
+  const activeSession = $derived(sessionsStore.activeSession);
+  const activeSessionFile = $derived(activeSession?.sessionFile ?? null);
   const persistedProjectScopes = $derived(projectScopesStore.scopes);
   const scopeHistoryByProject = $derived(projectScopesStore.historyByScope);
 
@@ -165,11 +167,10 @@
   }
 
   async function onSelectScope(projectDir: string): Promise<void> {
-    const existing = sessionsStore.sessions.find((session) => session.projectDir === projectDir);
-    if (existing) {
-      sessionsStore.setActiveSession(existing.sessionId);
-      await ensureRuntime(existing);
-      requestAnimationFrame(() => scrollToBottom(false));
+    // Clicking a scope header should start a fresh chat for that scope.
+    // Existing sessions are only resumed when selecting explicit history items.
+    const normalizedTarget = normalizeScopePath(projectDir);
+    if (activeRuntime && normalizeScopePath(activeRuntime.projectDir) === normalizedTarget) {
       return;
     }
 
@@ -388,6 +389,8 @@
     {projectScopes}
     scopeHistoryByProject={scopeHistoryByProject}
     activeProjectDir={activeProjectDir}
+    {activeSessionId}
+    activeSessionFile={activeSessionFile}
     {projectDirInput}
     creating={sessionsStore.creating}
     collapsed={sidebarCollapsed}
@@ -460,7 +463,7 @@
           disabled={!activeRuntime || !sessionStarted}
           placeholder={
             activeRuntime && sessionStarted
-              ? "What would you like to know? Try /new, /help..."
+              ? "What would you like to know?"
               : "Create a session to begin..."
           }
           model={currentModel}

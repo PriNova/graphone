@@ -6,6 +6,8 @@
   interface Props {
     projectScopes?: string[];
     activeProjectDir?: string | null;
+    activeSessionId?: string | null;
+    activeSessionFile?: string | null;
     projectDirInput?: string;
     creating?: boolean;
     collapsed?: boolean;
@@ -21,6 +23,8 @@
   let {
     projectScopes = [],
     activeProjectDir = null,
+    activeSessionId = null,
+    activeSessionFile = null,
     projectDirInput = "",
     creating = false,
     collapsed = false,
@@ -37,6 +41,18 @@
   const collapsedScopes = new SvelteSet<string>();
   // Per-scope pending deletion state: a projectDir in this set is awaiting confirmation
   const pendingDeletionScopes = new SvelteSet<string>();
+
+  let historyTooltip = $state<{
+    visible: boolean;
+    text: string;
+    x: number;
+    y: number;
+  }>({
+    visible: false,
+    text: "",
+    x: 0,
+    y: 0,
+  });
 
   function toggleScopeCollapse(projectDir: string, event: MouseEvent): void {
     event.stopPropagation();
@@ -107,7 +123,44 @@
     return history.sessionId;
   }
 
+  function isHistoryActive(history: PersistedSessionHistoryItem): boolean {
+    const normalizedActiveFile = activeSessionFile?.trim() ?? "";
+    if (normalizedActiveFile.length > 0) {
+      return normalizedActiveFile === history.filePath.trim();
+    }
+
+    const normalizedActiveSessionId = activeSessionId?.trim() ?? "";
+    return normalizedActiveSessionId.length > 0 && normalizedActiveSessionId === history.sessionId.trim();
+  }
+
+  function showHistoryTooltip(event: MouseEvent | FocusEvent, text: string): void {
+    const normalized = text.trim();
+    if (normalized.length === 0) return;
+
+    const target = event.currentTarget as HTMLElement | null;
+    if (!target) return;
+
+    const rect = target.getBoundingClientRect();
+    const margin = 8;
+    const maxTooltipWidth = Math.min(420, Math.max(220, window.innerWidth - margin * 2));
+    const x = Math.max(margin, Math.min(rect.left, window.innerWidth - maxTooltipWidth - margin));
+    const y = Math.max(margin, Math.min(rect.bottom + margin, window.innerHeight - 40));
+
+    historyTooltip = {
+      visible: true,
+      text: normalized,
+      x,
+      y,
+    };
+  }
+
+  function hideHistoryTooltip(): void {
+    historyTooltip.visible = false;
+  }
+
   async function handleHistorySelect(projectDir: string, history: PersistedSessionHistoryItem): Promise<void> {
+    hideHistoryTooltip();
+
     if (onselecthistory) {
       await onselecthistory(projectDir, history);
       return;
@@ -139,6 +192,10 @@
 
   function isPendingDeletion(projectDir: string): boolean {
     return pendingDeletionScopes.has(projectDir);
+  }
+
+  function scopeTooltipText(projectDir: string, scopeHistoryCount: number): string {
+    return `${projectDir}${scopeHistoryCount > 0 ? ` (${scopeHistoryCount} stored)` : ""}`;
   }
 </script>
 
@@ -198,7 +255,10 @@
         class="mt-2 inline-flex h-8 w-full items-center justify-center rounded border border-border text-sm hover:bg-secondary disabled:opacity-50"
         onclick={() => oncreatesession?.()}
         disabled={creating}
-        title="Create session"
+        onmouseenter={(event) => showHistoryTooltip(event, "Create session")}
+        onmouseleave={hideHistoryTooltip}
+        onfocus={(event) => showHistoryTooltip(event, "Create session")}
+        onblur={hideHistoryTooltip}
         aria-label="Create session"
       >
         {creating ? "…" : "+"}
@@ -223,7 +283,10 @@
               projectDir === activeProjectDir && "bg-secondary border-foreground"
             )}
             onclick={() => onselectscope?.(projectDir)}
-            title={`${projectDir}${scopeHistory.length > 0 ? ` (${scopeHistory.length} stored)` : ""}`}
+            onmouseenter={(event) => showHistoryTooltip(event, scopeTooltipText(projectDir, scopeHistory.length))}
+            onmouseleave={hideHistoryTooltip}
+            onfocus={(event) => showHistoryTooltip(event, scopeTooltipText(projectDir, scopeHistory.length))}
+            onblur={hideHistoryTooltip}
             aria-label={`Open ${toScopeTitle(projectDir)}`}
           >
             {getScopeInitial(projectDir)}
@@ -336,9 +399,18 @@
                 {#each scopeHistory.slice(0, 6) as history (history.filePath)}
                   <button
                     type="button"
-                    class="w-full rounded border border-border/70 px-1.5 py-1 text-left text-[11px] hover:bg-secondary"
+                    class={cn(
+                      "w-full rounded border px-1.5 py-1 text-left text-[11px] transition-colors",
+                      isHistoryActive(history)
+                        ? "border-foreground/70 bg-secondary text-foreground"
+                        : "border-border/70 hover:bg-secondary"
+                    )}
                     onclick={() => handleHistorySelect(projectDir, history)}
-                    title={historyTooltipText(history)}
+                    onmouseenter={(event) => showHistoryTooltip(event, historyTooltipText(history))}
+                    onmouseleave={hideHistoryTooltip}
+                    onfocus={(event) => showHistoryTooltip(event, historyTooltipText(history))}
+                    onblur={hideHistoryTooltip}
+                    aria-current={isHistoryActive(history) ? "true" : undefined}
                     aria-label={`Open project scope ${toScopeTitle(projectDir)} from session ${history.sessionId}`}
                   >
                     <div class="flex items-center justify-between gap-2">
@@ -371,6 +443,16 @@
       <p class="text-[11px] uppercase tracking-wide text-muted-foreground">Active Scope</p>
       <p class="text-xs font-medium truncate">{toScopeTitle(activeProjectDir)}</p>
       <p class="text-xs text-muted-foreground truncate" title={activeProjectDir}>{activeProjectDir}</p>
+    </div>
+  {/if}
+
+  {#if historyTooltip.visible}
+    <div
+      class="fixed z-50 pointer-events-none px-2 py-1 rounded border border-border bg-input-background text-foreground text-[11px] shadow-xl whitespace-pre-wrap break-words"
+      style={`left: ${historyTooltip.x}px; top: ${historyTooltip.y}px; max-width: min(420px, calc(100vw - 16px));`}
+      role="tooltip"
+    >
+      {historyTooltip.text}
     </div>
   {/if}
 </aside>

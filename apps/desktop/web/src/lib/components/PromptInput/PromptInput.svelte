@@ -226,8 +226,8 @@
 
   <div 
     class={cn(
-      "flex flex-col w-full bg-foreground/[0.03] border border-input-border rounded-md transition-all duration-100 overflow-hidden relative",
-      isFocused && "bg-foreground/[0.04] border-ring",
+      "flex flex-col w-full bg-foreground/3 border border-input-border rounded-md transition-all duration-100 overflow-hidden relative",
+      isFocused && "bg-foreground/4 border-ring",
       isSlashCommand && isKnownCommand && commandHandler === 'local' && "border-success/50",
       isSlashCommand && isKnownCommand && commandHandler === 'unimplemented' && "border-warning/50",
       isSlashCommand && !isKnownCommand && "border-destructive/50",
@@ -240,7 +240,7 @@
       {placeholder}
       {disabled}
       class={cn(
-        "w-full min-h-[44px] max-h-[40vh] py-3 px-4 pr-12 bg-transparent border-none outline-none resize-none text-foreground overflow-y-auto text-base leading-normal",
+        "w-full min-h-11 max-h-[40vh] py-3 px-4 pr-12 bg-transparent border-none outline-none resize-none text-foreground overflow-y-auto text-base leading-normal",
         "placeholder:text-muted-foreground/60",
         disabled && "cursor-not-allowed"
       )}
@@ -304,8 +304,6 @@
           <span class="text-destructive">/{parsedCommand?.command}</span>
           <span class="text-muted-foreground ml-1">Unknown command</span>
         {/if}
-      {:else}
-        <span class="text-muted-foreground/50">Type / for commands</span>
       {/if}
       <span 
         class="text-muted-foreground/50 font-mono truncate" 
