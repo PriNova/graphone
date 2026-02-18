@@ -1,5 +1,3 @@
-import type { AgentSessionEvent } from "@mariozechner/pi-coding-agent";
-
 export type HostCommandType =
   | "create_session"
   | "close_session"
@@ -79,7 +77,7 @@ export interface HostResponse {
 export interface SessionEventEnvelope {
   type: "session_event";
   sessionId: string;
-  event: AgentSessionEvent;
+  event: unknown;
 }
 
 export interface HostedSessionInfo {

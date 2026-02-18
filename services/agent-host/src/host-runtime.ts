@@ -66,7 +66,7 @@ export class HostRuntime {
       this.emitSessionEvent({
         type: "session_event",
         sessionId,
-        event,
+        event: this.compactSessionEventForWire(event),
       });
     });
 
@@ -236,6 +236,19 @@ export class HostRuntime {
     for (const sessionId of sessionIds) {
       await this.closeSession(sessionId);
     }
+  }
+
+  private compactSessionEventForWire(event: unknown): unknown {
+    if (!event || typeof event !== "object") {
+      return event;
+    }
+
+    const eventType = (event as { type?: unknown }).type;
+    if (eventType === "agent_end") {
+      return { type: "agent_end" };
+    }
+
+    return event;
   }
 
   private toSessionInfo(hosted: HostedSession): HostedSessionInfo {

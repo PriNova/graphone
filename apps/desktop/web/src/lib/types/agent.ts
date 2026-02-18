@@ -104,7 +104,6 @@ export interface AgentStartEvent {
 
 export interface AgentEndEvent {
   type: "agent_end";
-  messages: AssistantMessage[];
 }
 
 export interface TurnStartEvent {

@@ -131,6 +131,7 @@ impl EventHandler {
     }
 
     async fn handle_stdout_line(app: &AppHandle, state: &Arc<Mutex<SidecarState>>, line: String) {
+        let line = Self::sanitize_json_line(line);
         if line.trim().is_empty() {
             return;
         }
@@ -139,10 +140,11 @@ impl EventHandler {
             Ok(json) => Self::handle_parsed_json(app, state, line, json).await,
             Err(error) => {
                 logger::log(format!(
-                    "Sidecar stdout invalid NDJSON line (len={}): {} ({})",
+                    "Sidecar stdout invalid NDJSON line (len={}): {} ({}; prefix={})",
                     line.len(),
                     Self::shorten_for_log(&line, 400),
-                    error
+                    error,
+                    Self::debug_prefix_codepoints(&line, 8)
                 ));
             }
         }
@@ -281,6 +283,106 @@ impl EventHandler {
 
         let shortened = value.chars().take(max_chars).collect::<String>();
         format!("{}…", shortened)
+    }
+
+    fn sanitize_json_line(line: String) -> String {
+        // Sidecars may occasionally emit terminal escape sequences (OSC/CSI),
+        // UTF-8 BOMs, or stray control bytes around otherwise valid JSON.
+        let stripped = Self::strip_ansi_escapes(&line);
+
+        let mut value = stripped
+            .trim()
+            .trim_start_matches('\u{feff}')
+            .trim_matches('\0')
+            .to_string();
+
+        if let Some(candidate) = Self::extract_json_object_candidate(&value) {
+            value = candidate;
+        }
+
+        value
+    }
+
+    fn strip_ansi_escapes(input: &str) -> String {
+        let mut out = String::with_capacity(input.len());
+        let mut chars = input.chars().peekable();
+
+        while let Some(ch) = chars.next() {
+            if ch != '\u{1b}' {
+                out.push(ch);
+                continue;
+            }
+
+            match chars.peek().copied() {
+                Some('[') => {
+                    // CSI: ESC [ ... <final byte>
+                    chars.next();
+                    while let Some(c) = chars.next() {
+                        if ('@'..='~').contains(&c) {
+                            break;
+                        }
+                    }
+                }
+                Some(']') => {
+                    // OSC: ESC ] ... BEL or ESC \
+                    chars.next();
+                    while let Some(c) = chars.next() {
+                        if c == '\u{07}' {
+                            break;
+                        }
+                        if c == '\u{1b}' {
+                            if matches!(chars.peek().copied(), Some('\\')) {
+                                chars.next();
+                                break;
+                            }
+                        }
+                    }
+                }
+                Some('P') | Some('X') | Some('^') | Some('_') => {
+                    // DCS/SOS/PM/APC: ESC <code> ... ESC \
+                    chars.next();
+                    while let Some(c) = chars.next() {
+                        if c == '\u{1b}' {
+                            if matches!(chars.peek().copied(), Some('\\')) {
+                                chars.next();
+                                break;
+                            }
+                        }
+                    }
+                }
+                Some(_) => {
+                    // Other ESC sequence with one introducer byte.
+                    chars.next();
+                }
+                None => break,
+            }
+        }
+
+        out
+    }
+
+    fn extract_json_object_candidate(input: &str) -> Option<String> {
+        let start = input.find('{')?;
+        let end = input.rfind('}')?;
+        if end < start {
+            return None;
+        }
+
+        Some(input[start..=end].to_string())
+    }
+
+    fn debug_prefix_codepoints(value: &str, max_chars: usize) -> String {
+        let mut parts = value
+            .chars()
+            .take(max_chars)
+            .map(|c| format!("U+{:04X}", c as u32))
+            .collect::<Vec<_>>();
+
+        if value.chars().count() > max_chars {
+            parts.push("…".to_string());
+        }
+
+        parts.join(" ")
     }
 
     fn compact_session_event_for_frontend(event: serde_json::Value) -> serde_json::Value {
