@@ -1,5 +1,10 @@
 import type { HostRuntime } from "./host-runtime.js";
-import { failure, success, type HostCommand, type HostResponse } from "./protocol.js";
+import {
+  failure,
+  success,
+  type HostCommand,
+  type HostResponse,
+} from "./protocol.js";
 
 function requireNonEmptyString(value: unknown, field: string): string {
   if (typeof value !== "string" || value.trim().length === 0) {
@@ -12,16 +17,24 @@ function requireSessionId(command: HostCommand): string {
   return requireNonEmptyString(command.sessionId, "sessionId");
 }
 
-export async function handleHostCommand(runtime: HostRuntime, command: HostCommand): Promise<HostResponse> {
+export async function handleHostCommand(
+  runtime: HostRuntime,
+  command: HostCommand,
+): Promise<HostResponse> {
   const requestId = typeof command.id === "string" ? command.id : undefined;
 
   try {
     switch (command.type) {
       case "create_session": {
         const cwd = requireNonEmptyString(command.cwd, "cwd");
-        const provider = typeof command.provider === "string" ? command.provider : undefined;
-        const modelId = typeof command.modelId === "string" ? command.modelId : undefined;
-        const sessionFile = typeof command.sessionFile === "string" ? command.sessionFile : undefined;
+        const provider =
+          typeof command.provider === "string" ? command.provider : undefined;
+        const modelId =
+          typeof command.modelId === "string" ? command.modelId : undefined;
+        const sessionFile =
+          typeof command.sessionFile === "string"
+            ? command.sessionFile
+            : undefined;
         const data = await runtime.createSession({
           sessionId: command.sessionId,
           cwd,
@@ -49,7 +62,8 @@ export async function handleHostCommand(runtime: HostRuntime, command: HostComma
         const sessionId = requireSessionId(command);
         const message = requireNonEmptyString(command.message, "message");
         const streamingBehavior =
-          command.streamingBehavior === "steer" || command.streamingBehavior === "followUp"
+          command.streamingBehavior === "steer" ||
+          command.streamingBehavior === "followUp"
             ? command.streamingBehavior
             : undefined;
 
@@ -79,12 +93,20 @@ export async function handleHostCommand(runtime: HostRuntime, command: HostComma
 
       case "new_session": {
         const sessionId = requireSessionId(command);
-        return success(requestId, "new_session", await runtime.newSession(sessionId));
+        return success(
+          requestId,
+          "new_session",
+          await runtime.newSession(sessionId),
+        );
       }
 
       case "get_messages": {
         const sessionId = requireSessionId(command);
-        return success(requestId, "get_messages", runtime.getMessages(sessionId));
+        return success(
+          requestId,
+          "get_messages",
+          runtime.getMessages(sessionId),
+        );
       }
 
       case "get_state": {
@@ -96,16 +118,28 @@ export async function handleHostCommand(runtime: HostRuntime, command: HostComma
         const sessionId = requireSessionId(command);
         const provider = requireNonEmptyString(command.provider, "provider");
         const modelId = requireNonEmptyString(command.modelId, "modelId");
-        return success(requestId, "set_model", await runtime.setModel(sessionId, provider, modelId));
+        return success(
+          requestId,
+          "set_model",
+          await runtime.setModel(sessionId, provider, modelId),
+        );
       }
 
       case "cycle_model": {
         const sessionId = requireSessionId(command);
-        return success(requestId, "cycle_model", await runtime.cycleModel(sessionId));
+        return success(
+          requestId,
+          "cycle_model",
+          await runtime.cycleModel(sessionId),
+        );
       }
 
       case "get_available_models": {
-        return success(requestId, "get_available_models", await runtime.getAvailableModels());
+        return success(
+          requestId,
+          "get_available_models",
+          await runtime.getAvailableModels(),
+        );
       }
 
       case "shutdown": {
@@ -119,7 +153,11 @@ export async function handleHostCommand(runtime: HostRuntime, command: HostComma
 
       default: {
         const unknownType = (command as { type?: string }).type ?? "unknown";
-        return failure(requestId, unknownType, `Unknown command: ${unknownType}`);
+        return failure(
+          requestId,
+          unknownType,
+          `Unknown command: ${unknownType}`,
+        );
       }
     }
   } catch (error) {

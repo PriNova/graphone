@@ -341,14 +341,16 @@ impl EventHandler {
                     .and_then(|message| message.get("stopReason"))
                     .and_then(|value| value.as_str())
                 {
-                    compact_message.insert("stopReason".to_string(), serde_json::json!(stop_reason));
+                    compact_message
+                        .insert("stopReason".to_string(), serde_json::json!(stop_reason));
                 }
 
                 if let Some(error_message) = message
                     .and_then(|message| message.get("errorMessage"))
                     .and_then(|value| value.as_str())
                 {
-                    compact_message.insert("errorMessage".to_string(), serde_json::json!(error_message));
+                    compact_message
+                        .insert("errorMessage".to_string(), serde_json::json!(error_message));
                 }
 
                 serde_json::json!({

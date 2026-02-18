@@ -38,15 +38,24 @@ export class MessagesStore {
   // Tool results are stored as separate messages in pi; we merge them back into
   // assistant toolCall blocks by toolCallId so the UI can render inline results.
   loadFromAgentMessages(
-    agentMessages: Array<{ role: string; content: unknown; timestamp?: number; [key: string]: unknown }>,
+    agentMessages: Array<{
+      role: string;
+      content: unknown;
+      timestamp?: number;
+      [key: string]: unknown;
+    }>,
   ): void {
     const loadedMessages: Message[] = [];
 
-    const toolResultsByCallId = new Map<string, { result: string; isError: boolean }>();
+    const toolResultsByCallId = new Map<
+      string,
+      { result: string; isError: boolean }
+    >();
     for (const msg of agentMessages) {
       if (msg.role !== "toolResult") continue;
 
-      const toolCallId = typeof msg.toolCallId === "string" ? msg.toolCallId : null;
+      const toolCallId =
+        typeof msg.toolCallId === "string" ? msg.toolCallId : null;
       if (!toolCallId) continue;
 
       toolResultsByCallId.set(toolCallId, {
@@ -69,18 +78,20 @@ export class MessagesStore {
       }
 
       if (msg.role === "assistant") {
-        const content = this.convertAssistantContent(msg.content).map((block) => {
-          if (block.type !== "toolCall") return block;
+        const content = this.convertAssistantContent(msg.content).map(
+          (block) => {
+            if (block.type !== "toolCall") return block;
 
-          const toolResult = toolResultsByCallId.get(block.id);
-          if (!toolResult) return block;
+            const toolResult = toolResultsByCallId.get(block.id);
+            if (!toolResult) return block;
 
-          return {
-            ...block,
-            result: toolResult.result,
-            isError: toolResult.isError,
-          };
-        });
+            return {
+              ...block,
+              result: toolResult.result,
+              isError: toolResult.isError,
+            };
+          },
+        );
 
         loadedMessages.push({
           id: crypto.randomUUID(),
@@ -135,7 +146,9 @@ export class MessagesStore {
     if (!targetId) return;
 
     this.messages = this.messages.map((m) =>
-      m.id === targetId && m.type === "assistant" && m.isStreaming ? { ...m, isStreaming: false } : m,
+      m.id === targetId && m.type === "assistant" && m.isStreaming
+        ? { ...m, isStreaming: false }
+        : m,
     );
     this.streamingMessageId = null;
   }
@@ -143,7 +156,11 @@ export class MessagesStore {
   // Update a tool call with its result.
   // We resolve by toolCallId (not by current streaming message) because tool_execution_end
   // is emitted after assistant message_end in pi-agent-core.
-  updateToolCallResult(toolCallId: string, result: string, isError: boolean): void {
+  updateToolCallResult(
+    toolCallId: string,
+    result: string,
+    isError: boolean,
+  ): void {
     let updated = false;
 
     // Prefer most recent assistant message first.
@@ -163,7 +180,9 @@ export class MessagesStore {
 
       if (messageChanged) {
         this.messages = this.messages.map((m, idx) =>
-          idx === i && m.type === "assistant" ? { ...m, content: updatedContent } : m,
+          idx === i && m.type === "assistant"
+            ? { ...m, content: updatedContent }
+            : m,
         );
         break;
       }

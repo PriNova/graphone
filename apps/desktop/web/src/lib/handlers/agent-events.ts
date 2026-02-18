@@ -7,8 +7,13 @@ export interface SessionRuntimeForEvents {
   messages: MessagesStore;
 }
 
-function extractAssistantErrorMessage(message: { [key: string]: unknown }): string | null {
-  if (typeof message.errorMessage === "string" && message.errorMessage.trim().length > 0) {
+function extractAssistantErrorMessage(message: {
+  [key: string]: unknown;
+}): string | null {
+  if (
+    typeof message.errorMessage === "string" &&
+    message.errorMessage.trim().length > 0
+  ) {
     return message.errorMessage.trim();
   }
 
@@ -44,7 +49,10 @@ export function handleMessageStart(
   // Fallback path: toolResult messages contain the same payload as tool_execution_end
   // and can be used to attach results if a tool_execution event was dropped.
   if (event.message.role === "toolResult") {
-    const toolCallId = typeof event.message.toolCallId === "string" ? event.message.toolCallId : null;
+    const toolCallId =
+      typeof event.message.toolCallId === "string"
+        ? event.message.toolCallId
+        : null;
     if (!toolCallId) return;
 
     runtime.messages.updateToolCallResult(
@@ -55,7 +63,11 @@ export function handleMessageStart(
   }
 }
 
-function upsertContentBlockAtIndex(content: ContentBlock[], index: number, block: ContentBlock): ContentBlock[] {
+function upsertContentBlockAtIndex(
+  content: ContentBlock[],
+  index: number,
+  block: ContentBlock,
+): ContentBlock[] {
   const next = content.slice();
 
   // If we get an out-of-order index, keep array shape stable.
@@ -69,7 +81,10 @@ function upsertContentBlockAtIndex(content: ContentBlock[], index: number, block
 
 function applyAssistantMessageDelta(
   current: ContentBlock[],
-  assistantEvent: Extract<AgentEvent, { type: "message_update" }>['assistantMessageEvent'],
+  assistantEvent: Extract<
+    AgentEvent,
+    { type: "message_update" }
+  >["assistantMessageEvent"],
 ): ContentBlock[] {
   const index = assistantEvent.contentIndex;
   if (typeof index !== "number") {
@@ -78,7 +93,10 @@ function applyAssistantMessageDelta(
 
   switch (assistantEvent.type) {
     case "text_start":
-      return upsertContentBlockAtIndex(current, index, { type: "text", text: "" });
+      return upsertContentBlockAtIndex(current, index, {
+        type: "text",
+        text: "",
+      });
 
     case "text_delta": {
       const existing = current[index];
@@ -97,11 +115,15 @@ function applyAssistantMessageDelta(
     }
 
     case "thinking_start":
-      return upsertContentBlockAtIndex(current, index, { type: "thinking", thinking: "" });
+      return upsertContentBlockAtIndex(current, index, {
+        type: "thinking",
+        thinking: "",
+      });
 
     case "thinking_delta": {
       const existing = current[index];
-      const existingThinking = existing?.type === "thinking" ? existing.thinking : "";
+      const existingThinking =
+        existing?.type === "thinking" ? existing.thinking : "";
       return upsertContentBlockAtIndex(current, index, {
         type: "thinking",
         thinking: existingThinking + (assistantEvent.delta ?? ""),
@@ -136,12 +158,20 @@ export function handleMessageUpdate(
   if (event.message.role !== "assistant") return;
 
   const streamingId = runtime.messages.streamingMessageId;
-  const hasStreamingMessage = !!streamingId && runtime.messages.messages.some((m) => m.id === streamingId);
+  const hasStreamingMessage =
+    !!streamingId &&
+    runtime.messages.messages.some((m) => m.id === streamingId);
 
-  const currentMessage = streamingId ? runtime.messages.messages.find((m) => m.id === streamingId) : undefined;
-  const currentContent = currentMessage?.type === "assistant" ? currentMessage.content : [];
+  const currentMessage = streamingId
+    ? runtime.messages.messages.find((m) => m.id === streamingId)
+    : undefined;
+  const currentContent =
+    currentMessage?.type === "assistant" ? currentMessage.content : [];
 
-  const nextContent = applyAssistantMessageDelta(currentContent, event.assistantMessageEvent);
+  const nextContent = applyAssistantMessageDelta(
+    currentContent,
+    event.assistantMessageEvent,
+  );
 
   // If the delta doesn't change visible content, don't create/update anything.
   if (!hasStreamingMessage && nextContent === currentContent) {
@@ -162,17 +192,23 @@ export function handleMessageEnd(
   event: Extract<AgentEvent, { type: "message_end" }>,
 ): void {
   if (event.message.role === "assistant") {
-    const content = runtime.messages.convertAssistantContent(event.message.content);
+    const content = runtime.messages.convertAssistantContent(
+      event.message.content,
+    );
     const errorMessage = extractAssistantErrorMessage(event.message);
     const resolvedContent =
       content.length > 0
         ? content
         : errorMessage
-          ? ([{ type: "text" as const, text: `Error: ${errorMessage}` }] as const)
+          ? ([
+              { type: "text" as const, text: `Error: ${errorMessage}` },
+            ] as const)
           : [];
 
     const streamingId = runtime.messages.streamingMessageId;
-    const hasStreamingMessage = !!streamingId && runtime.messages.messages.some((m) => m.id === streamingId);
+    const hasStreamingMessage =
+      !!streamingId &&
+      runtime.messages.messages.some((m) => m.id === streamingId);
 
     if (resolvedContent.length > 0) {
       if (!hasStreamingMessage) {
@@ -212,7 +248,10 @@ function formatToolResult(result: unknown): string {
           textParts.push(block);
         } else if (block && typeof block === "object") {
           const typedBlock = block as { type?: string; text?: string };
-          if (typedBlock.type === "text" && typeof typedBlock.text === "string") {
+          if (
+            typedBlock.type === "text" &&
+            typeof typedBlock.text === "string"
+          ) {
             textParts.push(typedBlock.text);
           }
         }
@@ -231,7 +270,10 @@ function formatToolResult(result: unknown): string {
           textParts.push(block);
         } else if (block && typeof block === "object") {
           const typedBlock = block as { type?: string; text?: string };
-          if (typedBlock.type === "text" && typeof typedBlock.text === "string") {
+          if (
+            typedBlock.type === "text" &&
+            typeof typedBlock.text === "string"
+          ) {
             textParts.push(typedBlock.text);
           }
         }
@@ -264,7 +306,10 @@ export function handleToolExecutionEnd(
 }
 
 // Main event router
-export function handleAgentEvent(runtime: SessionRuntimeForEvents, event: AgentEvent): void {
+export function handleAgentEvent(
+  runtime: SessionRuntimeForEvents,
+  event: AgentEvent,
+): void {
   switch (event.type) {
     case "agent_start":
       handleAgentStart(runtime);

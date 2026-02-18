@@ -34,13 +34,23 @@ export class AgentStore {
 
   async refreshState(): Promise<void> {
     const response = await invoke<
-      { success: true; data: { model?: { id?: unknown; provider?: unknown } } } | { success: false; error: string }
+      | {
+          success: true;
+          data: { model?: { id?: unknown; provider?: unknown } };
+        }
+      | { success: false; error: string }
     >("get_state", { sessionId: this.sessionId });
 
-    if (response && typeof response === "object" && "success" in response && response.success) {
+    if (
+      response &&
+      typeof response === "object" &&
+      "success" in response &&
+      response.success
+    ) {
       const model = response.data?.model;
       this.currentModel = typeof model?.id === "string" ? model.id : "";
-      this.currentProvider = typeof model?.provider === "string" ? model.provider : "";
+      this.currentProvider =
+        typeof model?.provider === "string" ? model.provider : "";
 
       if (this.availableModels.length > 0) {
         this.availableModels = this.sortAvailableModels(this.availableModels);
@@ -94,9 +104,18 @@ export class AgentStore {
         { success: true; data?: unknown } | { success: false; error: string }
       >("set_model", { provider, modelId, sessionId: this.sessionId });
 
-      if (!(response && typeof response === "object" && "success" in response && response.success)) {
+      if (
+        !(
+          response &&
+          typeof response === "object" &&
+          "success" in response &&
+          response.success
+        )
+      ) {
         const error =
-          response && typeof response === "object" && "error" in response ? response.error : "Failed to set model";
+          response && typeof response === "object" && "error" in response
+            ? response.error
+            : "Failed to set model";
         throw new Error(error);
       }
 
@@ -115,16 +134,24 @@ export class AgentStore {
   }
 
   async abort(): Promise<void> {
-    await invoke("abort_agent", { sessionId: this.sessionId }).catch(console.error);
+    await invoke("abort_agent", { sessionId: this.sessionId }).catch(
+      console.error,
+    );
     this.isLoading = false;
   }
 
   async newSession(): Promise<boolean> {
     const response = await invoke<
-      { success: true; data: { cancelled: boolean } } | { success: false; error: string }
+      | { success: true; data: { cancelled: boolean } }
+      | { success: false; error: string }
     >("new_session", { sessionId: this.sessionId });
 
-    if (response && typeof response === "object" && "success" in response && response.success) {
+    if (
+      response &&
+      typeof response === "object" &&
+      "success" in response &&
+      response.success
+    ) {
       await this.refreshState().catch((error) => {
         console.warn("Failed to refresh agent state after new session:", error);
       });
@@ -143,11 +170,23 @@ export class AgentStore {
 
   private async loadAvailableModelsViaRpcList(): Promise<AvailableModel[]> {
     const response = await invoke<
-      | { success: true; data: { models: Array<{ provider?: unknown; id?: unknown; name?: unknown }> } }
+      | {
+          success: true;
+          data: {
+            models: Array<{ provider?: unknown; id?: unknown; name?: unknown }>;
+          };
+        }
       | { success: false; error: string }
     >("get_available_models", { sessionId: this.sessionId });
 
-    if (!(response && typeof response === "object" && "success" in response && response.success)) {
+    if (
+      !(
+        response &&
+        typeof response === "object" &&
+        "success" in response &&
+        response.success
+      )
+    ) {
       const error =
         response && typeof response === "object" && "error" in response
           ? response.error
@@ -184,8 +223,10 @@ export class AgentStore {
     const currentModel = this.currentModel;
 
     return [...models].sort((a, b) => {
-      const aIsCurrent = a.provider === currentProvider && a.id === currentModel;
-      const bIsCurrent = b.provider === currentProvider && b.id === currentModel;
+      const aIsCurrent =
+        a.provider === currentProvider && a.id === currentModel;
+      const bIsCurrent =
+        b.provider === currentProvider && b.id === currentModel;
 
       if (aIsCurrent && !bIsCurrent) return -1;
       if (!aIsCurrent && bIsCurrent) return 1;

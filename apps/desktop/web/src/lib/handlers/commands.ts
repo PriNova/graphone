@@ -31,7 +31,9 @@ export async function handleSlashCommand(
 
   if (handler === "local") {
     if (command === "model") {
-      runtime.messages.addSystemMessage("Use the model dropdown next to the prompt input to switch models.");
+      runtime.messages.addSystemMessage(
+        "Use the model dropdown next to the prompt input to switch models.",
+      );
       return { type: "handled" };
     }
 
@@ -64,9 +66,14 @@ export async function handleSlashCommand(
 }
 
 // Handle regular prompt submission
-export async function handlePromptSubmit(runtime: SessionRuntimeForCommands, prompt: string): Promise<void> {
+export async function handlePromptSubmit(
+  runtime: SessionRuntimeForCommands,
+  prompt: string,
+): Promise<void> {
   if (!runtime.agent.sessionStarted) {
-    runtime.messages.addErrorMessage("Agent session not started. Please wait for initialization.");
+    runtime.messages.addErrorMessage(
+      "Agent session not started. Please wait for initialization.",
+    );
     return;
   }
 
@@ -74,6 +81,8 @@ export async function handlePromptSubmit(runtime: SessionRuntimeForCommands, pro
     await runtime.agent.sendPrompt(prompt);
   } catch (error) {
     console.error("Error sending prompt:", error);
-    runtime.messages.addErrorMessage(error instanceof Error ? error.message : String(error));
+    runtime.messages.addErrorMessage(
+      error instanceof Error ? error.message : String(error),
+    );
   }
 }

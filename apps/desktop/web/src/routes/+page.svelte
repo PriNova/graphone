@@ -7,13 +7,23 @@
   import { PromptInput } from "$lib/components/PromptInput";
   import { SessionSidebar } from "$lib/components/SessionSidebar";
   import { handleAgentEvent } from "$lib/handlers/agent-events";
-  import { handlePromptSubmit, handleSlashCommand } from "$lib/handlers/commands";
+  import {
+    handlePromptSubmit,
+    handleSlashCommand,
+  } from "$lib/handlers/commands";
   import { createAgentStore } from "$lib/stores/agent.svelte";
   import { cwdStore } from "$lib/stores/cwd.svelte";
   import { createEnabledModelsStore } from "$lib/stores/enabledModels.svelte";
   import { createMessagesStore } from "$lib/stores/messages.svelte";
-  import { projectScopesStore, type PersistedSessionHistoryItem, normalizeScopePath } from "$lib/stores/projectScopes.svelte";
-  import { sessionsStore, type SessionDescriptor } from "$lib/stores/sessions.svelte";
+  import {
+    projectScopesStore,
+    type PersistedSessionHistoryItem,
+    normalizeScopePath,
+  } from "$lib/stores/projectScopes.svelte";
+  import {
+    sessionsStore,
+    type SessionDescriptor,
+  } from "$lib/stores/sessions.svelte";
   import type { AgentEvent } from "$lib/types/agent";
   import type { SessionRuntime } from "$lib/types/session";
 
@@ -39,24 +49,46 @@
   const scopeHistoryByProject = $derived(projectScopesStore.historyByScope);
 
   const projectScopes = $derived(
-    [...new Set([
-      ...persistedProjectScopes.map(normalizeScopePath),
-      ...sessions.map((session) => normalizeScopePath(session.projectDir)),
-    ])].sort((a, b) => a.localeCompare(b))
+    [
+      ...new Set([
+        ...persistedProjectScopes.map(normalizeScopePath),
+        ...sessions.map((session) => normalizeScopePath(session.projectDir)),
+      ]),
+    ].sort((a, b) => a.localeCompare(b)),
   );
-  const activeRuntime = $derived(activeSessionId ? sessionRuntimes[activeSessionId] ?? null : null);
+  const activeRuntime = $derived(
+    activeSessionId ? (sessionRuntimes[activeSessionId] ?? null) : null,
+  );
 
-  const messages = $derived(activeRuntime ? activeRuntime.messages.messages : []);
-  const isLoading = $derived(activeRuntime ? activeRuntime.agent.isLoading : false);
-  const sessionStarted = $derived(activeRuntime ? activeRuntime.agent.sessionStarted : false);
-  const currentModel = $derived(activeRuntime ? activeRuntime.agent.currentModel : "");
-  const currentProvider = $derived(activeRuntime ? activeRuntime.agent.currentProvider : "");
-  const availableModels = $derived(activeRuntime ? activeRuntime.agent.availableModels : []);
-  const isModelsLoading = $derived(activeRuntime ? activeRuntime.agent.isModelsLoading : false);
-  const isSettingModel = $derived(activeRuntime ? activeRuntime.agent.isSettingModel : false);
-  const isStreaming = $derived(activeRuntime ? activeRuntime.messages.streamingMessageId !== null : false);
+  const messages = $derived(
+    activeRuntime ? activeRuntime.messages.messages : [],
+  );
+  const isLoading = $derived(
+    activeRuntime ? activeRuntime.agent.isLoading : false,
+  );
+  const sessionStarted = $derived(
+    activeRuntime ? activeRuntime.agent.sessionStarted : false,
+  );
+  const currentModel = $derived(
+    activeRuntime ? activeRuntime.agent.currentModel : "",
+  );
+  const currentProvider = $derived(
+    activeRuntime ? activeRuntime.agent.currentProvider : "",
+  );
+  const availableModels = $derived(
+    activeRuntime ? activeRuntime.agent.availableModels : [],
+  );
+  const isModelsLoading = $derived(
+    activeRuntime ? activeRuntime.agent.isModelsLoading : false,
+  );
+  const isSettingModel = $derived(
+    activeRuntime ? activeRuntime.agent.isSettingModel : false,
+  );
+  const isStreaming = $derived(
+    activeRuntime ? activeRuntime.messages.streamingMessageId !== null : false,
+  );
   const activeProjectDir = $derived(
-    activeRuntime ? normalizeScopePath(activeRuntime.projectDir) : null
+    activeRuntime ? normalizeScopePath(activeRuntime.projectDir) : null,
   );
 
   function handleScroll(): void {
@@ -85,11 +117,25 @@
   async function loadMessages(runtime: SessionRuntime): Promise<void> {
     try {
       const response = await invoke<
-        | { success: true; data: { messages: Array<{ role: string; content: unknown; timestamp?: number }> } }
+        | {
+            success: true;
+            data: {
+              messages: Array<{
+                role: string;
+                content: unknown;
+                timestamp?: number;
+              }>;
+            };
+          }
         | { success: false; error: string }
       >("get_messages", { sessionId: runtime.sessionId });
 
-      if (response && typeof response === "object" && "success" in response && response.success) {
+      if (
+        response &&
+        typeof response === "object" &&
+        "success" in response &&
+        response.success
+      ) {
         runtime.messages.loadFromAgentMessages(response.data.messages);
       }
     } catch (error) {
@@ -97,7 +143,9 @@
     }
   }
 
-  async function initializeRuntime(descriptor: SessionDescriptor): Promise<SessionRuntime> {
+  async function initializeRuntime(
+    descriptor: SessionDescriptor,
+  ): Promise<SessionRuntime> {
     const runtime: SessionRuntime = {
       sessionId: descriptor.sessionId,
       projectDir: descriptor.projectDir,
@@ -116,7 +164,9 @@
     return runtime;
   }
 
-  async function ensureRuntime(descriptor: SessionDescriptor): Promise<SessionRuntime> {
+  async function ensureRuntime(
+    descriptor: SessionDescriptor,
+  ): Promise<SessionRuntime> {
     const existing = sessionRuntimes[descriptor.sessionId];
     if (existing) {
       if (existing.projectDir !== descriptor.projectDir) {
@@ -143,8 +193,16 @@
     return runtime;
   }
 
-  async function createSession(projectDir: string, sessionFile?: string): Promise<void> {
-    const descriptor = await sessionsStore.createSession(projectDir, undefined, undefined, sessionFile);
+  async function createSession(
+    projectDir: string,
+    sessionFile?: string,
+  ): Promise<void> {
+    const descriptor = await sessionsStore.createSession(
+      projectDir,
+      undefined,
+      undefined,
+      sessionFile,
+    );
     await ensureRuntime(descriptor);
     projectDirInput = "";
     scheduleSessionSidebarRefresh(250);
@@ -153,7 +211,8 @@
 
   async function createSessionFromInput(): Promise<void> {
     const value = projectDirInput.trim();
-    const fallback = cwdStore.cwd ?? (await invoke<string>("get_working_directory"));
+    const fallback =
+      cwdStore.cwd ?? (await invoke<string>("get_working_directory"));
     const projectDir = value.length > 0 ? value : fallback;
     await createSession(projectDir);
   }
@@ -170,15 +229,23 @@
     // Clicking a scope header should start a fresh chat for that scope.
     // Existing sessions are only resumed when selecting explicit history items.
     const normalizedTarget = normalizeScopePath(projectDir);
-    if (activeRuntime && normalizeScopePath(activeRuntime.projectDir) === normalizedTarget) {
+    if (
+      activeRuntime &&
+      normalizeScopePath(activeRuntime.projectDir) === normalizedTarget
+    ) {
       return;
     }
 
     await createSession(projectDir);
   }
 
-  async function onSelectHistory(projectDir: string, history: PersistedSessionHistoryItem): Promise<void> {
-    const existing = sessionsStore.sessions.find((session) => session.sessionFile === history.filePath);
+  async function onSelectHistory(
+    projectDir: string,
+    history: PersistedSessionHistoryItem,
+  ): Promise<void> {
+    const existing = sessionsStore.sessions.find(
+      (session) => session.sessionFile === history.filePath,
+    );
     if (existing) {
       sessionsStore.setActiveSession(existing.sessionId);
       await ensureRuntime(existing);
@@ -195,7 +262,8 @@
 
     // Close all sessions for this scope via backend
     const sessionsToClose = sessionsStore.sessions.filter(
-      (session) => session.projectDir.replace(/[\\/]+$/, "") === normalizedProjectDir
+      (session) =>
+        session.projectDir.replace(/[\\/]+$/, "") === normalizedProjectDir,
     );
     for (const session of sessionsToClose) {
       try {
@@ -215,7 +283,8 @@
 
     // If no sessions remain, create a new one with the current cwd
     if (sessionsStore.sessions.length === 0) {
-      const fallback = cwdStore.cwd ?? (await invoke<string>("get_working_directory"));
+      const fallback =
+        cwdStore.cwd ?? (await invoke<string>("get_working_directory"));
       await createSession(fallback);
     } else if (!sessionsStore.activeSession) {
       // Switch to first available session
@@ -254,20 +323,34 @@
     activeRuntime?.agent.abort();
   }
 
-  async function onModelChange(provider: string, modelId: string): Promise<void> {
+  async function onModelChange(
+    provider: string,
+    modelId: string,
+  ): Promise<void> {
     if (!activeRuntime) return;
 
     try {
       await activeRuntime.agent.setModel(provider, modelId);
     } catch (error) {
-      activeRuntime.messages.addErrorMessage(error instanceof Error ? error.message : String(error));
+      activeRuntime.messages.addErrorMessage(
+        error instanceof Error ? error.message : String(error),
+      );
     }
   }
 
-  async function onSlashCommand(command: string, args: string, fullText: string): Promise<void> {
+  async function onSlashCommand(
+    command: string,
+    args: string,
+    fullText: string,
+  ): Promise<void> {
     if (!activeRuntime) return;
 
-    const result = await handleSlashCommand(activeRuntime, command, args, fullText);
+    const result = await handleSlashCommand(
+      activeRuntime,
+      command,
+      args,
+      fullText,
+    );
 
     switch (result.type) {
       case "error":
@@ -296,7 +379,8 @@
     }
 
     if (sessionsStore.sessions.length === 0) {
-      const fallback = cwdStore.cwd ?? (await invoke<string>("get_working_directory"));
+      const fallback =
+        cwdStore.cwd ?? (await invoke<string>("get_working_directory"));
       await createSession(fallback);
     } else {
       const active = sessionsStore.activeSession;
@@ -326,18 +410,30 @@
       startupError = error instanceof Error ? error.message : String(error);
     }
 
-    unlistenEvent = await listen<string | { sessionId?: string; event?: AgentEvent }>("agent-event", (event) => {
+    unlistenEvent = await listen<
+      string | { sessionId?: string; event?: AgentEvent }
+    >("agent-event", (event) => {
       try {
         const payload =
-          typeof event.payload === "string" ? JSON.parse(event.payload) as unknown : event.payload;
+          typeof event.payload === "string"
+            ? (JSON.parse(event.payload) as unknown)
+            : event.payload;
 
         if (!payload || typeof payload !== "object") {
           return;
         }
 
-        const wrapped = payload as { sessionId?: unknown; event?: unknown; type?: unknown };
+        const wrapped = payload as {
+          sessionId?: unknown;
+          event?: unknown;
+          type?: unknown;
+        };
 
-        if (typeof wrapped.sessionId === "string" && wrapped.event && typeof wrapped.event === "object") {
+        if (
+          typeof wrapped.sessionId === "string" &&
+          wrapped.event &&
+          typeof wrapped.event === "object"
+        ) {
           const runtime = sessionRuntimes[wrapped.sessionId];
           if (!runtime) {
             return;
@@ -347,11 +443,14 @@
           handleAgentEvent(runtime, agentEvent);
 
           if (
-            agentEvent.type === "turn_end"
-            || agentEvent.type === "agent_end"
-            || (agentEvent.type === "message_start" && agentEvent.message.role === "user")
+            agentEvent.type === "turn_end" ||
+            agentEvent.type === "agent_end" ||
+            (agentEvent.type === "message_start" &&
+              agentEvent.message.role === "user")
           ) {
-            scheduleSessionSidebarRefresh(agentEvent.type === "message_start" ? 220 : 300);
+            scheduleSessionSidebarRefresh(
+              agentEvent.type === "message_start" ? 220 : 300,
+            );
           }
 
           if (sessionsStore.activeSessionId === wrapped.sessionId) {
@@ -367,9 +466,12 @@
       handleAgentError(event.payload);
     });
 
-    unlistenTerminated = await listen<number | null>("agent-terminated", (event) => {
-      handleAgentTerminated(event.payload);
-    });
+    unlistenTerminated = await listen<number | null>(
+      "agent-terminated",
+      (event) => {
+        handleAgentTerminated(event.payload);
+      },
+    );
   });
 
   onDestroy(() => {
@@ -387,10 +489,10 @@
 <main class="flex w-full h-screen overflow-hidden">
   <SessionSidebar
     {projectScopes}
-    scopeHistoryByProject={scopeHistoryByProject}
-    activeProjectDir={activeProjectDir}
+    {scopeHistoryByProject}
+    {activeProjectDir}
     {activeSessionId}
-    activeSessionFile={activeSessionFile}
+    {activeSessionFile}
     {projectDirInput}
     creating={sessionsStore.creating}
     collapsed={sidebarCollapsed}
@@ -402,10 +504,16 @@
     onremovescope={onRemoveScope}
   />
 
-  <section class="flex-1 min-w-0 h-full flex items-stretch justify-center overflow-hidden">
-    <div class="flex flex-col w-full h-full max-w-[min(95vw,1200px)] lg:max-w-[min(88vw,1360px)] px-4 py-4">
+  <section
+    class="flex-1 min-w-0 h-full flex items-stretch justify-center overflow-hidden"
+  >
+    <div
+      class="flex flex-col w-full h-full max-w-[min(95vw,1200px)] lg:max-w-[min(88vw,1360px)] px-4 py-4"
+    >
       <header class="shrink-0 py-2 text-center">
-        <h1 class="text-3xl font-semibold tracking-tight mb-1 bg-linear-to-r from-foreground to-muted-foreground bg-clip-text text-transparent">
+        <h1
+          class="text-3xl font-semibold tracking-tight mb-1 bg-linear-to-r from-foreground to-muted-foreground bg-clip-text text-transparent"
+        >
           Graphone
         </h1>
         <p class="text-sm text-muted-foreground">Parallel project sessions</p>
@@ -418,20 +526,29 @@
       >
         {#if startupError}
           <div class="flex items-center justify-center h-full">
-            <p class="text-destructive text-sm">Failed to initialize sessions: {startupError}</p>
+            <p class="text-destructive text-sm">
+              Failed to initialize sessions: {startupError}
+            </p>
           </div>
         {:else if !activeRuntime}
           <div class="flex items-center justify-center h-full">
-            <p class="text-muted-foreground text-sm">Create a session to start chatting.</p>
+            <p class="text-muted-foreground text-sm">
+              Create a session to start chatting.
+            </p>
           </div>
         {:else if messages.length === 0}
           <div class="flex items-center justify-center h-full">
-            <p class="text-muted-foreground text-sm">Start a conversation by typing below</p>
+            <p class="text-muted-foreground text-sm">
+              Start a conversation by typing below
+            </p>
           </div>
         {:else}
           {#each messages as message (message.id)}
             {#if message.type === "user"}
-              <UserMessage content={message.content} timestamp={message.timestamp} />
+              <UserMessage
+                content={message.content}
+                timestamp={message.timestamp}
+              />
             {:else}
               <AssistantMessage
                 content={message.content}
@@ -444,9 +561,15 @@
           {#if isLoading && !isStreaming}
             <div class="flex justify-start animate-fade-in">
               <div class="flex gap-1 py-2">
-                <span class="w-2 h-2 bg-muted-foreground rounded-full animate-bounce [animation-delay:-0.32s]"></span>
-                <span class="w-2 h-2 bg-muted-foreground rounded-full animate-bounce [animation-delay:-0.16s]"></span>
-                <span class="w-2 h-2 bg-muted-foreground rounded-full animate-bounce"></span>
+                <span
+                  class="w-2 h-2 bg-muted-foreground rounded-full animate-bounce [animation-delay:-0.32s]"
+                ></span>
+                <span
+                  class="w-2 h-2 bg-muted-foreground rounded-full animate-bounce [animation-delay:-0.16s]"
+                ></span>
+                <span
+                  class="w-2 h-2 bg-muted-foreground rounded-full animate-bounce"
+                ></span>
               </div>
             </div>
           {/if}
@@ -461,11 +584,9 @@
           onmodelchange={onModelChange}
           {isLoading}
           disabled={!activeRuntime || !sessionStarted}
-          placeholder={
-            activeRuntime && sessionStarted
-              ? "What would you like to know?"
-              : "Create a session to begin..."
-          }
+          placeholder={activeRuntime && sessionStarted
+            ? "What would you like to know?"
+            : "Create a session to begin..."}
           model={currentModel}
           provider={currentProvider}
           models={availableModels}

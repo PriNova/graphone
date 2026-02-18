@@ -386,7 +386,11 @@ fn copy_runtime_assets(source: &SidecarSource, project_root: &Path, destination:
     );
 }
 
-fn sidecar_destination_binary_path(manifest_dir: &Path, target_os: &str, target_triple: &str) -> PathBuf {
+fn sidecar_destination_binary_path(
+    manifest_dir: &Path,
+    target_os: &str,
+    target_triple: &str,
+) -> PathBuf {
     let dest_dir = manifest_dir.join("binaries");
     let dest_binary_name = if target_os == "windows" {
         format!("pi-agent-{}.exe", target_triple)

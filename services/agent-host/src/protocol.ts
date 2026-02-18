@@ -91,7 +91,11 @@ export interface HostedSessionInfo {
   sessionFile?: string;
 }
 
-export function success(id: string | undefined, command: string, data?: unknown): HostResponse {
+export function success(
+  id: string | undefined,
+  command: string,
+  data?: unknown,
+): HostResponse {
   if (data === undefined) {
     return { id, type: "response", command, success: true };
   }
@@ -99,7 +103,11 @@ export function success(id: string | undefined, command: string, data?: unknown)
   return { id, type: "response", command, success: true, data };
 }
 
-export function failure(id: string | undefined, command: string, error: string): HostResponse {
+export function failure(
+  id: string | undefined,
+  command: string,
+  error: string,
+): HostResponse {
   return {
     id,
     type: "response",

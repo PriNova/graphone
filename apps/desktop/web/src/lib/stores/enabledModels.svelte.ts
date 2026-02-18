@@ -11,13 +11,25 @@ export interface EnabledModelsResponse {
   source: EnabledModelsSource | string;
 }
 
-const THINKING_LEVELS = new Set(["off", "minimal", "low", "medium", "high", "xhigh"]);
+const THINKING_LEVELS = new Set([
+  "off",
+  "minimal",
+  "low",
+  "medium",
+  "high",
+  "xhigh",
+]);
 
 function hasGlobChars(pattern: string): boolean {
-  return pattern.includes("*") || pattern.includes("?") || pattern.includes("[");
+  return (
+    pattern.includes("*") || pattern.includes("?") || pattern.includes("[")
+  );
 }
 
-function splitThinkingSuffixIfValid(pattern: string): { base: string; hadSuffix: boolean } {
+function splitThinkingSuffixIfValid(pattern: string): {
+  base: string;
+  hadSuffix: boolean;
+} {
   const colonIdx = pattern.lastIndexOf(":");
   if (colonIdx === -1) return { base: pattern, hadSuffix: false };
   const suffix = pattern.slice(colonIdx + 1);
@@ -88,19 +100,26 @@ function isAlias(id: string): boolean {
   return !/-\d{8}$/.test(id);
 }
 
-function resolveNonGlobPatternToSingleModel(pattern: string, models: AvailableModel[]): AvailableModel | undefined {
+function resolveNonGlobPatternToSingleModel(
+  pattern: string,
+  models: AvailableModel[],
+): AvailableModel | undefined {
   // 1) provider/modelId exact match (case-insensitive)
   if (pattern.includes("/")) {
     const [provider, ...rest] = pattern.split("/");
     const modelId = rest.join("/");
     const exactProviderMatch = models.find(
-      (m) => m.provider.toLowerCase() === provider.toLowerCase() && m.id.toLowerCase() === modelId.toLowerCase(),
+      (m) =>
+        m.provider.toLowerCase() === provider.toLowerCase() &&
+        m.id.toLowerCase() === modelId.toLowerCase(),
     );
     if (exactProviderMatch) return exactProviderMatch;
   }
 
   // 2) exact model ID match (case-insensitive)
-  const exactIdMatch = models.find((m) => m.id.toLowerCase() === pattern.toLowerCase());
+  const exactIdMatch = models.find(
+    (m) => m.id.toLowerCase() === pattern.toLowerCase(),
+  );
   if (exactIdMatch) return exactIdMatch;
 
   // 3) partial match (id or name), then choose best:
@@ -122,7 +141,10 @@ function resolveNonGlobPatternToSingleModel(pattern: string, models: AvailableMo
   return [...pickFrom].sort((a, b) => b.id.localeCompare(a.id))[0];
 }
 
-function resolvePatternToKeys(rawPattern: string, models: AvailableModel[]): Set<string> {
+function resolvePatternToKeys(
+  rawPattern: string,
+  models: AvailableModel[],
+): Set<string> {
   const out = new Set<string>();
   const trimmed = rawPattern.trim();
   if (!trimmed) return out;
@@ -144,7 +166,10 @@ function resolvePatternToKeys(rawPattern: string, models: AvailableModel[]): Set
   return out;
 }
 
-function resolvePatternToKeysNoThinkingSuffix(pattern: string, models: AvailableModel[]): Set<string> {
+function resolvePatternToKeysNoThinkingSuffix(
+  pattern: string,
+  models: AvailableModel[],
+): Set<string> {
   const out = new Set<string>();
 
   if (hasGlobChars(pattern)) {
@@ -200,16 +225,20 @@ export class EnabledModelsStore {
     this.defined = Boolean(response.defined);
 
     const src = response.source;
-    this.source = src === "project" || src === "global" || src === "none" ? src : "none";
+    this.source =
+      src === "project" || src === "global" || src === "none" ? src : "none";
   }
 
   async refresh(): Promise<void> {
     if (!browser) return;
 
     try {
-      const response = await invoke<EnabledModelsResponse>("get_enabled_models", {
-        projectDir: this.projectDir,
-      });
+      const response = await invoke<EnabledModelsResponse>(
+        "get_enabled_models",
+        {
+          projectDir: this.projectDir,
+        },
+      );
       this.applyResponse(response);
     } catch (error) {
       console.warn("Failed to load enabledModels from settings:", error);
@@ -251,7 +280,11 @@ export class EnabledModelsStore {
   /**
    * Toggle a concrete model in enabledModels and persist to pi settings.
    */
-  async toggleModel(provider: string, modelId: string, availableModels?: AvailableModel[]): Promise<void> {
+  async toggleModel(
+    provider: string,
+    modelId: string,
+    availableModels?: AvailableModel[],
+  ): Promise<void> {
     if (!browser) return;
     await this.ensureInit();
 
@@ -284,11 +317,14 @@ export class EnabledModelsStore {
     }
 
     try {
-      const response = await invoke<EnabledModelsResponse>("set_enabled_models", {
-        patterns: nextPatterns,
-        scope: "auto",
-        projectDir: this.projectDir,
-      });
+      const response = await invoke<EnabledModelsResponse>(
+        "set_enabled_models",
+        {
+          patterns: nextPatterns,
+          scope: "auto",
+          projectDir: this.projectDir,
+        },
+      );
       this.applyResponse(response);
     } catch (error) {
       console.warn("Failed to persist enabledModels to settings:", error);
@@ -297,7 +333,9 @@ export class EnabledModelsStore {
   }
 }
 
-export function createEnabledModelsStore(projectDir?: string | null): EnabledModelsStore {
+export function createEnabledModelsStore(
+  projectDir?: string | null,
+): EnabledModelsStore {
   return new EnabledModelsStore(projectDir);
 }
 

@@ -1,14 +1,14 @@
 <script lang="ts">
-  import { onMount, tick } from 'svelte';
-  import { cn } from '$lib/utils/cn';
-  import type { AvailableModel } from '$lib/stores/agent.svelte';
+  import { onMount, tick } from "svelte";
+  import { cn } from "$lib/utils/cn";
+  import type { AvailableModel } from "$lib/stores/agent.svelte";
   import {
     enabledModelsStore as defaultEnabledModelsStore,
     type EnabledModelsStore,
-  } from '$lib/stores/enabledModels.svelte';
+  } from "$lib/stores/enabledModels.svelte";
 
-  type FilterMode = 'all' | 'enabled';
-  type DropdownDirection = 'up' | 'down';
+  type FilterMode = "all" | "enabled";
+  type DropdownDirection = "up" | "down";
 
   interface Props {
     models?: AvailableModel[];
@@ -23,8 +23,8 @@
 
   let {
     models = [],
-    currentModel = '',
-    currentProvider = '',
+    currentModel = "",
+    currentProvider = "",
     loading = false,
     changing = false,
     disabled = false,
@@ -32,9 +32,9 @@
     onchange,
   }: Props = $props();
 
-  let filterMode = $state<FilterMode>('all');
+  let filterMode = $state<FilterMode>("all");
   let isOpen = $state(false);
-  let dropdownDirection = $state<DropdownDirection>('up');
+  let dropdownDirection = $state<DropdownDirection>("up");
   let dropdownMaxHeight = $state(240);
 
   let containerEl = $state<HTMLDivElement | null>(null);
@@ -44,43 +44,50 @@
   const enabledKeys = $derived(enabledModels.resolveEnabledModelKeys(models));
 
   const enabledOnlyModels = $derived(
-    models.filter((m) => enabledKeys.has(`${m.provider}/${m.id}`))
+    models.filter((m) => enabledKeys.has(`${m.provider}/${m.id}`)),
   );
 
-  const enabledCount = $derived(hasEnabledScope ? enabledOnlyModels.length : models.length);
+  const enabledCount = $derived(
+    hasEnabledScope ? enabledOnlyModels.length : models.length,
+  );
 
   const filteredModels = $derived(
-    filterMode === 'enabled' && hasEnabledScope ? enabledOnlyModels : models
+    filterMode === "enabled" && hasEnabledScope ? enabledOnlyModels : models,
   );
 
   const selectedIndex = $derived(
     filteredModels.findIndex(
-      (model) => model.provider === currentProvider && model.id === currentModel
-    )
+      (model) =>
+        model.provider === currentProvider && model.id === currentModel,
+    ),
   );
 
-  const selectedModel = $derived(selectedIndex >= 0 ? filteredModels[selectedIndex] : null);
+  const selectedModel = $derived(
+    selectedIndex >= 0 ? filteredModels[selectedIndex] : null,
+  );
 
   const selectedLabel = $derived.by(() => {
-    if (loading) return 'Loading models...';
+    if (loading) return "Loading models...";
     if (filteredModels.length === 0) {
-      return filterMode === 'enabled' && hasEnabledScope ? 'No enabled models' : 'No models available';
+      return filterMode === "enabled" && hasEnabledScope
+        ? "No enabled models"
+        : "No models available";
     }
-    if (!selectedModel) return 'Select model...';
+    if (!selectedModel) return "Select model...";
 
     const key = `${selectedModel.provider}/${selectedModel.id}`;
     const isEnabled = hasEnabledScope && enabledKeys.has(key);
-    return `${selectedModel.id}${isEnabled ? ' ⭐' : ''} [${selectedModel.provider}]`;
+    return `${selectedModel.id}${isEnabled ? " ⭐" : ""} [${selectedModel.provider}]`;
   });
 
   const isSelectDisabled = $derived(
-    disabled || loading || changing || filteredModels.length === 0
+    disabled || loading || changing || filteredModels.length === 0,
   );
 
   const currentModelIsEnabled = $derived(
     hasEnabledScope && currentProvider && currentModel
       ? enabledKeys.has(`${currentProvider}/${currentModel}`)
-      : false
+      : false,
   );
 
   function updateDropdownPlacement(): void {
@@ -96,11 +103,17 @@
     const spaceAbove = Math.max(0, rect.top - margin);
 
     if (spaceBelow >= minHeight || spaceBelow >= spaceAbove) {
-      dropdownDirection = 'down';
-      dropdownMaxHeight = Math.max(minHeight, Math.min(idealMaxHeight, spaceBelow));
+      dropdownDirection = "down";
+      dropdownMaxHeight = Math.max(
+        minHeight,
+        Math.min(idealMaxHeight, spaceBelow),
+      );
     } else {
-      dropdownDirection = 'up';
-      dropdownMaxHeight = Math.max(minHeight, Math.min(idealMaxHeight, spaceAbove));
+      dropdownDirection = "up";
+      dropdownMaxHeight = Math.max(
+        minHeight,
+        Math.min(idealMaxHeight, spaceAbove),
+      );
     }
   }
 
@@ -110,8 +123,10 @@
     await tick();
     updateDropdownPlacement();
 
-    const selectedEl = dropdownEl?.querySelector<HTMLElement>('[data-selected="true"]');
-    selectedEl?.scrollIntoView({ block: 'nearest' });
+    const selectedEl = dropdownEl?.querySelector<HTMLElement>(
+      '[data-selected="true"]',
+    );
+    selectedEl?.scrollIntoView({ block: "nearest" });
   }
 
   function closeDropdown(): void {
@@ -149,10 +164,14 @@
   }
 
   function handleTriggerKeydown(event: KeyboardEvent): void {
-    if (event.key === 'ArrowDown' || event.key === 'Enter' || event.key === ' ') {
+    if (
+      event.key === "ArrowDown" ||
+      event.key === "Enter" ||
+      event.key === " "
+    ) {
       event.preventDefault();
       void openDropdown();
-    } else if (event.key === 'Escape') {
+    } else if (event.key === "Escape") {
       closeDropdown();
     }
   }
@@ -177,21 +196,21 @@
     };
 
     const handleEscape = (event: KeyboardEvent): void => {
-      if (event.key === 'Escape') {
+      if (event.key === "Escape") {
         closeDropdown();
       }
     };
 
-    document.addEventListener('mousedown', handlePointerDown);
-    window.addEventListener('resize', handleWindowChange);
-    window.addEventListener('scroll', handleWindowChange, true);
-    document.addEventListener('keydown', handleEscape);
+    document.addEventListener("mousedown", handlePointerDown);
+    window.addEventListener("resize", handleWindowChange);
+    window.addEventListener("scroll", handleWindowChange, true);
+    document.addEventListener("keydown", handleEscape);
 
     return () => {
-      document.removeEventListener('mousedown', handlePointerDown);
-      window.removeEventListener('resize', handleWindowChange);
-      window.removeEventListener('scroll', handleWindowChange, true);
-      document.removeEventListener('keydown', handleEscape);
+      document.removeEventListener("mousedown", handlePointerDown);
+      window.removeEventListener("resize", handleWindowChange);
+      window.removeEventListener("scroll", handleWindowChange, true);
+      document.removeEventListener("keydown", handleEscape);
     };
   });
 </script>
@@ -203,10 +222,10 @@
     <button
       type="button"
       class={cn(
-        'w-60 text-left bg-input-background border border-border rounded px-2 py-0.5 text-xs text-foreground',
-        'focus:outline-none focus:border-ring',
-        'inline-flex items-center justify-between gap-2',
-        isSelectDisabled && 'opacity-60 cursor-not-allowed'
+        "w-60 text-left bg-input-background border border-border rounded px-2 py-0.5 text-xs text-foreground",
+        "focus:outline-none focus:border-ring",
+        "inline-flex items-center justify-between gap-2",
+        isSelectDisabled && "opacity-60 cursor-not-allowed",
       )}
       onclick={toggleDropdown}
       onkeydown={handleTriggerKeydown}
@@ -217,7 +236,10 @@
     >
       <span class="truncate">{selectedLabel}</span>
       <svg
-        class={cn('h-3 w-3 shrink-0 transition-transform', isOpen && 'rotate-180')}
+        class={cn(
+          "h-3 w-3 shrink-0 transition-transform",
+          isOpen && "rotate-180",
+        )}
         viewBox="0 0 24 24"
         fill="none"
         stroke="currentColor"
@@ -231,8 +253,8 @@
       <div
         bind:this={dropdownEl}
         class={cn(
-          'absolute left-0 z-50 w-72 bg-input-background text-foreground border border-border rounded-md shadow-lg overflow-y-auto',
-          dropdownDirection === 'down' ? 'top-full mt-1' : 'bottom-full mb-1'
+          "absolute left-0 z-50 w-72 bg-input-background text-foreground border border-border rounded-md shadow-lg overflow-y-auto",
+          dropdownDirection === "down" ? "top-full mt-1" : "bottom-full mb-1",
         )}
         style={`max-height: ${dropdownMaxHeight}px;`}
         role="listbox"
@@ -240,23 +262,26 @@
       >
         {#if filteredModels.length === 0}
           <div class="px-2 py-1.5 text-xs text-muted-foreground">
-            {filterMode === 'enabled' && hasEnabledScope ? 'No enabled models' : 'No models available'}
+            {filterMode === "enabled" && hasEnabledScope
+              ? "No enabled models"
+              : "No models available"}
           </div>
         {:else}
           {#each filteredModels as model (`${model.provider}/${model.id}`)}
             {@const key = `${model.provider}/${model.id}`}
             {@const isEnabled = hasEnabledScope && enabledKeys.has(key)}
-            {@const isSelected = model.provider === currentProvider && model.id === currentModel}
+            {@const isSelected =
+              model.provider === currentProvider && model.id === currentModel}
             <button
               type="button"
               class={cn(
-                'w-full px-2 py-1.5 text-left text-xs text-foreground hover:bg-secondary',
-                isSelected && 'bg-accent'
+                "w-full px-2 py-1.5 text-left text-xs text-foreground hover:bg-secondary",
+                isSelected && "bg-accent",
               )}
               data-selected={isSelected}
               onclick={() => selectModel(model)}
             >
-              {model.id}{isEnabled ? ' ⭐' : ''} [{model.provider}]
+              {model.id}{isEnabled ? " ⭐" : ""} [{model.provider}]
             </button>
           {/each}
         {/if}
@@ -268,36 +293,41 @@
   <button
     type="button"
     class={cn(
-      'text-xs px-1 py-0.5 rounded border transition-colors',
+      "text-xs px-1 py-0.5 rounded border transition-colors",
       currentModelIsEnabled
-        ? 'bg-yellow-500/20 border-yellow-500/50 text-yellow-600 dark:text-yellow-400'
-        : 'bg-transparent border-border text-muted-foreground hover:border-foreground hover:text-foreground',
-      (disabled || loading || changing || !currentProvider || !currentModel) && 'opacity-40 cursor-not-allowed'
+        ? "bg-yellow-500/20 border-yellow-500/50 text-yellow-600 dark:text-yellow-400"
+        : "bg-transparent border-border text-muted-foreground hover:border-foreground hover:text-foreground",
+      (disabled || loading || changing || !currentProvider || !currentModel) &&
+        "opacity-40 cursor-not-allowed",
     )}
     onclick={toggleCurrentModel}
-    disabled={disabled || loading || changing || !currentProvider || !currentModel}
-    title={
-      hasEnabledScope
-        ? currentModelIsEnabled
-          ? 'Remove from enabled models'
-          : 'Add to enabled models'
-        : 'All models currently enabled (click to start an enabled models list)'
-    }
+    disabled={disabled ||
+      loading ||
+      changing ||
+      !currentProvider ||
+      !currentModel}
+    title={hasEnabledScope
+      ? currentModelIsEnabled
+        ? "Remove from enabled models"
+        : "Add to enabled models"
+      : "All models currently enabled (click to start an enabled models list)"}
   >
-    {currentModelIsEnabled ? '⭐' : '☆'}
+    {currentModelIsEnabled ? "⭐" : "☆"}
   </button>
 
   <!-- Filter toggle -->
-  <div class="flex items-center gap-0.5 bg-input-background border border-border rounded text-xs">
+  <div
+    class="flex items-center gap-0.5 bg-input-background border border-border rounded text-xs"
+  >
     <button
       type="button"
       class={cn(
-        'px-1.5 py-0.5 rounded transition-colors',
-        filterMode === 'all'
-          ? 'bg-border text-foreground'
-          : 'text-muted-foreground hover:text-foreground'
+        "px-1.5 py-0.5 rounded transition-colors",
+        filterMode === "all"
+          ? "bg-border text-foreground"
+          : "text-muted-foreground hover:text-foreground",
       )}
-      onclick={() => handleFilterChange('all')}
+      onclick={() => handleFilterChange("all")}
       disabled={disabled || loading}
       title="Show all models"
     >
@@ -306,18 +336,22 @@
     <button
       type="button"
       class={cn(
-        'px-1.5 py-0.5 rounded transition-colors flex items-center gap-1',
-        filterMode === 'enabled'
-          ? 'bg-border text-foreground'
-          : 'text-muted-foreground hover:text-foreground'
+        "px-1.5 py-0.5 rounded transition-colors flex items-center gap-1",
+        filterMode === "enabled"
+          ? "bg-border text-foreground"
+          : "text-muted-foreground hover:text-foreground",
       )}
-      onclick={() => handleFilterChange('enabled')}
+      onclick={() => handleFilterChange("enabled")}
       disabled={disabled || loading}
-      title={hasEnabledScope ? 'Show enabled models only' : 'Enabled models filter is not configured (shows all)'}
+      title={hasEnabledScope
+        ? "Show enabled models only"
+        : "Enabled models filter is not configured (shows all)"}
     >
       Enabled
       {#if hasEnabledScope}
-        <span class="text-[10px] bg-primary/20 px-1 rounded">{enabledCount}</span>
+        <span class="text-[10px] bg-primary/20 px-1 rounded"
+          >{enabledCount}</span
+        >
       {/if}
     </button>
   </div>

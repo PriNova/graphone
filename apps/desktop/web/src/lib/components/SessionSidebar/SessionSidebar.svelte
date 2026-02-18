@@ -15,7 +15,10 @@
     ontoggle?: () => void;
     oncreatesession?: () => void | Promise<void>;
     onselectscope?: (projectDir: string) => void | Promise<void>;
-    onselecthistory?: (projectDir: string, history: PersistedSessionHistoryItem) => void | Promise<void>;
+    onselecthistory?: (
+      projectDir: string,
+      history: PersistedSessionHistoryItem,
+    ) => void | Promise<void>;
     onprojectdirinput?: (value: string) => void;
     onremovescope?: (projectDir: string) => void | Promise<void>;
   }
@@ -78,7 +81,9 @@
     return first.length > 0 ? first.toUpperCase() : "?";
   }
 
-  function getHistoryForScope(projectDir: string): PersistedSessionHistoryItem[] {
+  function getHistoryForScope(
+    projectDir: string,
+  ): PersistedSessionHistoryItem[] {
     return scopeHistoryByProject[projectDir] ?? [];
   }
 
@@ -130,10 +135,16 @@
     }
 
     const normalizedActiveSessionId = activeSessionId?.trim() ?? "";
-    return normalizedActiveSessionId.length > 0 && normalizedActiveSessionId === history.sessionId.trim();
+    return (
+      normalizedActiveSessionId.length > 0 &&
+      normalizedActiveSessionId === history.sessionId.trim()
+    );
   }
 
-  function showHistoryTooltip(event: MouseEvent | FocusEvent, text: string): void {
+  function showHistoryTooltip(
+    event: MouseEvent | FocusEvent,
+    text: string,
+  ): void {
     const normalized = text.trim();
     if (normalized.length === 0) return;
 
@@ -142,9 +153,18 @@
 
     const rect = target.getBoundingClientRect();
     const margin = 8;
-    const maxTooltipWidth = Math.min(420, Math.max(220, window.innerWidth - margin * 2));
-    const x = Math.max(margin, Math.min(rect.left, window.innerWidth - maxTooltipWidth - margin));
-    const y = Math.max(margin, Math.min(rect.bottom + margin, window.innerHeight - 40));
+    const maxTooltipWidth = Math.min(
+      420,
+      Math.max(220, window.innerWidth - margin * 2),
+    );
+    const x = Math.max(
+      margin,
+      Math.min(rect.left, window.innerWidth - maxTooltipWidth - margin),
+    );
+    const y = Math.max(
+      margin,
+      Math.min(rect.bottom + margin, window.innerHeight - 40),
+    );
 
     historyTooltip = {
       visible: true,
@@ -158,7 +178,10 @@
     historyTooltip.visible = false;
   }
 
-  async function handleHistorySelect(projectDir: string, history: PersistedSessionHistoryItem): Promise<void> {
+  async function handleHistorySelect(
+    projectDir: string,
+    history: PersistedSessionHistoryItem,
+  ): Promise<void> {
     hideHistoryTooltip();
 
     if (onselecthistory) {
@@ -184,7 +207,10 @@
     pendingDeletionScopes.delete(projectDir);
   }
 
-  async function confirmDeleteScope(projectDir: string, event: MouseEvent): Promise<void> {
+  async function confirmDeleteScope(
+    projectDir: string,
+    event: MouseEvent,
+  ): Promise<void> {
     event.stopPropagation();
     pendingDeletionScopes.delete(projectDir);
     await onremovescope?.(projectDir);
@@ -194,7 +220,10 @@
     return pendingDeletionScopes.has(projectDir);
   }
 
-  function scopeTooltipText(projectDir: string, scopeHistoryCount: number): string {
+  function scopeTooltipText(
+    projectDir: string,
+    scopeHistoryCount: number,
+  ): string {
     return `${projectDir}${scopeHistoryCount > 0 ? ` (${scopeHistoryCount} stored)` : ""}`;
   }
 </script>
@@ -203,7 +232,7 @@
   id="session-sidebar"
   class={cn(
     "h-full shrink-0 border-r border-border bg-card/40 backdrop-blur-xs flex flex-col transition-[width] duration-200",
-    collapsed ? "w-16" : "w-80"
+    collapsed ? "w-16" : "w-80",
   )}
   aria-label="Project scopes"
 >
@@ -211,8 +240,12 @@
     <div class="flex items-center justify-between gap-2">
       {#if !collapsed}
         <div class="min-w-0">
-          <p class="text-xs uppercase tracking-wide text-muted-foreground">Project Scope</p>
-          <p class="text-sm font-medium truncate">{projectScopes.length} folder{projectScopes.length === 1 ? "" : "s"}</p>
+          <p class="text-xs uppercase tracking-wide text-muted-foreground">
+            Project Scope
+          </p>
+          <p class="text-sm font-medium truncate">
+            {projectScopes.length} folder{projectScopes.length === 1 ? "" : "s"}
+          </p>
         </div>
       {/if}
 
@@ -220,11 +253,19 @@
         type="button"
         class="inline-flex h-8 w-8 items-center justify-center rounded border border-border hover:bg-secondary"
         onclick={() => ontoggle?.()}
-        aria-label={collapsed ? "Expand sessions sidebar" : "Collapse sessions sidebar"}
+        aria-label={collapsed
+          ? "Expand sessions sidebar"
+          : "Collapse sessions sidebar"}
         aria-expanded={!collapsed}
         aria-controls="session-sidebar"
       >
-        <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <svg
+          class="h-4 w-4"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="2"
+        >
           <line x1="3" y1="6" x2="21" y2="6"></line>
           <line x1="3" y1="12" x2="21" y2="12"></line>
           <line x1="3" y1="18" x2="21" y2="18"></line>
@@ -269,7 +310,9 @@
   <div class="flex-1 min-h-0 overflow-y-auto p-2 space-y-1">
     {#if projectScopes.length === 0}
       {#if !collapsed}
-        <p class="text-xs text-muted-foreground px-2 py-1">No project scopes discovered yet</p>
+        <p class="text-xs text-muted-foreground px-2 py-1">
+          No project scopes discovered yet
+        </p>
       {/if}
     {:else}
       {#each projectScopes as projectDir (projectDir)}
@@ -280,12 +323,21 @@
             type="button"
             class={cn(
               "w-full h-10 rounded border text-sm font-medium border-border hover:bg-secondary",
-              projectDir === activeProjectDir && "bg-secondary border-foreground"
+              projectDir === activeProjectDir &&
+                "bg-secondary border-foreground",
             )}
             onclick={() => onselectscope?.(projectDir)}
-            onmouseenter={(event) => showHistoryTooltip(event, scopeTooltipText(projectDir, scopeHistory.length))}
+            onmouseenter={(event) =>
+              showHistoryTooltip(
+                event,
+                scopeTooltipText(projectDir, scopeHistory.length),
+              )}
             onmouseleave={hideHistoryTooltip}
-            onfocus={(event) => showHistoryTooltip(event, scopeTooltipText(projectDir, scopeHistory.length))}
+            onfocus={(event) =>
+              showHistoryTooltip(
+                event,
+                scopeTooltipText(projectDir, scopeHistory.length),
+              )}
             onblur={hideHistoryTooltip}
             aria-label={`Open ${toScopeTitle(projectDir)}`}
           >
@@ -295,7 +347,9 @@
           <div
             class={cn(
               "rounded border transition-colors hover:bg-secondary/40 group",
-              projectDir === activeProjectDir ? "border-foreground/70 bg-secondary/60" : "border-border"
+              projectDir === activeProjectDir
+                ? "border-foreground/70 bg-secondary/60"
+                : "border-border",
             )}
           >
             <!-- Scope header row -->
@@ -306,11 +360,16 @@
                   type="button"
                   class="shrink-0 inline-flex h-5 w-5 items-center justify-center rounded text-muted-foreground hover:text-foreground hover:bg-secondary"
                   onclick={(e) => toggleScopeCollapse(projectDir, e)}
-                  aria-label={scopeIsCollapsed ? `Expand ${toScopeTitle(projectDir)} history` : `Collapse ${toScopeTitle(projectDir)} history`}
+                  aria-label={scopeIsCollapsed
+                    ? `Expand ${toScopeTitle(projectDir)} history`
+                    : `Collapse ${toScopeTitle(projectDir)} history`}
                   aria-expanded={!scopeIsCollapsed}
                 >
                   <svg
-                    class={cn("h-3 w-3 transition-transform duration-150", scopeIsCollapsed ? "-rotate-90" : "rotate-0")}
+                    class={cn(
+                      "h-3 w-3 transition-transform duration-150",
+                      scopeIsCollapsed ? "-rotate-90" : "rotate-0",
+                    )}
                     viewBox="0 0 24 24"
                     fill="none"
                     stroke="currentColor"
@@ -329,18 +388,24 @@
                 type="button"
                 class={cn(
                   "min-w-0 flex-1 text-left",
-                  projectDir === activeProjectDir && "text-foreground"
+                  projectDir === activeProjectDir && "text-foreground",
                 )}
                 onclick={() => onselectscope?.(projectDir)}
                 aria-label={`Open ${toScopeTitle(projectDir)}`}
               >
                 <div class="flex items-start justify-between gap-2">
                   <div class="min-w-0">
-                    <p class="text-sm font-medium truncate">{toScopeTitle(projectDir)}</p>
-                    <p class="text-xs text-muted-foreground truncate">{projectDir}</p>
+                    <p class="text-sm font-medium truncate">
+                      {toScopeTitle(projectDir)}
+                    </p>
+                    <p class="text-xs text-muted-foreground truncate">
+                      {projectDir}
+                    </p>
                   </div>
                   {#if scopeHistory.length > 0}
-                    <span class="text-[10px] px-1.5 py-0.5 rounded border border-border text-muted-foreground shrink-0">
+                    <span
+                      class="text-[10px] px-1.5 py-0.5 rounded border border-border text-muted-foreground shrink-0"
+                    >
                       {scopeHistory.length}
                     </span>
                   {/if}
@@ -351,7 +416,9 @@
               {#if onremovescope}
                 {#if isPendingDeletion(projectDir)}
                   <div class="shrink-0 flex items-center gap-1">
-                    <span class="text-[10px] text-muted-foreground">Delete?</span>
+                    <span class="text-[10px] text-muted-foreground"
+                      >Delete?</span
+                    >
                     <button
                       type="button"
                       class="inline-flex h-5 w-5 items-center justify-center rounded text-success hover:bg-success/10"
@@ -359,7 +426,13 @@
                       aria-label="Confirm delete"
                       title="Confirm delete"
                     >
-                      <svg class="h-3 w-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                      <svg
+                        class="h-3 w-3"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        stroke-width="2.5"
+                      >
                         <polyline points="20 6 9 17 4 12"></polyline>
                       </svg>
                     </button>
@@ -370,7 +443,13 @@
                       aria-label="Cancel delete"
                       title="Cancel"
                     >
-                      <svg class="h-3 w-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                      <svg
+                        class="h-3 w-3"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        stroke-width="2.5"
+                      >
                         <line x1="18" y1="6" x2="6" y2="18"></line>
                         <line x1="6" y1="6" x2="18" y2="18"></line>
                       </svg>
@@ -384,9 +463,17 @@
                     aria-label="Delete scope"
                     title="Delete scope"
                   >
-                    <svg class="h-3 w-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <svg
+                      class="h-3 w-3"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      stroke-width="2"
+                    >
                       <polyline points="3 6 5 6 21 6"></polyline>
-                      <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+                      <path
+                        d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"
+                      ></path>
                     </svg>
                   </button>
                 {/if}
@@ -395,7 +482,9 @@
 
             <!-- History list (hidden when scope is collapsed) -->
             {#if scopeHistory.length > 0 && !scopeIsCollapsed}
-              <div class="px-2 pb-2 ml-6 pl-2 border-l border-border/70 space-y-1">
+              <div
+                class="px-2 pb-2 ml-6 pl-2 border-l border-border/70 space-y-1"
+              >
                 {#each scopeHistory.slice(0, 6) as history (history.filePath)}
                   <button
                     type="button"
@@ -403,32 +492,46 @@
                       "w-full rounded border px-1.5 py-1 text-left text-[11px] transition-colors",
                       isHistoryActive(history)
                         ? "border-foreground/70 bg-secondary text-foreground"
-                        : "border-border/70 hover:bg-secondary"
+                        : "border-border/70 hover:bg-secondary",
                     )}
                     onclick={() => handleHistorySelect(projectDir, history)}
-                    onmouseenter={(event) => showHistoryTooltip(event, historyTooltipText(history))}
+                    onmouseenter={(event) =>
+                      showHistoryTooltip(event, historyTooltipText(history))}
                     onmouseleave={hideHistoryTooltip}
-                    onfocus={(event) => showHistoryTooltip(event, historyTooltipText(history))}
+                    onfocus={(event) =>
+                      showHistoryTooltip(event, historyTooltipText(history))}
                     onblur={hideHistoryTooltip}
                     aria-current={isHistoryActive(history) ? "true" : undefined}
                     aria-label={`Open project scope ${toScopeTitle(projectDir)} from session ${history.sessionId}`}
                   >
                     <div class="flex items-center justify-between gap-2">
                       <div class="min-w-0 flex items-center gap-1.5">
-                        <span class="font-mono text-[10px] text-muted-foreground shrink-0">
-                          {history.source === "local" ? "L" : history.source === "global" ? "G" : "?"}
+                        <span
+                          class="font-mono text-[10px] text-muted-foreground shrink-0"
+                        >
+                          {history.source === "local"
+                            ? "L"
+                            : history.source === "global"
+                              ? "G"
+                              : "?"}
                         </span>
-                        <span class="truncate">{historyPreviewText(history)}</span>
+                        <span class="truncate"
+                          >{historyPreviewText(history)}</span
+                        >
                       </div>
                       {#if history.timestamp}
-                        <span class="text-muted-foreground shrink-0">{formatHistoryTimestamp(history.timestamp)}</span>
+                        <span class="text-muted-foreground shrink-0"
+                          >{formatHistoryTimestamp(history.timestamp)}</span
+                        >
                       {/if}
                     </div>
                   </button>
                 {/each}
 
                 {#if scopeHistory.length > 6}
-                  <p class="text-[11px] text-muted-foreground px-1.5">+{scopeHistory.length - 6} more sessions</p>
+                  <p class="text-[11px] text-muted-foreground px-1.5">
+                    +{scopeHistory.length - 6} more sessions
+                  </p>
                 {/if}
               </div>
             {/if}
@@ -440,9 +543,18 @@
 
   {#if !collapsed && activeProjectDir}
     <div class="shrink-0 border-t border-border p-2">
-      <p class="text-[11px] uppercase tracking-wide text-muted-foreground">Active Scope</p>
-      <p class="text-xs font-medium truncate">{toScopeTitle(activeProjectDir)}</p>
-      <p class="text-xs text-muted-foreground truncate" title={activeProjectDir}>{activeProjectDir}</p>
+      <p class="text-[11px] uppercase tracking-wide text-muted-foreground">
+        Active Scope
+      </p>
+      <p class="text-xs font-medium truncate">
+        {toScopeTitle(activeProjectDir)}
+      </p>
+      <p
+        class="text-xs text-muted-foreground truncate"
+        title={activeProjectDir}
+      >
+        {activeProjectDir}
+      </p>
     </div>
   {/if}
 

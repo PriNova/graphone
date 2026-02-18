@@ -253,7 +253,9 @@ fn extract_first_user_message(entry: &serde_json::Value) -> Option<String> {
 /// Normalize a path for comparison: trim whitespace and remove trailing slashes.
 fn normalize_path_for_comparison(path: &str) -> String {
     let trimmed = path.trim();
-    trimmed.trim_end_matches(|c| c == '/' || c == '\\').to_string()
+    trimmed
+        .trim_end_matches(|c| c == '/' || c == '\\')
+        .to_string()
 }
 
 fn extract_session_header_from_file(path: &Path) -> Option<SessionFileHeader> {
@@ -278,9 +280,7 @@ fn extract_session_header_from_file(path: &Path) -> Option<SessionFileHeader> {
         return None;
     }
 
-    let scope = normalize_path_for_comparison(
-        header.get("cwd").and_then(|v| v.as_str())?
-    );
+    let scope = normalize_path_for_comparison(header.get("cwd").and_then(|v| v.as_str())?);
     if scope.is_empty() {
         return None;
     }

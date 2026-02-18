@@ -4,7 +4,12 @@ import * as readline from "node:readline";
 
 import { handleHostCommand } from "./commands.js";
 import { HostRuntime } from "./host-runtime.js";
-import { failure, type HostCommand, type HostResponse, type SessionEventEnvelope } from "./protocol.js";
+import {
+  failure,
+  type HostCommand,
+  type HostResponse,
+  type SessionEventEnvelope,
+} from "./protocol.js";
 
 class LineWriter {
   private readonly queue: string[] = [];
@@ -78,15 +83,27 @@ async function processLine(line: string): Promise<void> {
   try {
     const parsed: unknown = JSON.parse(line);
 
-    if (!parsed || typeof parsed !== "object" || typeof (parsed as { type?: unknown }).type !== "string") {
-      writer.writeObject(failure(undefined, "parse", "Command must be a JSON object with a string 'type' field"));
+    if (
+      !parsed ||
+      typeof parsed !== "object" ||
+      typeof (parsed as { type?: unknown }).type !== "string"
+    ) {
+      writer.writeObject(
+        failure(
+          undefined,
+          "parse",
+          "Command must be a JSON object with a string 'type' field",
+        ),
+      );
       return;
     }
 
     command = parsed as HostCommand;
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
-    writer.writeObject(failure(undefined, "parse", `Failed to parse command: ${message}`));
+    writer.writeObject(
+      failure(undefined, "parse", `Failed to parse command: ${message}`),
+    );
     return;
   }
 

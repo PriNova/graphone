@@ -6,7 +6,7 @@
 // Some dev builds (or a cached Tauri webview) may still request this module by path.
 // Keep this file around to avoid 404s and provide a minimal API-compatible facade.
 
-import { enabledModelsStore } from '$lib/stores/enabledModels.svelte';
+import { enabledModelsStore } from "$lib/stores/enabledModels.svelte";
 
 class ScopedModelsCompatStore {
   // Old API used `count` and treated "no scope" as 0.
@@ -26,7 +26,9 @@ class ScopedModelsCompatStore {
   toggle(provider: string, modelId: string): boolean {
     const fullId = `${provider}/${modelId}`;
     const has = enabledModelsStore.patterns.includes(fullId);
-    void enabledModelsStore.toggleModel(provider, modelId).catch(() => undefined);
+    void enabledModelsStore
+      .toggleModel(provider, modelId)
+      .catch(() => undefined);
     return !has;
   }
 }

@@ -18,7 +18,9 @@ export class HostRuntime {
   private readonly authStorage = AuthStorage.create();
   private readonly modelRegistry = new ModelRegistry(this.authStorage);
 
-  constructor(private readonly emitSessionEvent: (event: SessionEventEnvelope) => void) {}
+  constructor(
+    private readonly emitSessionEvent: (event: SessionEventEnvelope) => void,
+  ) {}
 
   async createSession(args: {
     sessionId?: string;
@@ -26,7 +28,12 @@ export class HostRuntime {
     provider?: string;
     modelId?: string;
     sessionFile?: string;
-  }): Promise<{ sessionId: string; cwd: string; modelFallbackMessage?: string; sessionFile?: string }> {
+  }): Promise<{
+    sessionId: string;
+    cwd: string;
+    modelFallbackMessage?: string;
+    sessionFile?: string;
+  }> {
     const sessionId = (args.sessionId?.trim() || randomUUID()).trim();
     if (!sessionId) {
       throw new Error("sessionId cannot be empty");
@@ -121,7 +128,9 @@ export class HostRuntime {
       })
       .catch((error) => {
         const message = error instanceof Error ? error.message : String(error);
-        console.error(`[pi-agent-host] prompt failed for session ${sessionId}: ${message}`);
+        console.error(
+          `[pi-agent-host] prompt failed for session ${sessionId}: ${message}`,
+        );
       });
   }
 
@@ -184,10 +193,16 @@ export class HostRuntime {
     };
   }
 
-  async setModel(sessionId: string, provider: string, modelId: string): Promise<unknown> {
+  async setModel(
+    sessionId: string,
+    provider: string,
+    modelId: string,
+  ): Promise<unknown> {
     const session = this.requireSession(sessionId, "set_model");
     const models = await session.modelRegistry.getAvailable();
-    const model = models.find((m) => m.provider === provider && m.id === modelId);
+    const model = models.find(
+      (m) => m.provider === provider && m.id === modelId,
+    );
 
     if (!model) {
       throw new Error(`Model not found: ${provider}/${modelId}`);
@@ -202,7 +217,9 @@ export class HostRuntime {
     return (await session.cycleModel()) ?? null;
   }
 
-  async getAvailableModels(): Promise<{ models: Array<{ provider: string; id: string; name: string }> }> {
+  async getAvailableModels(): Promise<{
+    models: Array<{ provider: string; id: string; name: string }>;
+  }> {
     const models = await this.modelRegistry.getAvailable();
 
     return {
@@ -236,7 +253,10 @@ export class HostRuntime {
     };
   }
 
-  private requireSession(sessionId: string | undefined, command: string): AgentSession {
+  private requireSession(
+    sessionId: string | undefined,
+    command: string,
+  ): AgentSession {
     const normalized = sessionId?.trim();
     if (!normalized) {
       throw new Error(`sessionId is required for ${command}`);
