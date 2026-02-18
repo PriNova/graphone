@@ -291,7 +291,7 @@
                     <span class="text-[10px] text-muted-foreground">Delete?</span>
                     <button
                       type="button"
-                      class="inline-flex h-5 w-5 items-center justify-center rounded text-destructive hover:bg-destructive/10"
+                      class="inline-flex h-5 w-5 items-center justify-center rounded text-success hover:bg-success/10"
                       onclick={(e) => confirmDeleteScope(projectDir, e)}
                       aria-label="Confirm delete"
                       title="Confirm delete"
