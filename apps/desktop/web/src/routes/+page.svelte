@@ -12,6 +12,7 @@
   import { cwdStore } from "$lib/stores/cwd.svelte";
   import { createEnabledModelsStore } from "$lib/stores/enabledModels.svelte";
   import { createMessagesStore } from "$lib/stores/messages.svelte";
+  import { projectScopesStore, type PersistedSessionHistoryItem } from "$lib/stores/projectScopes.svelte";
   import { sessionsStore, type SessionDescriptor } from "$lib/stores/sessions.svelte";
   import type { AgentEvent } from "$lib/types/agent";
   import type { SessionRuntime } from "$lib/types/session";
@@ -28,9 +29,17 @@
   let projectDirInput = $state("");
   let startupError = $state<string | null>(null);
   let sidebarCollapsed = $state(false);
+  let sessionSidebarRefreshTimer: ReturnType<typeof setTimeout> | null = null;
 
   const sessions = $derived(sessionsStore.sessions);
   const activeSessionId = $derived(sessionsStore.activeSessionId);
+  const persistedProjectScopes = $derived(projectScopesStore.scopes);
+  const scopeHistoryByProject = $derived(projectScopesStore.historyByScope);
+  const projectScopes = $derived(
+    [...new Set([...persistedProjectScopes, ...sessions.map((session) => session.projectDir)])].sort((a, b) =>
+      a.localeCompare(b)
+    )
+  );
   const activeRuntime = $derived(activeSessionId ? sessionRuntimes[activeSessionId] ?? null : null);
 
   const messages = $derived(activeRuntime ? activeRuntime.messages.messages : []);
@@ -52,6 +61,19 @@
 
   function scrollToBottom(smooth = true): void {
     activeRuntime?.messages.scrollToBottom(messagesContainerRef, smooth);
+  }
+
+  function scheduleSessionSidebarRefresh(delayMs = 450): void {
+    if (sessionSidebarRefreshTimer) {
+      clearTimeout(sessionSidebarRefreshTimer);
+      sessionSidebarRefreshTimer = null;
+    }
+
+    sessionSidebarRefreshTimer = setTimeout(() => {
+      void projectScopesStore.refresh().catch(() => undefined);
+      void sessionsStore.refreshFromBackend().catch(() => undefined);
+      sessionSidebarRefreshTimer = null;
+    }, delayMs);
   }
 
   async function loadMessages(runtime: SessionRuntime): Promise<void> {
@@ -115,16 +137,11 @@
     return runtime;
   }
 
-  function removeRuntime(sessionId: string): void {
-    const next = { ...sessionRuntimes };
-    delete next[sessionId];
-    sessionRuntimes = next;
-  }
-
-  async function createSession(projectDir: string): Promise<void> {
-    const descriptor = await sessionsStore.createSession(projectDir);
+  async function createSession(projectDir: string, sessionFile?: string): Promise<void> {
+    const descriptor = await sessionsStore.createSession(projectDir, undefined, undefined, sessionFile);
     await ensureRuntime(descriptor);
     projectDirInput = "";
+    scheduleSessionSidebarRefresh(250);
     requestAnimationFrame(() => scrollToBottom(false));
   }
 
@@ -143,19 +160,28 @@
     projectDirInput = value;
   }
 
-  async function closeSessionById(sessionId: string): Promise<void> {
-    const wasActive = sessionsStore.activeSessionId === sessionId;
-
-    await sessionsStore.closeSession(sessionId);
-    removeRuntime(sessionId);
-
-    if (wasActive) {
-      const nextActive = sessionsStore.activeSession;
-      if (nextActive) {
-        await ensureRuntime(nextActive);
-        requestAnimationFrame(() => scrollToBottom(false));
-      }
+  async function onSelectScope(projectDir: string): Promise<void> {
+    const existing = sessionsStore.sessions.find((session) => session.projectDir === projectDir);
+    if (existing) {
+      sessionsStore.setActiveSession(existing.sessionId);
+      await ensureRuntime(existing);
+      requestAnimationFrame(() => scrollToBottom(false));
+      return;
     }
+
+    await createSession(projectDir);
+  }
+
+  async function onSelectHistory(projectDir: string, history: PersistedSessionHistoryItem): Promise<void> {
+    const existing = sessionsStore.sessions.find((session) => session.sessionFile === history.filePath);
+    if (existing) {
+      sessionsStore.setActiveSession(existing.sessionId);
+      await ensureRuntime(existing);
+      requestAnimationFrame(() => scrollToBottom(false));
+      return;
+    }
+
+    await createSession(projectDir, history.filePath);
   }
 
   function handleAgentError(errorPayload: string): void {
@@ -177,6 +203,7 @@
   async function onSubmit(prompt: string): Promise<void> {
     if (!activeRuntime) return;
     await handlePromptSubmit(activeRuntime, prompt);
+    scheduleSessionSidebarRefresh(900);
   }
 
   function onCancel(): void {
@@ -204,8 +231,12 @@
         break;
       case "submit":
         await handlePromptSubmit(activeRuntime, result.text);
+        scheduleSessionSidebarRefresh(900);
         break;
       case "handled":
+        if (command === "new") {
+          scheduleSessionSidebarRefresh(250);
+        }
         break;
     }
   }
@@ -213,6 +244,7 @@
   async function bootstrapSessions(): Promise<void> {
     await cwdStore.load();
 
+    await projectScopesStore.refresh().catch(() => undefined);
     await sessionsStore.refreshFromBackend().catch(() => undefined);
 
     for (const descriptor of sessionsStore.sessions) {
@@ -267,7 +299,17 @@
             return;
           }
 
-          handleAgentEvent(runtime, wrapped.event as AgentEvent);
+          const agentEvent = wrapped.event as AgentEvent;
+          handleAgentEvent(runtime, agentEvent);
+
+          if (
+            agentEvent.type === "turn_end"
+            || agentEvent.type === "agent_end"
+            || (agentEvent.type === "message_start" && agentEvent.message.role === "user")
+          ) {
+            scheduleSessionSidebarRefresh(agentEvent.type === "message_start" ? 220 : 300);
+          }
+
           if (sessionsStore.activeSessionId === wrapped.sessionId) {
             requestAnimationFrame(() => scrollToBottom(true));
           }
@@ -290,21 +332,27 @@
     unlistenEvent?.();
     unlistenError?.();
     unlistenTerminated?.();
+
+    if (sessionSidebarRefreshTimer) {
+      clearTimeout(sessionSidebarRefreshTimer);
+      sessionSidebarRefreshTimer = null;
+    }
   });
 </script>
 
 <main class="flex w-full h-screen overflow-hidden">
   <SessionSidebar
-    {sessions}
-    {activeSessionId}
+    {projectScopes}
+    scopeHistoryByProject={scopeHistoryByProject}
+    activeProjectDir={activeProjectDir}
     {projectDirInput}
     creating={sessionsStore.creating}
     collapsed={sidebarCollapsed}
     ontoggle={toggleSidebar}
     onprojectdirinput={onProjectDirInputChange}
     oncreatesession={createSessionFromInput}
-    onselectsession={(sessionId) => sessionsStore.setActiveSession(sessionId)}
-    onclosesession={closeSessionById}
+    onselectscope={onSelectScope}
+    onselecthistory={onSelectHistory}
   />
 
   <section class="flex-1 min-w-0 h-full flex items-stretch justify-center overflow-hidden">

@@ -28,6 +28,7 @@ export interface CreateSessionCommand extends HostCommandBase {
   cwd: string;
   provider?: string;
   modelId?: string;
+  sessionFile?: string;
 }
 
 export interface PromptCommand extends HostCommandBase {
@@ -87,6 +88,7 @@ export interface HostedSessionInfo {
   createdAt: number;
   model?: { provider: string; id: string };
   busy: boolean;
+  sessionFile?: string;
 }
 
 export function success(id: string | undefined, command: string, data?: unknown): HostResponse {

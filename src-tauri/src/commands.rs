@@ -1,5 +1,8 @@
+use std::collections::{BTreeMap, HashMap, HashSet};
+use std::io::{BufRead, BufReader};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
+use std::time::UNIX_EPOCH;
 
 use serde::Serialize;
 use tauri::{AppHandle, State};
@@ -25,6 +28,78 @@ pub struct EnabledModelsResponse {
     pub source: String,
 }
 
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PersistedSessionSummary {
+    /// Session id as stored in the JSONL session header.
+    pub session_id: String,
+    /// Session creation timestamp from the session header (ISO string), when available.
+    pub timestamp: Option<String>,
+    /// First user message found in the session file.
+    pub first_user_message: Option<String>,
+    /// Where the session file was discovered from: "global" or "local".
+    pub source: String,
+    /// Absolute path to the backing session JSONL file.
+    pub file_path: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SessionScopeHistory {
+    /// Project scope (cwd) from the session header.
+    pub scope: String,
+    /// Persisted sessions discovered for this scope.
+    pub sessions: Vec<PersistedSessionSummary>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SessionProjectScopesResponse {
+    /// Unique project folders (session cwd values) discovered from persisted session files.
+    pub scopes: Vec<String>,
+    /// Persisted session files grouped by project scope.
+    pub histories: Vec<SessionScopeHistory>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum SessionRootSource {
+    Global,
+    Local,
+}
+
+impl SessionRootSource {
+    fn as_str(self) -> &'static str {
+        match self {
+            SessionRootSource::Global => "global",
+            SessionRootSource::Local => "local",
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+struct SessionRoot {
+    path: PathBuf,
+    source: SessionRootSource,
+}
+
+#[derive(Debug, Clone)]
+struct SessionFileHeader {
+    session_id: String,
+    scope: String,
+    timestamp: Option<String>,
+    first_user_message: Option<String>,
+}
+
+#[derive(Debug, Clone)]
+struct SessionHistoryInternal {
+    session_id: String,
+    timestamp: Option<String>,
+    first_user_message: Option<String>,
+    source: SessionRootSource,
+    file_path: String,
+    sort_key: String,
+}
+
 const SIDECAR_READY_TIMEOUT_SECS: u64 = 20;
 const SIDECAR_READY_ATTEMPTS: usize = 3;
 const SIDECAR_READY_RETRY_DELAY_MS: u64 = 500;
@@ -44,6 +119,366 @@ fn project_settings_path(project_dir: Option<&str>) -> Option<PathBuf> {
     std::env::current_dir()
         .ok()
         .map(|cwd| cwd.join(".pi").join("settings.json"))
+}
+
+fn expand_tilde(path: &str) -> PathBuf {
+    if path == "~" {
+        return dirs::home_dir().unwrap_or_else(|| PathBuf::from(path));
+    }
+
+    if let Some(rest) = path.strip_prefix("~/") {
+        if let Some(home) = dirs::home_dir() {
+            return home.join(rest);
+        }
+    }
+
+    PathBuf::from(path)
+}
+
+fn local_session_roots_for_scope(scope: &str) -> Vec<SessionRoot> {
+    let base = PathBuf::from(scope);
+    vec![
+        SessionRoot {
+            path: base.join(".pi").join("sessions"),
+            source: SessionRootSource::Local,
+        },
+        SessionRoot {
+            path: base.join(".pi").join("agent").join("sessions"),
+            source: SessionRootSource::Local,
+        },
+    ]
+}
+
+fn candidate_session_roots() -> Vec<SessionRoot> {
+    let mut roots = Vec::new();
+
+    if let Some(home) = dirs::home_dir() {
+        // Legacy/current location used by pi-coding-agent.
+        roots.push(SessionRoot {
+            path: home.join(".pi").join("agent").join("sessions"),
+            source: SessionRootSource::Global,
+        });
+
+        // Alternate path used by some installations.
+        roots.push(SessionRoot {
+            path: home.join(".pi").join("sessions"),
+            source: SessionRootSource::Global,
+        });
+    }
+
+    // Respect explicit config override used by pi-coding-agent when present.
+    if let Ok(agent_dir) = std::env::var("PI_CODING_AGENT_DIR") {
+        roots.push(SessionRoot {
+            path: expand_tilde(&agent_dir).join("sessions"),
+            source: SessionRootSource::Global,
+        });
+    }
+
+    // Local/project-level roots for the current app cwd.
+    if let Ok(cwd) = std::env::current_dir() {
+        roots.push(SessionRoot {
+            path: cwd.join(".pi").join("sessions"),
+            source: SessionRootSource::Local,
+        });
+        roots.push(SessionRoot {
+            path: cwd.join(".pi").join("agent").join("sessions"),
+            source: SessionRootSource::Local,
+        });
+    }
+
+    let mut dedup = HashMap::<String, SessionRoot>::new();
+    for root in roots {
+        let key = root.path.to_string_lossy().to_string();
+        match dedup.get(&key) {
+            Some(existing) if existing.source == SessionRootSource::Local => {}
+            _ => {
+                dedup.insert(key, root);
+            }
+        }
+    }
+
+    dedup.into_values().collect::<Vec<_>>()
+}
+
+fn extract_text_from_message_content(content: &serde_json::Value) -> Option<String> {
+    if let Some(text) = content.as_str() {
+        let trimmed = text.trim();
+        if !trimmed.is_empty() {
+            return Some(trimmed.to_string());
+        }
+        return None;
+    }
+
+    let blocks = content.as_array()?;
+    let mut parts = Vec::new();
+
+    for block in blocks {
+        if block.get("type").and_then(|v| v.as_str()) != Some("text") {
+            continue;
+        }
+
+        let Some(text) = block.get("text").and_then(|v| v.as_str()) else {
+            continue;
+        };
+
+        let trimmed = text.trim();
+        if trimmed.is_empty() {
+            continue;
+        }
+
+        parts.push(trimmed.to_string());
+    }
+
+    if parts.is_empty() {
+        None
+    } else {
+        Some(parts.join(" "))
+    }
+}
+
+fn extract_first_user_message(entry: &serde_json::Value) -> Option<String> {
+    if entry.get("type").and_then(|v| v.as_str()) != Some("message") {
+        return None;
+    }
+
+    let message = entry.get("message")?;
+    if message.get("role").and_then(|v| v.as_str()) != Some("user") {
+        return None;
+    }
+
+    let content = message.get("content")?;
+    extract_text_from_message_content(content)
+}
+
+fn extract_session_header_from_file(path: &Path) -> Option<SessionFileHeader> {
+    let file = std::fs::File::open(path).ok()?;
+    let mut reader = BufReader::new(file);
+    let mut line = String::new();
+
+    loop {
+        line.clear();
+        let bytes = reader.read_line(&mut line).ok()?;
+        if bytes == 0 {
+            return None;
+        }
+
+        if !line.trim().is_empty() {
+            break;
+        }
+    }
+
+    let header = serde_json::from_str::<serde_json::Value>(line.trim()).ok()?;
+    if header.get("type").and_then(|v| v.as_str()) != Some("session") {
+        return None;
+    }
+
+    let scope = header
+        .get("cwd")
+        .and_then(|v| v.as_str())?
+        .trim()
+        .to_string();
+    if scope.is_empty() {
+        return None;
+    }
+
+    let session_id = header
+        .get("id")
+        .and_then(|v| v.as_str())
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty())
+        .or_else(|| {
+            path.file_stem()
+                .and_then(|stem| stem.to_str())
+                .and_then(|stem| stem.split('_').next_back())
+                .map(|s| s.trim().to_string())
+                .filter(|s| !s.is_empty())
+        })?;
+
+    let timestamp = header
+        .get("timestamp")
+        .and_then(|v| v.as_str())
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty());
+
+    let mut first_user_message = None;
+
+    loop {
+        line.clear();
+        let bytes = reader.read_line(&mut line).ok()?;
+        if bytes == 0 {
+            break;
+        }
+
+        let trimmed = line.trim();
+        if trimmed.is_empty() {
+            continue;
+        }
+
+        let Ok(entry) = serde_json::from_str::<serde_json::Value>(trimmed) else {
+            continue;
+        };
+
+        if let Some(message) = extract_first_user_message(&entry) {
+            first_user_message = Some(message);
+            break;
+        }
+    }
+
+    Some(SessionFileHeader {
+        session_id,
+        scope,
+        timestamp,
+        first_user_message,
+    })
+}
+
+fn collect_session_files_from_root(root: &Path, files: &mut Vec<PathBuf>) {
+    let Ok(entries) = std::fs::read_dir(root) else {
+        return;
+    };
+
+    for entry in entries.flatten() {
+        let path = entry.path();
+
+        // Support flat custom directories where session files are directly in the root.
+        if path.is_file() {
+            if path.extension().and_then(|ext| ext.to_str()) == Some("jsonl") {
+                files.push(path);
+            }
+            continue;
+        }
+
+        if !path.is_dir() {
+            continue;
+        }
+
+        let Ok(nested) = std::fs::read_dir(path) else {
+            continue;
+        };
+
+        for file in nested.flatten() {
+            let session_file = file.path();
+            if session_file.extension().and_then(|ext| ext.to_str()) != Some("jsonl") {
+                continue;
+            }
+            files.push(session_file);
+        }
+    }
+}
+
+fn build_session_sort_key(path: &Path, timestamp: Option<&str>) -> String {
+    if let Some(ts) = timestamp {
+        return ts.to_string();
+    }
+
+    let modified_millis = std::fs::metadata(path)
+        .ok()
+        .and_then(|metadata| metadata.modified().ok())
+        .and_then(|modified| modified.duration_since(UNIX_EPOCH).ok())
+        .map(|duration| duration.as_millis())
+        .unwrap_or(0);
+
+    format!("{modified_millis:020}")
+}
+
+fn load_session_scope_histories() -> Vec<SessionScopeHistory> {
+    let mut pending_roots = candidate_session_roots();
+    let mut seen_roots = HashSet::<String>::new();
+    let mut discovered_scopes = HashSet::<String>::new();
+
+    let mut file_sources = BTreeMap::<String, (PathBuf, SessionRootSource)>::new();
+    let mut header_cache = HashMap::<String, SessionFileHeader>::new();
+
+    while let Some(root) = pending_roots.pop() {
+        let root_key = root.path.to_string_lossy().to_string();
+        if !seen_roots.insert(root_key) {
+            continue;
+        }
+
+        let mut session_files = Vec::new();
+        collect_session_files_from_root(&root.path, &mut session_files);
+
+        for session_file in session_files {
+            let file_key = session_file.to_string_lossy().to_string();
+
+            match file_sources.get(&file_key) {
+                Some((_, existing_source)) if *existing_source == SessionRootSource::Local => {}
+                _ => {
+                    file_sources.insert(file_key.clone(), (session_file.clone(), root.source));
+                }
+            }
+
+            if let Some(header) = extract_session_header_from_file(&session_file) {
+                header_cache.insert(file_key.clone(), header.clone());
+
+                if discovered_scopes.insert(header.scope.clone()) {
+                    pending_roots.extend(local_session_roots_for_scope(&header.scope));
+                }
+            }
+        }
+    }
+
+    let mut grouped = BTreeMap::<String, Vec<SessionHistoryInternal>>::new();
+
+    for (file_key, (path, source)) in file_sources.into_iter() {
+        let Some(header) = header_cache
+            .get(&file_key)
+            .cloned()
+            .or_else(|| extract_session_header_from_file(&path))
+        else {
+            continue;
+        };
+
+        let scope = header.scope;
+        let history = SessionHistoryInternal {
+            session_id: header.session_id,
+            timestamp: header.timestamp.clone(),
+            first_user_message: header.first_user_message.clone(),
+            source,
+            file_path: path.to_string_lossy().to_string(),
+            sort_key: build_session_sort_key(&path, header.timestamp.as_deref()),
+        };
+
+        grouped.entry(scope).or_default().push(history);
+    }
+
+    grouped
+        .into_iter()
+        .map(|(scope, mut sessions)| {
+            sessions.sort_by(|a, b| {
+                b.sort_key
+                    .cmp(&a.sort_key)
+                    .then_with(|| a.session_id.cmp(&b.session_id))
+            });
+
+            SessionScopeHistory {
+                scope,
+                sessions: sessions
+                    .into_iter()
+                    .map(|session| PersistedSessionSummary {
+                        session_id: session.session_id,
+                        timestamp: session.timestamp,
+                        first_user_message: session.first_user_message,
+                        source: session.source.as_str().to_string(),
+                        file_path: session.file_path,
+                    })
+                    .collect::<Vec<_>>(),
+            }
+        })
+        .collect::<Vec<_>>()
+}
+
+/// List unique project folders discovered from persisted pi session files, along
+/// with grouped history entries from global + local session stores.
+#[tauri::command]
+pub fn list_session_project_scopes() -> SessionProjectScopesResponse {
+    let histories = load_session_scope_histories();
+    let scopes = histories
+        .iter()
+        .map(|history| history.scope.clone())
+        .collect::<Vec<_>>();
+
+    SessionProjectScopesResponse { scopes, histories }
 }
 
 /// Get the current working directory (the directory in which the app executes).
@@ -296,6 +731,7 @@ async fn wait_for_sidecar_ready(
             provider: None,
             model_id: None,
             streaming_behavior: None,
+            session_file: None,
         };
 
         match send_command_with_response(state, cmd, timeout_secs).await {
@@ -404,6 +840,7 @@ async fn create_session_internal(
     project_dir: String,
     provider: Option<String>,
     model: Option<String>,
+    session_file: Option<String>,
 ) -> Result<RpcResponse, String> {
     ensure_sidecar_started(&app, state, provider.clone(), model.clone()).await?;
 
@@ -420,6 +857,7 @@ async fn create_session_internal(
             provider: provider.clone(),
             model_id: model.clone(),
             streaming_behavior: None,
+            session_file: session_file.clone(),
         };
 
         match send_command_with_response(state, command, CREATE_SESSION_TIMEOUT_SECS).await {
@@ -457,8 +895,17 @@ pub async fn create_agent(
     project_dir: String,
     provider: Option<String>,
     model: Option<String>,
+    session_file: Option<String>,
 ) -> Result<RpcResponse, String> {
-    create_session_internal(app, state.inner(), project_dir, provider, model).await
+    create_session_internal(
+        app,
+        state.inner(),
+        project_dir,
+        provider,
+        model,
+        session_file,
+    )
+    .await
 }
 
 #[tauri::command]
@@ -477,6 +924,7 @@ pub async fn close_agent(
         provider: None,
         model_id: None,
         streaming_behavior: None,
+        session_file: None,
     };
 
     let response = send_command_with_response(state.inner(), command, 5).await?;
@@ -520,6 +968,7 @@ pub async fn list_agents(
         provider: None,
         model_id: None,
         streaming_behavior: None,
+        session_file: None,
     };
 
     let response = send_command_with_response(state.inner(), command, 5).await?;
@@ -548,6 +997,7 @@ pub async fn send_prompt(
         provider: None,
         model_id: None,
         streaming_behavior: None,
+        session_file: None,
     };
 
     RpcClient::send_command(state.inner(), cmd).await
@@ -570,6 +1020,7 @@ pub async fn abort_agent(
         provider: None,
         model_id: None,
         streaming_behavior: None,
+        session_file: None,
     };
 
     RpcClient::send_command(state.inner(), cmd).await
@@ -592,6 +1043,7 @@ pub async fn new_session(
         provider: None,
         model_id: None,
         streaming_behavior: None,
+        session_file: None,
     };
 
     send_command_with_response(state.inner(), cmd, 5).await
@@ -614,6 +1066,7 @@ pub async fn get_messages(
         provider: None,
         model_id: None,
         streaming_behavior: None,
+        session_file: None,
     };
 
     send_command_with_response(state.inner(), cmd, 5).await
@@ -636,6 +1089,7 @@ pub async fn get_state(
         provider: None,
         model_id: None,
         streaming_behavior: None,
+        session_file: None,
     };
 
     send_command_with_response(state.inner(), cmd, 5).await
@@ -658,6 +1112,7 @@ pub async fn get_available_models(
         provider: None,
         model_id: None,
         streaming_behavior: None,
+        session_file: None,
     };
 
     let mut response = send_command_with_response(state.inner(), cmd, 5).await?;
@@ -713,6 +1168,7 @@ pub async fn set_model(
         provider: Some(provider),
         model_id: Some(model_id),
         streaming_behavior: None,
+        session_file: None,
     };
 
     send_command_with_response(state.inner(), cmd, 5).await
@@ -735,6 +1191,7 @@ pub async fn cycle_model(
         provider: None,
         model_id: None,
         streaming_behavior: None,
+        session_file: None,
     };
 
     send_command_with_response(state.inner(), cmd, 5).await

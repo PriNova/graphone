@@ -27,6 +27,7 @@ pub fn run() {
         .manage(sidecar_state)
         .invoke_handler(tauri::generate_handler![
             commands::get_working_directory,
+            commands::list_session_project_scopes,
             commands::create_agent,
             commands::close_agent,
             commands::list_agents,

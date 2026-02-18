@@ -25,7 +25,8 @@ export class HostRuntime {
     cwd: string;
     provider?: string;
     modelId?: string;
-  }): Promise<{ sessionId: string; cwd: string; modelFallbackMessage?: string }> {
+    sessionFile?: string;
+  }): Promise<{ sessionId: string; cwd: string; modelFallbackMessage?: string; sessionFile?: string }> {
     const sessionId = (args.sessionId?.trim() || randomUUID()).trim();
     if (!sessionId) {
       throw new Error("sessionId cannot be empty");
@@ -39,11 +40,17 @@ export class HostRuntime {
       };
     }
 
-    const cwd = this.validateCwd(args.cwd);
+    const fallbackCwd = this.validateCwd(args.cwd);
+
+    const sessionManager = args.sessionFile
+      ? SessionManager.open(this.validateSessionFile(args.sessionFile))
+      : SessionManager.create(fallbackCwd);
+
+    const resolvedCwd = this.validateCwd(sessionManager.getCwd());
 
     const { session, modelFallbackMessage } = await createAgentSession({
-      cwd,
-      sessionManager: SessionManager.inMemory(),
+      cwd: resolvedCwd,
+      sessionManager,
       authStorage: this.authStorage,
       modelRegistry: this.modelRegistry,
     });
@@ -58,7 +65,7 @@ export class HostRuntime {
 
     this.sessions.set(sessionId, {
       sessionId,
-      cwd,
+      cwd: resolvedCwd,
       createdAt: Date.now(),
       session,
       unsubscribe,
@@ -75,8 +82,9 @@ export class HostRuntime {
 
     return {
       sessionId,
-      cwd,
+      cwd: resolvedCwd,
       modelFallbackMessage,
+      sessionFile: session.sessionFile,
     };
   }
 
@@ -224,6 +232,7 @@ export class HostRuntime {
       createdAt: hosted.createdAt,
       model,
       busy: hosted.session.isStreaming,
+      sessionFile: hosted.session.sessionFile,
     };
   }
 
@@ -251,6 +260,21 @@ export class HostRuntime {
     const stats = statSync(normalized);
     if (!stats.isDirectory()) {
       throw new Error(`Path is not a directory: ${normalized}`);
+    }
+
+    return normalized;
+  }
+
+  private validateSessionFile(sessionFile: string): string {
+    const normalized = resolve(sessionFile);
+
+    if (!existsSync(normalized)) {
+      throw new Error(`Session file does not exist: ${normalized}`);
+    }
+
+    const stats = statSync(normalized);
+    if (!stats.isFile()) {
+      throw new Error(`Session file path is not a file: ${normalized}`);
     }
 
     return normalized;

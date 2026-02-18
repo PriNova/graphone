@@ -12,6 +12,7 @@ export interface SessionDescriptor {
   createdAt?: number;
   busy?: boolean;
   model?: SessionModelRef;
+  sessionFile?: string;
 }
 
 interface RpcResponse<TData = unknown> {
@@ -24,6 +25,7 @@ interface CreateSessionData {
   sessionId: string;
   cwd: string;
   modelFallbackMessage?: string;
+  sessionFile?: string;
 }
 
 interface ListSessionsData {
@@ -33,6 +35,7 @@ interface ListSessionsData {
     createdAt?: unknown;
     busy?: unknown;
     model?: { provider?: unknown; id?: unknown } | null;
+    sessionFile?: unknown;
   }>;
 }
 
@@ -63,7 +66,12 @@ export class SessionsStore {
     return this.sessions.find((s) => s.sessionId === this.activeSessionId) ?? null;
   }
 
-  async createSession(projectDir: string, provider?: string, model?: string): Promise<SessionDescriptor> {
+  async createSession(
+    projectDir: string,
+    provider?: string,
+    model?: string,
+    sessionFile?: string,
+  ): Promise<SessionDescriptor> {
     this.creating = true;
     this.error = null;
 
@@ -72,6 +80,7 @@ export class SessionsStore {
         projectDir,
         provider,
         model,
+        sessionFile,
       });
 
       if (!(response && typeof response === "object" && response.success && response.data)) {
@@ -86,10 +95,16 @@ export class SessionsStore {
         throw new Error("Malformed create_agent response");
       }
 
+      const resolvedSessionFile =
+        typeof response.data.sessionFile === "string" && response.data.sessionFile.trim().length > 0
+          ? response.data.sessionFile.trim()
+          : undefined;
+
       const descriptor: SessionDescriptor = {
         sessionId,
         projectDir: cwd,
         title: toTitleFromProjectDir(cwd),
+        sessionFile: resolvedSessionFile,
       };
 
       this.sessions = [...this.sessions, descriptor];
@@ -138,6 +153,7 @@ export class SessionsStore {
 
         const modelProvider = session.model && typeof session.model.provider === "string" ? session.model.provider : null;
         const modelId = session.model && typeof session.model.id === "string" ? session.model.id : null;
+        const sessionFile = typeof session.sessionFile === "string" ? session.sessionFile.trim() : "";
 
         return {
           sessionId,
@@ -146,6 +162,7 @@ export class SessionsStore {
           createdAt: typeof session.createdAt === "number" ? session.createdAt : undefined,
           busy: typeof session.busy === "boolean" ? session.busy : undefined,
           model: modelProvider && modelId ? { provider: modelProvider, id: modelId } : undefined,
+          sessionFile: sessionFile.length > 0 ? sessionFile : undefined,
         } satisfies SessionDescriptor;
       })
       .filter((value): value is SessionDescriptor => value !== null);

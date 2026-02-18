@@ -21,11 +21,13 @@ export async function handleHostCommand(runtime: HostRuntime, command: HostComma
         const cwd = requireNonEmptyString(command.cwd, "cwd");
         const provider = typeof command.provider === "string" ? command.provider : undefined;
         const modelId = typeof command.modelId === "string" ? command.modelId : undefined;
+        const sessionFile = typeof command.sessionFile === "string" ? command.sessionFile : undefined;
         const data = await runtime.createSession({
           sessionId: command.sessionId,
           cwd,
           provider,
           modelId,
+          sessionFile,
         });
 
         return success(requestId, "create_session", data);

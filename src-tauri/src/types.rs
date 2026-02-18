@@ -18,6 +18,8 @@ pub struct RpcCommand {
     pub model_id: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub streaming_behavior: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub session_file: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
