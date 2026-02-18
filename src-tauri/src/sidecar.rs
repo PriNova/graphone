@@ -292,19 +292,31 @@ impl EventHandler {
             Some("turn_start") => serde_json::json!({ "type": "turn_start" }),
             Some("turn_end") => serde_json::json!({ "type": "turn_end" }),
             Some("message_update") => {
-                let role = event
+                let mut event_map = match event {
+                    serde_json::Value::Object(map) => map,
+                    _ => {
+                        return serde_json::json!({
+                            "type": "message_update",
+                            "message": { "role": "assistant" },
+                            "assistantMessageEvent": {},
+                        });
+                    }
+                };
+
+                let role = event_map
                     .get("message")
                     .and_then(|message| message.get("role"))
                     .and_then(|value| value.as_str())
-                    .unwrap_or("assistant");
+                    .unwrap_or("assistant")
+                    .to_string();
 
-                let assistant_message_event = match event.get("assistantMessageEvent") {
-                    Some(serde_json::Value::Object(map)) => {
-                        let mut compact = map.clone();
-                        compact.remove("partial");
-                        serde_json::Value::Object(compact)
+                let assistant_message_event = match event_map.remove("assistantMessageEvent") {
+                    Some(serde_json::Value::Object(mut map)) => {
+                        // Drop `partial`: frontend reconstructs streaming content via deltas.
+                        map.remove("partial");
+                        serde_json::Value::Object(map)
                     }
-                    Some(value) => value.clone(),
+                    Some(value) => value,
                     None => serde_json::json!({}),
                 };
 
@@ -315,35 +327,28 @@ impl EventHandler {
                 })
             }
             Some("message_end") => {
-                let role = event
-                    .get("message")
+                let message = event.get("message");
+
+                let role = message
                     .and_then(|message| message.get("role"))
                     .and_then(|value| value.as_str())
                     .unwrap_or("assistant");
 
                 let mut compact_message = serde_json::Map::new();
-                compact_message.insert("role".to_string(), serde_json::Value::String(role.to_string()));
+                compact_message.insert("role".to_string(), serde_json::json!(role));
 
-                if let Some(stop_reason) = event
-                    .get("message")
+                if let Some(stop_reason) = message
                     .and_then(|message| message.get("stopReason"))
                     .and_then(|value| value.as_str())
                 {
-                    compact_message.insert(
-                        "stopReason".to_string(),
-                        serde_json::Value::String(stop_reason.to_string()),
-                    );
+                    compact_message.insert("stopReason".to_string(), serde_json::json!(stop_reason));
                 }
 
-                if let Some(error_message) = event
-                    .get("message")
+                if let Some(error_message) = message
                     .and_then(|message| message.get("errorMessage"))
                     .and_then(|value| value.as_str())
                 {
-                    compact_message.insert(
-                        "errorMessage".to_string(),
-                        serde_json::Value::String(error_message.to_string()),
-                    );
+                    compact_message.insert("errorMessage".to_string(), serde_json::json!(error_message));
                 }
 
                 serde_json::json!({
