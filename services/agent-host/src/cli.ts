@@ -25,6 +25,11 @@ class LineWriter {
     while (this.queue.length > 0) {
       const next = this.queue[0]!;
       const ok = process.stdout.write(next);
+      // write() returning false means backpressure (buffer is full),
+      // not that the chunk was rejected. Remove the chunk immediately
+      // to avoid re-writing it on every "drain" and duplicating events.
+      this.queue.shift();
+
       if (!ok) {
         process.stdout.once("drain", () => {
           this.writing = false;
@@ -32,7 +37,6 @@ class LineWriter {
         });
         return;
       }
-      this.queue.shift();
     }
 
     this.writing = false;

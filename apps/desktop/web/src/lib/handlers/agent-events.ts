@@ -160,7 +160,7 @@ export function handleMessageEnd(
     const streamingId = runtime.messages.streamingMessageId;
     const hasStreamingMessage = !!streamingId && runtime.messages.messages.some((m) => m.id === streamingId);
 
-    if (hasStreamingMessage || resolvedContent.length > 0) {
+    if (resolvedContent.length > 0) {
       if (!hasStreamingMessage) {
         runtime.messages.createStreamingMessage();
       }
