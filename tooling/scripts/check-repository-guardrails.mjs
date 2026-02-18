@@ -40,7 +40,7 @@ const stalePatterns = [
   },
 ];
 
-const excludedPaths = [":!docs/plans/**", ":!docs/plan/**"];
+const excludedPaths = [":!docs/plans/**", ":!docs/plan/**", ":!tooling/scripts/check-repository-guardrails.mjs"];
 
 for (const { label, pattern } of stalePatterns) {
   try {
