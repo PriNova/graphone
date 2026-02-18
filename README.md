@@ -12,8 +12,8 @@ A unified cross-platform interface for the [pi-mono](https://github.com/badlogic
 
 Graphone provides a desktop interface for the pi-mono coding agent using Tauri's sidecar pattern:
 
-| Platform | Pattern | Mechanism |
-|----------|---------|-----------|
+| Platform    | Pattern | Mechanism                                                                    |
+| ----------- | ------- | ---------------------------------------------------------------------------- |
 | **Desktop** | Sidecar | Rust backend spawns Graphone host sidecar (`pi-agent`) as managed subprocess |
 
 ### Key Features
@@ -25,6 +25,7 @@ Graphone provides a desktop interface for the pi-mono coding agent using Tauri's
 - 📦 **Auto-Bundled Agent** - pi-mono binary is built automatically during Tauri build
 
 Contributor notes:
+
 - See `CONTRIBUTING.md` for repository workflow and staging guidance.
 - See `docs/plans/repository-restructure-roadmap-2026-02.md` for the repository maintenance refactor plan.
 
@@ -48,6 +49,7 @@ Graphone compiles `services/agent-host/dist/cli.js` to a standalone binary with 
 Runtime SDK assets are copied from the pinned npm dependency (`node_modules/@mariozechner/pi-coding-agent`).
 
 **Build Process:**
+
 1. Build host sidecar source (`services/agent-host`)
 2. Compile `dist/cli.js` using `bun build --compile`
 3. Copy binary + runtime assets to `src-tauri/binaries/`
@@ -66,10 +68,10 @@ Runtime SDK assets are copied from the pinned npm dependency (`node_modules/@mar
 
 ### Platform-Specific
 
-| Target | Requirements |
-|--------|--------------|
+| Target        | Requirements                                                                    |
+| ------------- | ------------------------------------------------------------------------------- |
 | Linux Desktop | `libgtk-3-dev`, `libwebkit2gtk-4.1-dev`, `libappindicator3-dev`, `clang`, `lld` |
-| Windows | `cargo-xwin`, `nsis`, `lld`, `llvm` for cross-compilation (from WSL2) |
+| Windows       | `cargo-xwin`, `nsis`, `lld`, `llvm` for cross-compilation (from WSL2)           |
 
 ### Build Configuration
 
@@ -93,6 +95,7 @@ linker = "lld"
 ```
 
 **Windows Cross-Compilation:**
+
 ```bash
 # Install NSIS (required for creating Windows installers on Linux)
 sudo apt install nsis lld llvm
@@ -123,6 +126,7 @@ bun --version  # Should show 1.0+
 ### 1. Clone and Setup
 
 **Repository Structure:**
+
 ```
 projects/
 └── graphone/         # This repository
@@ -139,6 +143,7 @@ npm install
 ### 2. Build Sidecar (Automatic)
 
 The sidecar is built automatically when you run Tauri commands. The build script (`src-tauri/build.rs`) handles:
+
 - Building Graphone host sidecar source (`services/agent-host`)
 - Compiling `dist/cli.js` with `bun build --compile`
 - Copying binary + runtime assets to the Tauri binaries directory
@@ -159,6 +164,7 @@ npm run tauri dev
 ### 4. Build for Production
 
 **Quick Build Commands:**
+
 ```bash
 # Linux only
 npm run build:linux
@@ -171,6 +177,7 @@ npm run build:all
 ```
 
 **Legacy commands (equivalent):**
+
 ```bash
 # Linux
 npm run tauri build
@@ -212,10 +219,12 @@ graphone/
 ```
 
 Frontend canonical paths:
+
 - `apps/desktop/web/src`
 - `apps/desktop/web/static`
 
 Canonical repo map (quick):
+
 - `apps/desktop/web` → Svelte frontend workspace
 - `src-tauri` → Rust/Tauri desktop shell
 - `services/agent-host` → bun-compiled host sidecar source
@@ -243,6 +252,7 @@ The sidecar binary is built automatically via `src-tauri/build.rs`:
 5. **Assets**: Copies runtime assets (`package.json`, docs/examples, theme, export-html, `photon_rs_bg.wasm`) from `@mariozechner/pi-coding-agent`
 
 **Environment Variables:**
+
 - `CARGO_MANIFEST_DIR`: Used to locate the project root
 - `TARGET`: Target triple for cross-compilation
 - `CARGO_CFG_TARGET_OS`: Used to detect mobile builds (skipped)
@@ -260,18 +270,19 @@ The sidecar binary is built automatically via `src-tauri/build.rs`:
 
 Convenience npm scripts for cross-platform builds:
 
-| Script | Platform | Description |
-|--------|----------|-------------|
-| `npm run dev:linux` | Linux | Run dev server (native) |
-| `npm run dev:windows` | Windows | Run dev server (cross-compile) |
-| `npm run build:linux` | Linux | Build AppImage/Deb packages |
-| `npm run build:windows` | Windows | Build NSIS installer (requires NSIS) |
-| `npm run build:windows:exe` | Windows | Build only .exe (no installer) |
-| `npm run build:windows:portable` | Windows | Build .exe + stage portable runtime folder (`src-tauri/target/x86_64-pc-windows-msvc/release/portable`) |
-| `npm run build:all` | Both | Build Linux + Windows packages |
-| `npm run run:windows` | Windows | Build (if needed), stage portable runtime, & launch Windows app from WSL2 |
+| Script                           | Platform | Description                                                                                             |
+| -------------------------------- | -------- | ------------------------------------------------------------------------------------------------------- |
+| `npm run dev:linux`              | Linux    | Run dev server (native)                                                                                 |
+| `npm run dev:windows`            | Windows  | Run dev server (cross-compile)                                                                          |
+| `npm run build:linux`            | Linux    | Build AppImage/Deb packages                                                                             |
+| `npm run build:windows`          | Windows  | Build NSIS installer (requires NSIS)                                                                    |
+| `npm run build:windows:exe`      | Windows  | Build only .exe (no installer)                                                                          |
+| `npm run build:windows:portable` | Windows  | Build .exe + stage portable runtime folder (`src-tauri/target/x86_64-pc-windows-msvc/release/portable`) |
+| `npm run build:all`              | Both     | Build Linux + Windows packages                                                                          |
+| `npm run run:windows`            | Windows  | Build (if needed), stage portable runtime, & launch Windows app from WSL2                               |
 
 **Examples:**
+
 ```bash
 # Quick development - Linux
 npm run dev:linux
@@ -328,6 +339,7 @@ linker = "lld"
 ```
 
 **Benefits:**
+
 - **lld linker**: 2-10x faster linking compared to default system linker
 - **Incremental compilation**: Faster rebuilds during development
 - **Thin LTO**: Better optimized release builds without full LTO overhead
@@ -385,6 +397,7 @@ npm run build:linux
 ### Binary not found during Tauri build
 
 Ensure the binary naming matches the target triple:
+
 - Linux: `pi-agent-x86_64-unknown-linux-gnu`
 - Windows: `pi-agent-x86_64-pc-windows-msvc.exe`
 
@@ -410,18 +423,21 @@ npm run build:windows
 **This error is expected if NSIS is not installed.** The good news is that the `.exe` file is still built successfully! Only the installer creation fails.
 
 **Quick Fix - Run without installer:**
+
 ```bash
 # The exe is already built! Just run it:
 npm run run:windows
 ```
 
 **To install NSIS (for creating Windows installers):**
+
 ```bash
 sudo apt install nsis
 npm run build:windows  # Now creates both exe and installer
 ```
 
-**Note:** 
+**Note:**
+
 - MSI installers can only be created on Windows (requires WiX)
 - NSIS installers (`-setup.exe`) can be created on Linux (requires `nsis` package)
 - The standalone `.exe` works fine without any installer
@@ -431,14 +447,16 @@ npm run build:windows  # Now creates both exe and installer
 
 **Most likely cause: Missing WebView2 Runtime**
 
-Tauri apps require Microsoft Edge WebView2 Runtime to be installed on Windows. 
+Tauri apps require Microsoft Edge WebView2 Runtime to be installed on Windows.
 
 **Check if WebView2 is installed:**
+
 1. Open PowerShell on Windows
 2. Run: `Get-ItemProperty -Path 'HKLM:\SOFTWARE\WOW6432Node\Microsoft\EdgeUpdate\Clients\{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}' -Name 'pv' -ErrorAction SilentlyContinue`
 3. If nothing is returned, WebView2 is not installed
 
 **Install WebView2:**
+
 - Download from: https://developer.microsoft.com/en-us/microsoft-edge/webview2/
 - Or use the Evergreen Bootstrapper (recommended)
 
@@ -449,17 +467,20 @@ Tauri apps require Microsoft Edge WebView2 Runtime to be installed on Windows.
 The error occurred because the Windows executable needs an [application manifest](https://learn.microsoft.com/en-us/windows/win32/sbscs/application-manifests) to enable Common Controls version 6+, which provides the `TaskDialogIndirect` API used by Tauri.
 
 **Solution Applied:**
+
 - Added `src-tauri/windows-app.manifest` with Common Controls v6 dependency
 - Updated `build.rs` to use Tauri's native `WindowsAttributes.app_manifest()` API
 - The manifest is now properly embedded during cross-compilation
 
 **If you still encounter issues:**
+
 - **Antivirus/Windows Defender**: The app might be blocked. Check Windows Defender history.
 - **Missing sidecar**: Ensure `pi-agent-x86_64-pc-windows-msvc.exe` is in the same folder as `graphone.exe`
 - **Run from CMD**: Open Command Prompt and run the exe to see detailed error messages
 
 **Launch issues from WSL2:**
 If you get "Windows cannot find..." errors when running `npm run run:windows`:
+
 1. Manually navigate to `C:\Windows\Temp\graphone\` in Windows Explorer
 2. Double-click `graphone.exe` to run it
 3. Or open PowerShell and run: `C:\Windows\Temp\graphone\graphone.exe`
@@ -468,12 +489,12 @@ If you get "Windows cannot find..." errors when running `npm run run:windows`:
 
 ## Documentation
 
-| Document | Description |
-|----------|-------------|
-| [`docs/specs/project-specs.md`](docs/specs/project-specs.md) | Original project specification |
+| Document                                                                                   | Description                                |
+| ------------------------------------------------------------------------------------------ | ------------------------------------------ |
+| [`docs/specs/project-specs.md`](docs/specs/project-specs.md)                               | Original project specification             |
 | [`docs/specs/repository-structure-2026-02.md`](docs/specs/repository-structure-2026-02.md) | Current repository architecture and naming |
-| [`docs/specs/wsl2-development-notes.md`](docs/specs/wsl2-development-notes.md) | WSL2 development environment guide |
-| [`docs/tasks/scaffolding-tasks.md`](docs/tasks/scaffolding-tasks.md) | Setup tasks and checklist |
+| [`docs/specs/wsl2-development-notes.md`](docs/specs/wsl2-development-notes.md)             | WSL2 development environment guide         |
+| [`docs/tasks/scaffolding-tasks.md`](docs/tasks/scaffolding-tasks.md)                       | Setup tasks and checklist                  |
 
 ### External References
 
@@ -489,6 +510,7 @@ If you get "Windows cannot find..." errors when running `npm run run:windows`:
 Graphone builds and ships a local host sidecar from `services/agent-host`.
 
 To develop sidecar behavior:
+
 1. Edit `services/agent-host/src/*`
 2. Test with `node tooling/scripts/verify-path-b-host.mjs`
 3. Build with `npm run build:linux` (or `cargo build --manifest-path src-tauri/Cargo.toml`)

@@ -1,6 +1,7 @@
 # Contributing Guide
 
 Roadmap document:
+
 - `docs/plans/repository-restructure-roadmap-2026-02.md`
 
 ---

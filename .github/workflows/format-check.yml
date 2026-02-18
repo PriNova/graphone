@@ -24,8 +24,8 @@ jobs:
       - name: Install npm dependencies
         run: npm ci
 
-      - name: Check Prettier formatting (Svelte & TypeScript)
-        run: npx prettier --check 'apps/desktop/web/src/**/*.svelte' 'apps/desktop/web/src/**/*.ts' 'services/agent-host/src/**/*.ts'
+      - name: Check Prettier formatting (Svelte, TypeScript & Markdown)
+        run: npx prettier --check 'apps/desktop/web/src/**/*.svelte' 'apps/desktop/web/src/**/*.ts' 'services/agent-host/src/**/*.ts' '*.md' 'docs/**/*.md'
 
       - name: Install Rust (stable)
         uses: dtolnay/rust-toolchain@stable
