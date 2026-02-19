@@ -134,6 +134,16 @@ export async function handleHostCommand(
         );
       }
 
+      case "set_thinking_level": {
+        const sessionId = requireSessionId(command);
+        const level = requireNonEmptyString(command.level, "level");
+        return success(
+          requestId,
+          "set_thinking_level",
+          runtime.setThinkingLevel(sessionId, level),
+        );
+      }
+
       case "get_available_models": {
         return success(
           requestId,

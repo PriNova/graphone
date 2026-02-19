@@ -12,6 +12,7 @@ export type HostCommandType =
   | "set_model"
   | "cycle_model"
   | "get_available_models"
+  | "set_thinking_level"
   | "shutdown"
   | "ping";
 
@@ -46,11 +47,17 @@ export interface SetModelCommand extends HostCommandBase {
   modelId: string;
 }
 
+export interface SetThinkingLevelCommand extends HostCommandBase {
+  type: "set_thinking_level";
+  level: string;
+}
+
 export type HostCommand =
   | CreateSessionCommand
   | PromptCommand
   | SessionMessageCommand
   | SetModelCommand
+  | SetThinkingLevelCommand
   | (HostCommandBase & {
       type:
         | "close_session"

@@ -862,6 +862,7 @@ async fn wait_for_sidecar_ready(
             model_id: None,
             streaming_behavior: None,
             session_file: None,
+            level: None,
         };
 
         match send_command_with_response(state, cmd, timeout_secs).await {
@@ -988,6 +989,7 @@ async fn create_session_internal(
             model_id: model.clone(),
             streaming_behavior: None,
             session_file: session_file.clone(),
+            level: None,
         };
 
         match send_command_with_response(state, command, CREATE_SESSION_TIMEOUT_SECS).await {
@@ -1055,6 +1057,7 @@ pub async fn close_agent(
         model_id: None,
         streaming_behavior: None,
         session_file: None,
+        level: None,
     };
 
     let response = send_command_with_response(state.inner(), command, 5).await?;
@@ -1099,6 +1102,7 @@ pub async fn list_agents(
         model_id: None,
         streaming_behavior: None,
         session_file: None,
+        level: None,
     };
 
     let response = send_command_with_response(state.inner(), command, 5).await?;
@@ -1128,6 +1132,7 @@ pub async fn send_prompt(
         model_id: None,
         streaming_behavior: None,
         session_file: None,
+        level: None,
     };
 
     RpcClient::send_command(state.inner(), cmd).await
@@ -1151,6 +1156,7 @@ pub async fn abort_agent(
         model_id: None,
         streaming_behavior: None,
         session_file: None,
+        level: None,
     };
 
     RpcClient::send_command(state.inner(), cmd).await
@@ -1174,6 +1180,7 @@ pub async fn new_session(
         model_id: None,
         streaming_behavior: None,
         session_file: None,
+        level: None,
     };
 
     send_command_with_response(state.inner(), cmd, 5).await
@@ -1197,6 +1204,7 @@ pub async fn get_messages(
         model_id: None,
         streaming_behavior: None,
         session_file: None,
+        level: None,
     };
 
     send_command_with_response(state.inner(), cmd, 5).await
@@ -1220,6 +1228,7 @@ pub async fn get_state(
         model_id: None,
         streaming_behavior: None,
         session_file: None,
+        level: None,
     };
 
     send_command_with_response(state.inner(), cmd, 5).await
@@ -1243,6 +1252,7 @@ pub async fn get_available_models(
         model_id: None,
         streaming_behavior: None,
         session_file: None,
+        level: None,
     };
 
     let mut response = send_command_with_response(state.inner(), cmd, 5).await?;
@@ -1299,6 +1309,32 @@ pub async fn set_model(
         model_id: Some(model_id),
         streaming_behavior: None,
         session_file: None,
+        level: None,
+    };
+
+    send_command_with_response(state.inner(), cmd, 5).await
+}
+
+/// Set thinking level for the active session model.
+#[tauri::command]
+pub async fn set_thinking_level(
+    state: State<'_, Arc<Mutex<SidecarState>>>,
+    level: String,
+    session_id: String,
+) -> Result<RpcResponse, String> {
+    let session_id = require_session_id(session_id, "set_thinking_level")?;
+
+    let cmd = RpcCommand {
+        id: Some(crypto_random_uuid()),
+        r#type: "set_thinking_level".to_string(),
+        session_id: Some(session_id),
+        cwd: None,
+        message: None,
+        provider: None,
+        model_id: None,
+        streaming_behavior: None,
+        session_file: None,
+        level: Some(level),
     };
 
     send_command_with_response(state.inner(), cmd, 5).await
@@ -1322,6 +1358,7 @@ pub async fn cycle_model(
         model_id: None,
         streaming_behavior: None,
         session_file: None,
+        level: None,
     };
 
     send_command_with_response(state.inner(), cmd, 5).await

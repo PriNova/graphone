@@ -7,7 +7,8 @@
     getCommandHandler,
   } from "$lib/slash-commands";
   import ModelSelector from "./ModelSelector.svelte";
-  import type { AvailableModel } from "$lib/stores/agent.svelte";
+  import ThinkingSelector from "./ThinkingSelector.svelte";
+  import type { AvailableModel, ThinkingLevel } from "$lib/stores/agent.svelte";
   import type { EnabledModelsStore } from "$lib/stores/enabledModels.svelte";
 
   interface Props {
@@ -22,15 +23,20 @@
     ) => void | Promise<void>;
     onnewchat?: () => void | Promise<void>;
     onmodelchange?: (provider: string, modelId: string) => void | Promise<void>;
+    onthinkingchange?: (level: ThinkingLevel) => void | Promise<void>;
     placeholder?: string;
     disabled?: boolean;
     autofocus?: boolean;
     isLoading?: boolean;
     model?: string;
     provider?: string;
+    thinkingLevel?: ThinkingLevel;
+    supportsThinking?: boolean;
+    availableThinkingLevels?: ThinkingLevel[];
     models?: AvailableModel[];
     modelsLoading?: boolean;
     modelChanging?: boolean;
+    thinkingChanging?: boolean;
     enabledModels?: EnabledModelsStore;
     cwd?: string | null;
     cwdLoading?: boolean;
@@ -45,15 +51,20 @@
     onslashcommand,
     onnewchat,
     onmodelchange,
+    onthinkingchange,
     placeholder = "Ask anything...",
     disabled = false,
     autofocus = false,
     isLoading = false,
     model = "",
     provider = "",
+    thinkingLevel = "off",
+    supportsThinking = false,
+    availableThinkingLevels = ["off"],
     models = [],
     modelsLoading = false,
     modelChanging = false,
+    thinkingChanging = false,
     enabledModels,
     cwd = null,
     cwdLoading = false,
@@ -74,6 +85,9 @@
   const canStartNewChat = $derived(!disabled && !isLoading && chatHasMessages);
   const modelSelectorDisabled = $derived(
     disabled || isLoading || modelChanging,
+  );
+  const thinkingSelectorDisabled = $derived(
+    disabled || isLoading || modelChanging || thinkingChanging,
   );
 
   // Slash command detection
@@ -434,6 +448,14 @@
         disabled={modelSelectorDisabled}
         {enabledModels}
         onchange={onmodelchange}
+      />
+      <ThinkingSelector
+        level={thinkingLevel}
+        {supportsThinking}
+        availableLevels={availableThinkingLevels}
+        changing={thinkingChanging}
+        disabled={thinkingSelectorDisabled}
+        onchange={onthinkingchange}
       />
     </span>
   </div>

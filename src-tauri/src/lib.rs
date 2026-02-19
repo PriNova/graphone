@@ -39,6 +39,7 @@ pub fn run() {
             commands::get_state,
             commands::get_available_models,
             commands::set_model,
+            commands::set_thinking_level,
             commands::cycle_model,
             commands::get_enabled_models,
             commands::set_enabled_models,

@@ -6,6 +6,23 @@ export interface AvailableModel {
   name: string;
 }
 
+export type ThinkingLevel =
+  | "off"
+  | "minimal"
+  | "low"
+  | "medium"
+  | "high"
+  | "xhigh";
+
+const VALID_THINKING_LEVELS = new Set<ThinkingLevel>([
+  "off",
+  "minimal",
+  "low",
+  "medium",
+  "high",
+  "xhigh",
+]);
+
 // Agent session state (session-scoped)
 export class AgentStore {
   readonly sessionId: string;
@@ -17,7 +34,11 @@ export class AgentStore {
   error = $state<string | null>(null);
   currentModel = $state("");
   currentProvider = $state("");
+  currentThinkingLevel = $state<ThinkingLevel>("off");
+  supportsThinking = $state(false);
+  availableThinkingLevels = $state<ThinkingLevel[]>(["off"]);
   availableModels = $state<AvailableModel[]>([]);
+  isSettingThinking = $state(false);
 
   constructor(sessionId: string) {
     this.sessionId = sessionId;
@@ -36,7 +57,12 @@ export class AgentStore {
     const response = await invoke<
       | {
           success: true;
-          data: { model?: { id?: unknown; provider?: unknown } };
+          data: {
+            model?: { id?: unknown; provider?: unknown };
+            thinkingLevel?: unknown;
+            supportsThinking?: unknown;
+            availableThinkingLevels?: unknown;
+          };
         }
       | { success: false; error: string }
     >("get_state", { sessionId: this.sessionId });
@@ -51,6 +77,25 @@ export class AgentStore {
       this.currentModel = typeof model?.id === "string" ? model.id : "";
       this.currentProvider =
         typeof model?.provider === "string" ? model.provider : "";
+
+      this.currentThinkingLevel = this.parseThinkingLevel(
+        response.data?.thinkingLevel,
+      );
+      this.supportsThinking = Boolean(response.data?.supportsThinking);
+
+      const availableThinkingLevels = response.data?.availableThinkingLevels;
+      if (Array.isArray(availableThinkingLevels)) {
+        const parsed = availableThinkingLevels
+          .map((level) => this.parseThinkingLevel(level))
+          .filter(
+            (level, index, all): level is ThinkingLevel =>
+              VALID_THINKING_LEVELS.has(level) && all.indexOf(level) === index,
+          );
+
+        this.availableThinkingLevels = parsed.length > 0 ? parsed : ["off"];
+      } else {
+        this.availableThinkingLevels = ["off"];
+      }
 
       if (this.availableModels.length > 0) {
         this.availableModels = this.sortAvailableModels(this.availableModels);
@@ -123,6 +168,50 @@ export class AgentStore {
       this.availableModels = this.sortAvailableModels(this.availableModels);
     } finally {
       this.isSettingModel = false;
+    }
+  }
+
+  async setThinkingLevel(level: ThinkingLevel): Promise<void> {
+    if (!this.sessionStarted) {
+      throw new Error("Agent session not started");
+    }
+
+    if (
+      !this.supportsThinking ||
+      !this.availableThinkingLevels.includes(level)
+    ) {
+      return;
+    }
+
+    if (level === this.currentThinkingLevel) {
+      return;
+    }
+
+    this.isSettingThinking = true;
+
+    try {
+      const response = await invoke<
+        { success: true; data?: unknown } | { success: false; error: string }
+      >("set_thinking_level", { level, sessionId: this.sessionId });
+
+      if (
+        !(
+          response &&
+          typeof response === "object" &&
+          "success" in response &&
+          response.success
+        )
+      ) {
+        const error =
+          response && typeof response === "object" && "error" in response
+            ? response.error
+            : "Failed to set thinking level";
+        throw new Error(error);
+      }
+
+      await this.refreshState();
+    } finally {
+      this.isSettingThinking = false;
     }
   }
 
@@ -216,6 +305,15 @@ export class AgentStore {
         } satisfies AvailableModel;
       })
       .filter((model): model is AvailableModel => model !== null);
+  }
+
+  private parseThinkingLevel(level: unknown): ThinkingLevel {
+    if (typeof level !== "string") {
+      return "off";
+    }
+
+    const normalized = level.toLowerCase() as ThinkingLevel;
+    return VALID_THINKING_LEVELS.has(normalized) ? normalized : "off";
   }
 
   private sortAvailableModels(models: AvailableModel[]): AvailableModel[] {

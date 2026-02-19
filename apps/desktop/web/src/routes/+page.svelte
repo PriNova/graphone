@@ -11,7 +11,10 @@
     handlePromptSubmit,
     handleSlashCommand,
   } from "$lib/handlers/commands";
-  import { createAgentStore } from "$lib/stores/agent.svelte";
+  import {
+    createAgentStore,
+    type ThinkingLevel,
+  } from "$lib/stores/agent.svelte";
   import { cwdStore } from "$lib/stores/cwd.svelte";
   import { createEnabledModelsStore } from "$lib/stores/enabledModels.svelte";
   import { createMessagesStore } from "$lib/stores/messages.svelte";
@@ -159,6 +162,17 @@
   const currentProvider = $derived(
     activeRuntime ? activeRuntime.agent.currentProvider : "",
   );
+  const currentThinkingLevel = $derived(
+    activeRuntime ? activeRuntime.agent.currentThinkingLevel : "off",
+  );
+  const supportsThinking = $derived(
+    activeRuntime ? activeRuntime.agent.supportsThinking : false,
+  );
+  const availableThinkingLevels = $derived(
+    activeRuntime
+      ? activeRuntime.agent.availableThinkingLevels
+      : (["off"] as ThinkingLevel[]),
+  );
   const availableModels = $derived(
     activeRuntime ? activeRuntime.agent.availableModels : [],
   );
@@ -167,6 +181,9 @@
   );
   const isSettingModel = $derived(
     activeRuntime ? activeRuntime.agent.isSettingModel : false,
+  );
+  const isSettingThinking = $derived(
+    activeRuntime ? activeRuntime.agent.isSettingThinking : false,
   );
   const isStreaming = $derived(
     activeRuntime ? activeRuntime.messages.streamingMessageId !== null : false,
@@ -524,6 +541,18 @@
     }
   }
 
+  async function onThinkingChange(level: ThinkingLevel): Promise<void> {
+    if (!activeRuntime) return;
+
+    try {
+      await activeRuntime.agent.setThinkingLevel(level);
+    } catch (error) {
+      activeRuntime.messages.addErrorMessage(
+        error instanceof Error ? error.message : String(error),
+      );
+    }
+  }
+
   async function onSlashCommand(
     command: string,
     args: string,
@@ -780,6 +809,7 @@
           onslashcommand={onSlashCommand}
           onnewchat={onNewChat}
           onmodelchange={onModelChange}
+          onthinkingchange={onThinkingChange}
           {isLoading}
           disabled={!activeRuntime || !sessionStarted}
           placeholder={activeRuntime && sessionStarted
@@ -787,9 +817,13 @@
             : "Create a session to begin..."}
           model={currentModel}
           provider={currentProvider}
+          thinkingLevel={currentThinkingLevel}
+          {supportsThinking}
+          {availableThinkingLevels}
           models={availableModels}
           modelsLoading={isModelsLoading}
           modelChanging={isSettingModel}
+          thinkingChanging={isSettingThinking}
           enabledModels={activeRuntime?.enabledModels}
           autofocus={true}
           cwd={activeProjectDir}

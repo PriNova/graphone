@@ -2,6 +2,8 @@ import { existsSync, statSync } from "node:fs";
 import { resolve } from "node:path";
 import { randomUUID } from "node:crypto";
 
+import type { ThinkingLevel } from "@mariozechner/pi-agent-core";
+
 import {
   AuthStorage,
   createAgentSession,
@@ -12,6 +14,15 @@ import {
 
 import type { HostedSession } from "./session-runtime.js";
 import type { HostedSessionInfo, SessionEventEnvelope } from "./protocol.js";
+
+const THINKING_LEVELS = new Set<ThinkingLevel>([
+  "off",
+  "minimal",
+  "low",
+  "medium",
+  "high",
+  "xhigh",
+]);
 
 export class HostRuntime {
   private readonly sessions = new Map<string, HostedSession>();
@@ -165,6 +176,8 @@ export class HostRuntime {
   getState(sessionId: string): {
     model?: unknown;
     thinkingLevel: string;
+    supportsThinking: boolean;
+    availableThinkingLevels: ThinkingLevel[];
     isStreaming: boolean;
     isCompacting: boolean;
     steeringMode: "all" | "one-at-a-time";
@@ -180,6 +193,8 @@ export class HostRuntime {
     return {
       model: session.model,
       thinkingLevel: session.thinkingLevel,
+      supportsThinking: session.supportsThinking(),
+      availableThinkingLevels: session.getAvailableThinkingLevels(),
       isStreaming: session.isStreaming,
       isCompacting: session.isCompacting,
       steeringMode: session.steeringMode,
@@ -215,6 +230,32 @@ export class HostRuntime {
   async cycleModel(sessionId: string): Promise<unknown | null> {
     const session = this.requireSession(sessionId, "cycle_model");
     return (await session.cycleModel()) ?? null;
+  }
+
+  setThinkingLevel(
+    sessionId: string,
+    level: string,
+  ): {
+    level: ThinkingLevel;
+    supportsThinking: boolean;
+    availableThinkingLevels: ThinkingLevel[];
+  } {
+    const session = this.requireSession(sessionId, "set_thinking_level");
+    const normalized = level.trim().toLowerCase();
+
+    if (!THINKING_LEVELS.has(normalized as ThinkingLevel)) {
+      throw new Error(
+        `Invalid thinking level: ${level}. Valid levels: off, minimal, low, medium, high, xhigh`,
+      );
+    }
+
+    session.setThinkingLevel(normalized as ThinkingLevel);
+
+    return {
+      level: session.thinkingLevel,
+      supportsThinking: session.supportsThinking(),
+      availableThinkingLevels: session.getAvailableThinkingLevels(),
+    };
   }
 
   async getAvailableModels(): Promise<{
