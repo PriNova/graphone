@@ -276,7 +276,7 @@
         commandHandler === "unimplemented" &&
         "border-warning/50",
       isSlashCommand && !isKnownCommand && "border-destructive/50",
-      isLoading && "animate-pulse",
+      isLoading && "bg-primary/5 border-primary/30 animate-pulse-slow",
     )}
   >
     <textarea

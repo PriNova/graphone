@@ -131,66 +131,63 @@ export class MessagesStore {
   }
 
   // Update streaming message content
+  // Performance: Direct property mutation instead of array recreation.
+  // This leverages Svelte 5's fine-grained reactivity to only re-render
+  // the affected message component, not the entire message list.
   updateStreamingMessage(content: ContentBlock[]): void {
     const targetId = this.streamingMessageId;
     if (!targetId) return;
 
-    this.messages = this.messages.map((m) =>
-      m.id === targetId && m.type === "assistant" ? { ...m, content } : m,
+    const message = this.messages.find(
+      (m) => m.id === targetId && m.type === "assistant",
     );
+    if (message) {
+      message.content = content;
+    }
   }
 
   // Finalize streaming message
+  // Performance: Direct property mutation instead of array recreation.
   finalizeStreamingMessage(): void {
     const targetId = this.streamingMessageId;
     if (!targetId) return;
 
-    this.messages = this.messages.map((m) =>
-      m.id === targetId && m.type === "assistant" && m.isStreaming
-        ? { ...m, isStreaming: false }
-        : m,
+    const message = this.messages.find(
+      (m): m is Extract<Message, { type: "assistant" }> =>
+        m.id === targetId && m.type === "assistant" && "isStreaming" in m,
     );
+    if (message) {
+      message.isStreaming = false;
+    }
     this.streamingMessageId = null;
   }
 
   // Update a tool call with its result.
   // We resolve by toolCallId (not by current streaming message) because tool_execution_end
   // is emitted after assistant message_end in pi-agent-core.
+  // Performance: Direct property mutation instead of array recreation.
   updateToolCallResult(
     toolCallId: string,
     result: string,
     isError: boolean,
   ): void {
-    let updated = false;
-
     // Prefer most recent assistant message first.
     for (let i = this.messages.length - 1; i >= 0; i--) {
       const message = this.messages[i];
       if (!message || message.type !== "assistant") continue;
 
-      let messageChanged = false;
-      const updatedContent = message.content.map((block) => {
-        if (block.type === "toolCall" && block.id === toolCallId) {
-          messageChanged = true;
-          updated = true;
-          return { ...block, result, isError };
-        }
-        return block;
-      });
-
-      if (messageChanged) {
-        this.messages = this.messages.map((m, idx) =>
-          idx === i && m.type === "assistant"
-            ? { ...m, content: updatedContent }
-            : m,
-        );
-        break;
+      // Find the tool call block and mutate directly
+      const block = message.content.find(
+        (b) => b.type === "toolCall" && b.id === toolCallId,
+      );
+      if (block && block.type === "toolCall") {
+        block.result = result;
+        block.isError = isError;
+        return;
       }
     }
 
-    if (!updated) {
-      console.warn("Tool result received for unknown toolCallId:", toolCallId);
-    }
+    console.warn("Tool result received for unknown toolCallId:", toolCallId);
   }
 
   // Add error message

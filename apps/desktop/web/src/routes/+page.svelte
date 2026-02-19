@@ -102,6 +102,20 @@
     activeRuntime?.messages.scrollToBottom(messagesContainerRef, smooth);
   }
 
+  // Performance: Debounced scroll using RAF throttling.
+  // Prevents multiple scroll operations per animation frame during
+  // high-frequency streaming events (text_delta, thinking_delta).
+  let scrollRaf: number | null = null;
+
+  function scheduleScrollToBottom(): void {
+    if (scrollRaf === null) {
+      scrollRaf = requestAnimationFrame(() => {
+        scrollToBottom(true);
+        scrollRaf = null;
+      });
+    }
+  }
+
   function scheduleSessionSidebarRefresh(delayMs = 450): void {
     if (sessionSidebarRefreshTimer) {
       clearTimeout(sessionSidebarRefreshTimer);
@@ -461,7 +475,7 @@
           }
 
           if (sessionsStore.activeSessionId === wrapped.sessionId) {
-            requestAnimationFrame(() => scrollToBottom(true));
+            scheduleScrollToBottom();
           }
         }
       } catch (e) {
@@ -489,6 +503,11 @@
     if (sessionSidebarRefreshTimer) {
       clearTimeout(sessionSidebarRefreshTimer);
       sessionSidebarRefreshTimer = null;
+    }
+
+    if (scrollRaf !== null) {
+      cancelAnimationFrame(scrollRaf);
+      scrollRaf = null;
     }
   });
 </script>
@@ -566,17 +585,12 @@
           {/each}
 
           {#if isLoading && !isStreaming}
+            <!-- Slow pulse indicator - 4s animation for CPU efficiency -->
             <div class="flex justify-start animate-fade-in">
-              <div class="flex gap-1 py-2">
-                <span
-                  class="w-2 h-2 bg-muted-foreground rounded-full animate-bounce [animation-delay:-0.32s]"
-                ></span>
-                <span
-                  class="w-2 h-2 bg-muted-foreground rounded-full animate-bounce [animation-delay:-0.16s]"
-                ></span>
-                <span
-                  class="w-2 h-2 bg-muted-foreground rounded-full animate-bounce"
-                ></span>
+              <div class="flex items-center gap-1.5 py-2 animate-pulse-slow">
+                <span class="w-2 h-2 bg-muted-foreground rounded-full"></span>
+                <span class="w-2 h-2 bg-muted-foreground rounded-full"></span>
+                <span class="w-2 h-2 bg-muted-foreground rounded-full"></span>
               </div>
             </div>
           {/if}

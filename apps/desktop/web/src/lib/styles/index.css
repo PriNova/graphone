@@ -52,8 +52,8 @@
   /* Animations */
   --animate-spin: spin 1s linear infinite;
   --animate-pulse: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+  --animate-pulse-slow: pulse 4s cubic-bezier(0.4, 0, 0.6, 1) infinite;
   --animate-fade-in: fadeIn 0.3s ease-out;
-  --animate-bounce: bounce 1.4s ease-in-out infinite;
 
   @keyframes spin {
     from { transform: rotate(0deg); }
@@ -73,17 +73,6 @@
     to {
       opacity: 1;
       transform: translateY(0);
-    }
-  }
-
-  @keyframes bounce {
-    0%, 80%, 100% {
-      transform: scale(0);
-      opacity: 0.5;
-    }
-    40% {
-      transform: scale(1);
-      opacity: 1;
     }
   }
 }

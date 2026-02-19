@@ -101,7 +101,7 @@
     return `${normalized.slice(0, max - 1)}…`;
   }
 
-  function getToolCallSummary(block: ToolCall): string | null {
+  function computeToolCallSummary(block: ToolCall): string | null {
     const args = block.arguments ?? {};
 
     const arg = (key: string) => stringifyToolArg(args[key]);
@@ -173,6 +173,43 @@
   function isTextBlock(block: ContentBlock): block is TextBlock {
     return block.type === "text";
   }
+
+  // Performance: Memoize computed values to avoid recalculating on every render.
+  // These $derived values only recalculate when the content array changes,
+  // not when parent components re-render or unrelated state changes.
+  type TruncatedResult = ReturnType<typeof truncateResult>;
+
+  // Cache truncated results by toolCallId
+  const truncatedResults = $derived.by(() => {
+    const cache = new Map<string, TruncatedResult>();
+    for (const block of content) {
+      if (block.type === "toolCall" && block.result !== undefined) {
+        cache.set(block.id, truncateResult(block.result));
+      }
+    }
+    return cache;
+  });
+
+  // Cache tool call summaries by toolCallId
+  const toolCallSummaries = $derived.by(() => {
+    const cache = new Map<string, string | null>();
+    for (const block of content) {
+      if (block.type === "toolCall") {
+        cache.set(block.id, computeToolCallSummary(block));
+      }
+    }
+    return cache;
+  });
+
+  // Helper functions to access cached values
+  function getTruncatedResult(block: ToolCall): TruncatedResult | null {
+    if (block.result === undefined) return null;
+    return truncatedResults.get(block.id) ?? null;
+  }
+
+  function getToolCallSummary(block: ToolCall): string | null {
+    return toolCallSummaries.get(block.id) ?? null;
+  }
 </script>
 
 <div class={cn("flex w-full animate-fade-in justify-start")}>
@@ -226,7 +263,7 @@
         </div>
       {:else if isToolCall(block)}
         {@const hasResult = block.result !== undefined}
-        {@const truncated = hasResult ? truncateResult(block.result!) : null}
+        {@const truncated = getTruncatedResult(block)}
         {@const callSummary = getToolCallSummary(block)}
         <div
           class={cn(

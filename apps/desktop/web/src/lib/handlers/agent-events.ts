@@ -63,91 +63,107 @@ export function handleMessageStart(
   }
 }
 
-function upsertContentBlockAtIndex(
-  content: ContentBlock[],
-  index: number,
-  block: ContentBlock,
-): ContentBlock[] {
-  const next = content.slice();
+// Performance: Mutate content blocks in-place instead of creating new arrays.
+// For delta events (text_delta, thinking_delta), this avoids O(n) array copies
+// on every character chunk during streaming.
 
-  // If we get an out-of-order index, keep array shape stable.
-  while (next.length <= index) {
-    next.push({ type: "text", text: "" });
+/**
+ * Ensure the content array has enough slots for the given index.
+ * Mutates the array in-place.
+ */
+function ensureContentIndex(content: ContentBlock[], index: number): void {
+  while (content.length <= index) {
+    content.push({ type: "text", text: "" });
   }
-
-  next[index] = block;
-  return next;
 }
 
+/**
+ * Apply a message delta to the content array.
+ * Mutates the content array in-place for optimal performance.
+ * Returns true if content was modified, false otherwise.
+ */
 function applyAssistantMessageDelta(
-  current: ContentBlock[],
+  content: ContentBlock[],
   assistantEvent: Extract<
     AgentEvent,
     { type: "message_update" }
   >["assistantMessageEvent"],
-): ContentBlock[] {
+): boolean {
   const index = assistantEvent.contentIndex;
   if (typeof index !== "number") {
-    return current;
+    return false;
   }
 
   switch (assistantEvent.type) {
     case "text_start":
-      return upsertContentBlockAtIndex(current, index, {
-        type: "text",
-        text: "",
-      });
+      ensureContentIndex(content, index);
+      content[index] = { type: "text", text: "" };
+      return true;
 
     case "text_delta": {
-      const existing = current[index];
-      const existingText = existing?.type === "text" ? existing.text : "";
-      return upsertContentBlockAtIndex(current, index, {
+      ensureContentIndex(content, index);
+      const block = content[index];
+      if (block?.type === "text") {
+        // Direct mutation - no new object
+        block.text += assistantEvent.delta ?? "";
+        return true;
+      }
+      // Fallback: create new block if not text
+      content[index] = {
         type: "text",
-        text: existingText + (assistantEvent.delta ?? ""),
-      });
+        text: assistantEvent.delta ?? "",
+      };
+      return true;
     }
 
     case "text_end": {
-      return upsertContentBlockAtIndex(current, index, {
-        type: "text",
-        text: assistantEvent.content ?? "",
-      });
+      ensureContentIndex(content, index);
+      content[index] = { type: "text", text: assistantEvent.content ?? "" };
+      return true;
     }
 
     case "thinking_start":
-      return upsertContentBlockAtIndex(current, index, {
-        type: "thinking",
-        thinking: "",
-      });
+      ensureContentIndex(content, index);
+      content[index] = { type: "thinking", thinking: "" };
+      return true;
 
     case "thinking_delta": {
-      const existing = current[index];
-      const existingThinking =
-        existing?.type === "thinking" ? existing.thinking : "";
-      return upsertContentBlockAtIndex(current, index, {
+      ensureContentIndex(content, index);
+      const block = content[index];
+      if (block?.type === "thinking") {
+        // Direct mutation - no new object
+        block.thinking += assistantEvent.delta ?? "";
+        return true;
+      }
+      // Fallback: create new block if not thinking
+      content[index] = {
         type: "thinking",
-        thinking: existingThinking + (assistantEvent.delta ?? ""),
-      });
+        thinking: assistantEvent.delta ?? "",
+      };
+      return true;
     }
 
     case "thinking_end": {
-      return upsertContentBlockAtIndex(current, index, {
+      ensureContentIndex(content, index);
+      content[index] = {
         type: "thinking",
         thinking: assistantEvent.content ?? assistantEvent.thinking ?? "",
-      });
+      };
+      return true;
     }
 
     case "toolcall_end": {
       if (!assistantEvent.toolCall) {
-        return current;
+        return false;
       }
-
-      return upsertContentBlockAtIndex(current, index, assistantEvent.toolCall);
+      ensureContentIndex(content, index);
+      content[index] = assistantEvent.toolCall;
+      return true;
     }
 
     // For toolcall_start/toolcall_delta we wait for toolcall_end (full object).
     default:
-      return current;
+      return false;
   }
 }
 
@@ -162,29 +178,22 @@ export function handleMessageUpdate(
     !!streamingId &&
     runtime.messages.messages.some((m) => m.id === streamingId);
 
-  const currentMessage = streamingId
-    ? runtime.messages.messages.find((m) => m.id === streamingId)
-    : undefined;
-  const currentContent =
-    currentMessage?.type === "assistant" ? currentMessage.content : [];
-
-  const nextContent = applyAssistantMessageDelta(
-    currentContent,
-    event.assistantMessageEvent,
-  );
-
-  // If the delta doesn't change visible content, don't create/update anything.
-  if (!hasStreamingMessage && nextContent === currentContent) {
-    return;
-  }
-
+  // Create streaming message if needed - must happen before we get the content
   if (!hasStreamingMessage) {
     runtime.messages.createStreamingMessage();
   }
 
-  if (nextContent !== currentContent) {
-    runtime.messages.updateStreamingMessage(nextContent);
-  }
+  // Get the streaming message's content array for in-place mutation
+  const currentMessage = runtime.messages.messages.find(
+    (m) => m.id === runtime.messages.streamingMessageId,
+  );
+  const currentContent =
+    currentMessage?.type === "assistant" ? currentMessage.content : [];
+
+  // Apply delta with in-place mutation
+  // Svelte 5's fine-grained reactivity will detect mutations to the content
+  // array and its elements, triggering only the affected component to re-render
+  applyAssistantMessageDelta(currentContent, event.assistantMessageEvent);
 }
 
 export function handleMessageEnd(
