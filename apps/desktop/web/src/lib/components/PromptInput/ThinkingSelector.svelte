@@ -1,6 +1,6 @@
 <script lang="ts">
-  import { cn } from "$lib/utils/cn";
   import type { ThinkingLevel } from "$lib/stores/agent.svelte";
+  import DropdownSelect from "./DropdownSelect.svelte";
 
   const ORDERED_LEVELS: ThinkingLevel[] = [
     "off",
@@ -54,15 +54,21 @@
       normalizedAvailableLevels.length <= 1,
   );
 
-  async function handleChange(event: Event): Promise<void> {
-    const target = event.target as HTMLSelectElement;
-    const nextLevel = target.value as ThinkingLevel;
+  const options = $derived<Array<{ key: string; label: string }>>(
+    normalizedAvailableLevels.map((availableLevel) => ({
+      key: availableLevel,
+      label: availableLevel,
+    })),
+  );
 
-    if (!supportsThinking || nextLevel === currentLevel) {
+  async function handleSelect(nextLevel: string): Promise<void> {
+    const typedLevel = nextLevel as ThinkingLevel;
+
+    if (!supportsThinking || typedLevel === currentLevel) {
       return;
     }
 
-    await onchange?.(nextLevel);
+    await onchange?.(typedLevel);
   }
 </script>
 
@@ -70,22 +76,21 @@
   <span class="text-muted-foreground/60">Thinking:</span>
 
   {#if supportsThinking}
-    <select
-      class={cn(
-        "w-24 bg-input-background border border-border rounded px-2 py-0.5 text-xs text-foreground",
-        "focus:outline-none focus:border-ring",
-        isSelectDisabled && "opacity-60 cursor-not-allowed",
-      )}
-      value={currentLevel}
-      onchange={handleChange}
+    <DropdownSelect
+      {options}
+      selectedKey={currentLevel}
+      triggerLabel={currentLevel}
       disabled={isSelectDisabled}
-      aria-label="Select thinking level"
+      triggerClass="w-24"
+      menuClass="w-28"
+      align="right"
+      minHeight={96}
+      idealMaxHeight={220}
+      ariaLabel="Select thinking level"
+      listAriaLabel="Available thinking levels"
       title={changing ? "Updating thinking level..." : "Select thinking level"}
-    >
-      {#each normalizedAvailableLevels as availableLevel (availableLevel)}
-        <option value={availableLevel}>{availableLevel}</option>
-      {/each}
-    </select>
+      onselect={handleSelect}
+    />
   {:else}
     <span class="text-xs text-muted-foreground/70">off</span>
   {/if}
