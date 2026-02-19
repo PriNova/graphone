@@ -551,6 +551,12 @@ fn build_sidecar() {
         copy_runtime_assets(&runtime_assets_source, &project_root, &target_debug_dir);
     }
 
+    let target_release_dir = manifest_dir.join("target").join("release");
+    if target_release_dir.exists() {
+        println!("cargo:warning=Copying runtime assets to target/release...");
+        copy_runtime_assets(&runtime_assets_source, &project_root, &target_release_dir);
+    }
+
     println!(
         "cargo:warning=pi-agent built successfully at {}",
         dest_binary.display()
