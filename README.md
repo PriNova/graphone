@@ -72,6 +72,7 @@ Runtime SDK assets are copied from the pinned npm dependency (`node_modules/@mar
 | ------------- | ------------------------------------------------------------------------------- |
 | Linux Desktop | `libgtk-3-dev`, `libwebkit2gtk-4.1-dev`, `libappindicator3-dev`, `clang`, `lld` |
 | Windows       | `cargo-xwin`, `nsis`, `lld`, `llvm` for cross-compilation (from WSL2)           |
+| macOS         | `create-dmg` (for DMG bundling: `brew install create-dmg`)                      |
 
 ### Build Configuration
 
@@ -154,6 +155,9 @@ The sidecar is built automatically when you run Tauri commands. The build script
 # Desktop (Linux) - recommended shorthand
 npm run dev:linux
 
+# Desktop (macOS)
+npm run dev:macos
+
 # Desktop (Windows cross-compile from WSL2)
 npm run dev:windows
 
@@ -169,10 +173,13 @@ npm run tauri dev
 # Linux only
 npm run build:linux
 
+# macOS
+npm run build:macos
+
 # Windows only (cross-compile from WSL2)
 npm run build:windows
 
-# Both platforms
+# All platforms
 npm run build:all
 ```
 
@@ -273,12 +280,15 @@ Convenience npm scripts for cross-platform builds:
 | Script                           | Platform | Description                                                                                             |
 | -------------------------------- | -------- | ------------------------------------------------------------------------------------------------------- |
 | `npm run dev:linux`              | Linux    | Run dev server (native)                                                                                 |
+| `npm run dev:macos`              | macOS    | Run dev server (native)                                                                                 |
 | `npm run dev:windows`            | Windows  | Run dev server (cross-compile)                                                                          |
 | `npm run build:linux`            | Linux    | Build AppImage/Deb packages                                                                             |
+| `npm run build:macos`            | macOS    | Build .app bundle and DMG installer                                                                     |
+| `npm run build:macos:app`        | macOS    | Build .app bundle only (no DMG)                                                                         |
 | `npm run build:windows`          | Windows  | Build NSIS installer (requires NSIS)                                                                    |
 | `npm run build:windows:exe`      | Windows  | Build only .exe (no installer)                                                                          |
 | `npm run build:windows:portable` | Windows  | Build .exe + stage portable runtime folder (`src-tauri/target/x86_64-pc-windows-msvc/release/portable`) |
-| `npm run build:all`              | Both     | Build Linux + Windows packages                                                                          |
+| `npm run build:all`              | All      | Build Linux + macOS + Windows packages                                                                  |
 | `npm run run:windows`            | Windows  | Build (if needed), stage portable runtime, & launch Windows app from WSL2                               |
 
 **Examples:**
@@ -484,6 +494,29 @@ If you get "Windows cannot find..." errors when running `npm run run:windows`:
 1. Manually navigate to `C:\Windows\Temp\graphone\` in Windows Explorer
 2. Double-click `graphone.exe` to run it
 3. Or open PowerShell and run: `C:\Windows\Temp\graphone\graphone.exe`
+
+### macOS DMG bundling fails with "no mountable file systems"
+
+**Issue:** On macOS 15+, DMG creation may fail with `hdiutil: create failed - no mountable file systems`.
+
+**Cause:** Tauri's default DMG bundler uses HFS+ filesystem which is deprecated on newer macOS versions.
+
+**Solution:** Install `create-dmg` which handles this automatically, or manually create the DMG with APFS:
+
+```bash
+# Option 1: Install create-dmg (recommended)
+brew install create-dmg
+
+# Option 2: Manual DMG creation with APFS
+hdiutil create -srcfolder src-tauri/target/release/bundle/macos/graphone.app \
+  -volname "graphone" -fs APFS -format UDZO \
+  -o src-tauri/target/release/bundle/dmg/graphone_0.1.0_aarch64.dmg
+```
+
+**Note:** The `.app` bundle is still created successfully even if DMG bundling fails. You can run the app directly:
+```bash
+open src-tauri/target/release/bundle/macos/graphone.app
+```
 
 ---
 
