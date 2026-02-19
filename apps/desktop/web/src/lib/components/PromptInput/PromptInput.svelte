@@ -38,8 +38,6 @@
     modelChanging?: boolean;
     thinkingChanging?: boolean;
     enabledModels?: EnabledModelsStore;
-    cwd?: string | null;
-    cwdLoading?: boolean;
     chatHasMessages?: boolean;
   }
 
@@ -66,8 +64,6 @@
     modelChanging = false,
     thinkingChanging = false,
     enabledModels,
-    cwd = null,
-    cwdLoading = false,
     chatHasMessages = false,
   }: Props = $props();
 
@@ -423,18 +419,6 @@
           <span class="text-muted-foreground ml-1">Unknown command</span>
         {/if}
       {/if}
-      <span
-        class="text-muted-foreground/50 font-mono truncate"
-        title={cwd ?? undefined}
-      >
-        {#if cwdLoading}
-          Session: …
-        {:else if cwd}
-          Session: {cwd}
-        {:else}
-          Session: No active session
-        {/if}
-      </span>
     </span>
     <span
       class="text-xs text-muted-foreground/70 text-right flex items-center gap-2"

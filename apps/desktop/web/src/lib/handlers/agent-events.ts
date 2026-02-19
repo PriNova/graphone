@@ -226,6 +226,13 @@ export function handleMessageEnd(
 
       runtime.messages.updateStreamingMessage([...resolvedContent]);
     }
+
+    runtime.agent.refreshState().catch((error) => {
+      console.warn(
+        "Failed to refresh agent state after assistant message:",
+        error,
+      );
+    });
   }
 
   runtime.messages.finalizeStreamingMessage();
@@ -350,6 +357,21 @@ export function handleAgentEvent(
 
     case "tool_execution_end":
       handleToolExecutionEnd(runtime, event);
+      break;
+
+    case "auto_compaction_start":
+      break;
+
+    case "auto_compaction_end":
+      runtime.agent.refreshState().catch((error) => {
+        console.warn("Failed to refresh agent state after compaction:", error);
+      });
+      break;
+
+    case "auto_retry_start":
+      break;
+
+    case "auto_retry_end":
       break;
   }
 }

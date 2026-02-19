@@ -23,6 +23,15 @@ const VALID_THINKING_LEVELS = new Set<ThinkingLevel>([
   "xhigh",
 ]);
 
+export type UsageContextSeverity = "normal" | "warning" | "error";
+
+export interface UsageIndicatorSnapshot {
+  tokenStatsText: string;
+  contextText: string;
+  fullText: string;
+  contextSeverity: UsageContextSeverity;
+}
+
 // Agent session state (session-scoped)
 export class AgentStore {
   readonly sessionId: string;
@@ -39,6 +48,7 @@ export class AgentStore {
   availableThinkingLevels = $state<ThinkingLevel[]>(["off"]);
   availableModels = $state<AvailableModel[]>([]);
   isSettingThinking = $state(false);
+  usageIndicator = $state<UsageIndicatorSnapshot | null>(null);
 
   constructor(sessionId: string) {
     this.sessionId = sessionId;
@@ -62,6 +72,7 @@ export class AgentStore {
             thinkingLevel?: unknown;
             supportsThinking?: unknown;
             availableThinkingLevels?: unknown;
+            usageIndicator?: unknown;
           };
         }
       | { success: false; error: string }
@@ -96,6 +107,10 @@ export class AgentStore {
       } else {
         this.availableThinkingLevels = ["off"];
       }
+
+      this.usageIndicator = this.parseUsageIndicator(
+        response.data?.usageIndicator,
+      );
 
       if (this.availableModels.length > 0) {
         this.availableModels = this.sortAvailableModels(this.availableModels);
@@ -314,6 +329,45 @@ export class AgentStore {
 
     const normalized = level.toLowerCase() as ThinkingLevel;
     return VALID_THINKING_LEVELS.has(normalized) ? normalized : "off";
+  }
+
+  private parseUsageIndicator(value: unknown): UsageIndicatorSnapshot | null {
+    if (!value || typeof value !== "object") {
+      return null;
+    }
+
+    const source = value as {
+      tokenStatsText?: unknown;
+      contextText?: unknown;
+      fullText?: unknown;
+      contextSeverity?: unknown;
+    };
+
+    const tokenStatsText =
+      typeof source.tokenStatsText === "string" ? source.tokenStatsText : "";
+    const contextText =
+      typeof source.contextText === "string" ? source.contextText : "";
+    const fullText = typeof source.fullText === "string" ? source.fullText : "";
+
+    if (!tokenStatsText && !contextText && !fullText) {
+      return null;
+    }
+
+    return {
+      tokenStatsText,
+      contextText,
+      fullText:
+        fullText || [tokenStatsText, contextText].filter(Boolean).join(" "),
+      contextSeverity: this.parseUsageContextSeverity(source.contextSeverity),
+    };
+  }
+
+  private parseUsageContextSeverity(value: unknown): UsageContextSeverity {
+    if (value === "warning" || value === "error" || value === "normal") {
+      return value;
+    }
+
+    return "normal";
   }
 
   private sortAvailableModels(models: AvailableModel[]): AvailableModel[] {

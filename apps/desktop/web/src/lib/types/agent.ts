@@ -127,6 +127,33 @@ export interface ToolExecutionEndEvent {
   isError: boolean;
 }
 
+export interface AutoCompactionStartEvent {
+  type: "auto_compaction_start";
+  reason: "threshold" | "overflow";
+}
+
+export interface AutoCompactionEndEvent {
+  type: "auto_compaction_end";
+  aborted: boolean;
+  willRetry: boolean;
+  errorMessage?: string;
+}
+
+export interface AutoRetryStartEvent {
+  type: "auto_retry_start";
+  attempt: number;
+  maxAttempts: number;
+  delayMs: number;
+  errorMessage: string;
+}
+
+export interface AutoRetryEndEvent {
+  type: "auto_retry_end";
+  success: boolean;
+  attempt: number;
+  finalError?: string;
+}
+
 export type AgentEvent =
   | AgentMessageStartEvent
   | AgentMessageUpdateEvent
@@ -135,4 +162,8 @@ export type AgentEvent =
   | AgentEndEvent
   | TurnStartEvent
   | TurnEndEvent
-  | ToolExecutionEndEvent;
+  | ToolExecutionEndEvent
+  | AutoCompactionStartEvent
+  | AutoCompactionEndEvent
+  | AutoRetryStartEvent
+  | AutoRetryEndEvent;

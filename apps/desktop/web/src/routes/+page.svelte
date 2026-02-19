@@ -6,6 +6,7 @@
   import { AssistantMessage, UserMessage } from "$lib/components/Messages";
   import { PromptInput } from "$lib/components/PromptInput";
   import { SessionSidebar } from "$lib/components/SessionSidebar";
+  import { StatusBar } from "$lib/components/StatusBar";
   import { handleAgentEvent } from "$lib/handlers/agent-events";
   import {
     handlePromptSubmit,
@@ -189,6 +190,9 @@
     activeRuntime ? activeRuntime.messages.streamingMessageId !== null : false,
   );
   const chatHasMessages = $derived(messages.length > 0);
+  const usageIndicator = $derived(
+    activeRuntime ? activeRuntime.agent.usageIndicator : null,
+  );
   const activeProjectDir = $derived(
     activeRuntime ? normalizeScopePath(activeRuntime.projectDir) : null,
   );
@@ -802,7 +806,7 @@
         {/if}
       </div>
 
-      <section class="shrink-0 w-full px-2 pb-4 pt-2">
+      <section class="shrink-0 w-full px-2 pb-1 pt-1">
         <PromptInput
           onsubmit={onSubmit}
           oncancel={onCancel}
@@ -813,7 +817,7 @@
           {isLoading}
           disabled={!activeRuntime || !sessionStarted}
           placeholder={activeRuntime && sessionStarted
-            ? "What would you like to know?"
+            ? "What would you like to get done today?"
             : "Create a session to begin..."}
           model={currentModel}
           provider={currentProvider}
@@ -826,11 +830,11 @@
           thinkingChanging={isSettingThinking}
           enabledModels={activeRuntime?.enabledModels}
           autofocus={true}
-          cwd={activeProjectDir}
-          cwdLoading={false}
           {chatHasMessages}
         />
       </section>
+
+      <StatusBar cwd={activeProjectDir} {usageIndicator} />
     </div>
   </section>
 </main>
