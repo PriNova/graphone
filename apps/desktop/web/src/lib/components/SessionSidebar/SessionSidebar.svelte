@@ -44,6 +44,8 @@
   const collapsedScopes = new SvelteSet<string>();
   // Per-scope pending deletion state: a projectDir in this set is awaiting confirmation
   const pendingDeletionScopes = new SvelteSet<string>();
+  // Per-scope expanded session list state: a projectDir in this set shows all sessions
+  const expandedSessionLists = new SvelteSet<string>();
 
   let historyTooltip = $state<{
     visible: boolean;
@@ -63,6 +65,18 @@
       collapsedScopes.delete(projectDir);
     } else {
       collapsedScopes.add(projectDir);
+    }
+  }
+
+  function toggleSessionListExpand(
+    projectDir: string,
+    event: MouseEvent,
+  ): void {
+    event.stopPropagation();
+    if (expandedSessionLists.has(projectDir)) {
+      expandedSessionLists.delete(projectDir);
+    } else {
+      expandedSessionLists.add(projectDir);
     }
   }
 
@@ -482,10 +496,14 @@
 
             <!-- History list (hidden when scope is collapsed) -->
             {#if scopeHistory.length > 0 && !scopeIsCollapsed}
+              {@const showAllSessions = expandedSessionLists.has(projectDir)}
+              {@const displayedHistory = showAllSessions
+                ? scopeHistory
+                : scopeHistory.slice(0, 6)}
               <div
                 class="px-2 pb-2 ml-6 pl-2 border-l border-border/70 space-y-1"
               >
-                {#each scopeHistory.slice(0, 6) as history (history.filePath)}
+                {#each displayedHistory as history (history.filePath)}
                   <button
                     type="button"
                     class={cn(
@@ -529,9 +547,19 @@
                 {/each}
 
                 {#if scopeHistory.length > 6}
-                  <p class="text-[11px] text-muted-foreground px-1.5">
-                    +{scopeHistory.length - 6} more sessions
-                  </p>
+                  <button
+                    type="button"
+                    class="w-full text-left text-[11px] text-muted-foreground hover:text-foreground px-1.5 py-0.5 transition-colors"
+                    onclick={(e) => toggleSessionListExpand(projectDir, e)}
+                    aria-label={showAllSessions
+                      ? "Show fewer sessions"
+                      : `Show all ${scopeHistory.length} sessions`}
+                    aria-expanded={showAllSessions}
+                  >
+                    {showAllSessions
+                      ? "Show less"
+                      : `Show all (${scopeHistory.length})`}
+                  </button>
                 {/if}
               </div>
             {/if}
