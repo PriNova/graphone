@@ -583,17 +583,6 @@
               />
             {/if}
           {/each}
-
-          {#if isLoading && !isStreaming}
-            <!-- Slow pulse indicator - 4s animation for CPU efficiency -->
-            <div class="flex justify-start animate-fade-in">
-              <div class="flex items-center gap-1.5 py-2 animate-pulse-slow">
-                <span class="w-2 h-2 bg-muted-foreground rounded-full"></span>
-                <span class="w-2 h-2 bg-muted-foreground rounded-full"></span>
-                <span class="w-2 h-2 bg-muted-foreground rounded-full"></span>
-              </div>
-            </div>
-          {/if}
         {/if}
       </div>
 
