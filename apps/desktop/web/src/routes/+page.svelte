@@ -53,7 +53,6 @@
   function mergeScopeHistory(
     persistedHistoryByScope: Record<string, PersistedSessionHistoryItem[]>,
     descriptors: SessionDescriptor[],
-    runtimes: Record<string, SessionRuntime>,
     optimisticBySession: Record<string, { text: string; timestamp: string }>,
   ): Record<string, PersistedSessionHistoryItem[]> {
     const merged: Record<string, PersistedSessionHistoryItem[]> = {};
@@ -63,16 +62,8 @@
     }
 
     for (const descriptor of descriptors) {
-      const runtime = runtimes[descriptor.sessionId];
-      if (!runtime) {
-        continue;
-      }
-
-      const firstUserMessage = runtime.messages.messages.find(
-        (message) => message.type === "user",
-      );
       const optimistic = optimisticBySession[descriptor.sessionId];
-      if (!firstUserMessage && !optimistic) {
+      if (!optimistic) {
         continue;
       }
 
@@ -94,15 +85,11 @@
         continue;
       }
 
-      const previewText = firstUserMessage?.content?.trim() || optimistic?.text;
-      const previewTimestamp =
-        firstUserMessage?.timestamp.toISOString() ?? optimistic?.timestamp;
-
       history.push({
         sessionId: descriptor.sessionId,
-        timestamp: previewTimestamp,
+        timestamp: optimistic.timestamp,
         firstUserMessage:
-          previewText && previewText.length > 0 ? previewText : undefined,
+          optimistic.text.length > 0 ? optimistic.text : undefined,
         source: "unknown",
         filePath,
       });
@@ -132,7 +119,6 @@
     mergeScopeHistory(
       projectScopesStore.historyByScope,
       sessionsStore.sessions,
-      sessionRuntimes,
       optimisticFirstPromptBySession,
     ),
   );

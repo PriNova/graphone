@@ -7,6 +7,99 @@ export interface SessionRuntimeForEvents {
   messages: MessagesStore;
 }
 
+// Performance: Batch streaming deltas to reduce re-renders.
+// Instead of triggering Svelte reactivity on every character, we collect
+// deltas and apply them once per animation frame (~16ms max).
+// This reduces re-renders from potentially 100+ per second to at most 60fps.
+
+interface PendingDelta {
+  contentIndex: number;
+  delta: string;
+  type: "text" | "thinking";
+}
+
+interface StreamingBatcher {
+  pendingDeltas: PendingDelta[];
+  rafId: number | null;
+  content: ContentBlock[];
+  flush: () => void;
+}
+
+const batchers = new Map<string, StreamingBatcher>();
+
+function getOrCreateBatcher(
+  sessionId: string,
+  content: ContentBlock[],
+): StreamingBatcher {
+  let batcher = batchers.get(sessionId);
+  if (!batcher) {
+    batcher = {
+      pendingDeltas: [],
+      rafId: null,
+      content,
+      flush: () => flushBatcher(sessionId),
+    };
+    batchers.set(sessionId, batcher);
+  } else {
+    // Update content reference (it may have changed)
+    batcher.content = content;
+  }
+  return batcher;
+}
+
+function flushBatcher(sessionId: string): void {
+  const batcher = batchers.get(sessionId);
+  if (!batcher) return;
+
+  // Clear RAF id first so we don't cancel it after
+  batcher.rafId = null;
+
+  if (batcher.pendingDeltas.length === 0) return;
+
+  // Apply all pending deltas directly to the content array
+  for (const pending of batcher.pendingDeltas) {
+    const block = batcher.content[pending.contentIndex];
+    if (pending.type === "text" && block?.type === "text") {
+      block.text += pending.delta;
+    } else if (pending.type === "thinking" && block?.type === "thinking") {
+      block.thinking += pending.delta;
+    }
+  }
+
+  // Clear pending deltas
+  batcher.pendingDeltas = [];
+
+  // Commit the updated content reference without cloning to avoid
+  // extra array churn during high-frequency streaming.
+  const runtime = activeRuntimes.get(sessionId);
+  if (runtime) {
+    runtime.messages.updateStreamingMessage(batcher.content);
+  }
+}
+
+// Track active runtimes for flushing
+const activeRuntimes = new Map<string, SessionRuntimeForEvents>();
+
+function scheduleBatchFlush(
+  sessionId: string,
+  batcher: StreamingBatcher,
+): void {
+  if (batcher.rafId === null) {
+    batcher.rafId = requestAnimationFrame(() => flushBatcher(sessionId));
+  }
+}
+
+function clearBatcher(sessionId: string): void {
+  const batcher = batchers.get(sessionId);
+  if (batcher) {
+    if (batcher.rafId !== null) {
+      cancelAnimationFrame(batcher.rafId);
+    }
+    batchers.delete(sessionId);
+  }
+  activeRuntimes.delete(sessionId);
+}
+
 function extractAssistantErrorMessage(message: {
   [key: string]: unknown;
 }): string | null {
@@ -27,9 +120,18 @@ function extractAssistantErrorMessage(message: {
 // Event handlers for agent events
 export function handleAgentStart(runtime: SessionRuntimeForEvents): void {
   runtime.agent.setLoading(true);
+  // Register runtime for batcher access
+  activeRuntimes.set(runtime.agent.sessionId, runtime);
 }
 
 export function handleAgentEnd(runtime: SessionRuntimeForEvents): void {
+  const sessionId = runtime.agent.sessionId;
+  // Flush any remaining deltas before finalizing
+  const batcher = batchers.get(sessionId);
+  if (batcher && batcher.pendingDeltas.length > 0) {
+    flushBatcher(sessionId);
+  }
+  clearBatcher(sessionId);
   runtime.agent.setLoading(false);
   runtime.messages.finalizeStreamingMessage();
   runtime.agent.refreshState().catch((error) => {
@@ -190,10 +292,53 @@ export function handleMessageUpdate(
   const currentContent =
     currentMessage?.type === "assistant" ? currentMessage.content : [];
 
-  // Apply delta with in-place mutation
-  // Svelte 5's fine-grained reactivity will detect mutations to the content
-  // array and its elements, triggering only the affected component to re-render
-  applyAssistantMessageDelta(currentContent, event.assistantMessageEvent);
+  const assistantEvent = event.assistantMessageEvent;
+  const index = assistantEvent.contentIndex;
+  if (typeof index !== "number") return;
+
+  // Batch text_delta and thinking_delta to reduce re-renders
+  if (
+    assistantEvent.type === "text_delta" ||
+    assistantEvent.type === "thinking_delta"
+  ) {
+    const sessionId = runtime.agent.sessionId;
+    const batcher = getOrCreateBatcher(sessionId, currentContent);
+
+    // Ensure the block exists
+    ensureContentIndex(currentContent, index);
+    const block = currentContent[index];
+
+    // Initialize block if needed
+    if (assistantEvent.type === "text_delta") {
+      if (block?.type !== "text") {
+        currentContent[index] = { type: "text", text: "" };
+      }
+    } else {
+      if (block?.type !== "thinking") {
+        currentContent[index] = { type: "thinking", thinking: "" };
+      }
+    }
+
+    // Queue delta for batched application
+    batcher.pendingDeltas.push({
+      contentIndex: index,
+      delta: assistantEvent.delta ?? "",
+      type: assistantEvent.type === "text_delta" ? "text" : "thinking",
+    });
+
+    scheduleBatchFlush(sessionId, batcher);
+    return;
+  }
+
+  // For non-delta events, flush any pending deltas first, then apply immediately
+  const sessionId = runtime.agent.sessionId;
+  const batcher = batchers.get(sessionId);
+  if (batcher && batcher.pendingDeltas.length > 0) {
+    flushBatcher(sessionId);
+  }
+
+  // Apply other events immediately (text_start, text_end, thinking_start, thinking_end, toolcall_end)
+  applyAssistantMessageDelta(currentContent, assistantEvent);
 }
 
 export function handleMessageEnd(
@@ -201,6 +346,18 @@ export function handleMessageEnd(
   event: Extract<AgentEvent, { type: "message_end" }>,
 ): void {
   if (event.message.role === "assistant") {
+    // Flush any pending deltas before replacing with final content
+    const sessionId = runtime.agent.sessionId;
+    const batcher = batchers.get(sessionId);
+    if (batcher) {
+      // Clear pending deltas without applying - message_end has complete content
+      batcher.pendingDeltas = [];
+      if (batcher.rafId !== null) {
+        cancelAnimationFrame(batcher.rafId);
+        batcher.rafId = null;
+      }
+    }
+
     const content = runtime.messages.convertAssistantContent(
       event.message.content,
     );
@@ -209,9 +366,7 @@ export function handleMessageEnd(
       content.length > 0
         ? content
         : errorMessage
-          ? ([
-              { type: "text" as const, text: `Error: ${errorMessage}` },
-            ] as const)
+          ? [{ type: "text" as const, text: `Error: ${errorMessage}` }]
           : [];
 
     const streamingId = runtime.messages.streamingMessageId;
@@ -224,7 +379,7 @@ export function handleMessageEnd(
         runtime.messages.createStreamingMessage();
       }
 
-      runtime.messages.updateStreamingMessage([...resolvedContent]);
+      runtime.messages.updateStreamingMessage(resolvedContent);
     }
 
     runtime.agent.refreshState().catch((error) => {

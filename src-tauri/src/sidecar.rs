@@ -1,4 +1,6 @@
+use std::collections::HashMap;
 use std::sync::Arc;
+use std::time::{Duration, Instant};
 use tauri::{AppHandle, Emitter};
 use tauri_plugin_shell::process::CommandEvent;
 use tauri_plugin_shell::ShellExt;
@@ -37,6 +39,141 @@ impl SidecarManager {
     }
 }
 
+#[derive(Debug, Clone)]
+struct DeltaEventKey {
+    delta_type: String,
+    content_index: i64,
+}
+
+struct SessionDeltaCoalescer {
+    pending_by_session: HashMap<String, Vec<serde_json::Value>>,
+    flush_interval: Duration,
+    last_flush: Instant,
+}
+
+impl SessionDeltaCoalescer {
+    fn new(flush_interval: Duration) -> Self {
+        Self {
+            pending_by_session: HashMap::new(),
+            flush_interval,
+            last_flush: Instant::now(),
+        }
+    }
+
+    fn is_delta_event(event: &serde_json::Value) -> bool {
+        Self::delta_event_key(event).is_some()
+    }
+
+    fn maybe_queue_delta(&mut self, session_id: &str, event: serde_json::Value) -> bool {
+        let Some(key) = Self::delta_event_key(&event) else {
+            return false;
+        };
+
+        let queue = self
+            .pending_by_session
+            .entry(session_id.to_string())
+            .or_default();
+
+        if let Some(last_event) = queue.last_mut() {
+            if let Some(last_key) = Self::delta_event_key(last_event) {
+                if last_key.delta_type == key.delta_type
+                    && last_key.content_index == key.content_index
+                {
+                    if Self::append_delta(last_event, &event) {
+                        return true;
+                    }
+                }
+            }
+        }
+
+        queue.push(event);
+        true
+    }
+
+    fn flush_due(&mut self, app: &AppHandle) {
+        if self.pending_by_session.is_empty() {
+            return;
+        }
+
+        if self.last_flush.elapsed() < self.flush_interval {
+            return;
+        }
+
+        self.flush_all(app);
+    }
+
+    fn flush_session(&mut self, app: &AppHandle, session_id: &str) {
+        let Some(events) = self.pending_by_session.remove(session_id) else {
+            return;
+        };
+
+        for event in events {
+            EventHandler::emit_session_event(app, session_id, event);
+        }
+
+        self.last_flush = Instant::now();
+    }
+
+    fn flush_all(&mut self, app: &AppHandle) {
+        if self.pending_by_session.is_empty() {
+            return;
+        }
+
+        let sessions = self.pending_by_session.keys().cloned().collect::<Vec<_>>();
+        for session_id in sessions {
+            self.flush_session(app, &session_id);
+        }
+
+        self.last_flush = Instant::now();
+    }
+
+    fn delta_event_key(event: &serde_json::Value) -> Option<DeltaEventKey> {
+        let event_type = event.get("type")?.as_str()?;
+        if event_type != "message_update" {
+            return None;
+        }
+
+        let assistant_event = event.get("assistantMessageEvent")?;
+        let delta_type = assistant_event.get("type")?.as_str()?;
+        if delta_type != "text_delta" && delta_type != "thinking_delta" {
+            return None;
+        }
+
+        let content_index = assistant_event.get("contentIndex")?.as_i64()?;
+
+        Some(DeltaEventKey {
+            delta_type: delta_type.to_string(),
+            content_index,
+        })
+    }
+
+    fn append_delta(target: &mut serde_json::Value, source: &serde_json::Value) -> bool {
+        let source_delta = source
+            .get("assistantMessageEvent")
+            .and_then(|event| event.get("delta"))
+            .and_then(|delta| delta.as_str())
+            .unwrap_or("");
+
+        let Some(assistant_event) = target
+            .get_mut("assistantMessageEvent")
+            .and_then(|value| value.as_object_mut())
+        else {
+            return false;
+        };
+
+        let next_delta = match assistant_event
+            .get("delta")
+            .and_then(|value| value.as_str())
+        {
+            Some(existing) => format!("{}{}", existing, source_delta),
+            None => source_delta.to_string(),
+        };
+
+        assistant_event.insert("delta".to_string(), serde_json::Value::String(next_delta));
+        true
+    }
+}
+
 pub struct EventHandler;
 
 impl EventHandler {
@@ -64,6 +201,7 @@ impl EventHandler {
         tokio::spawn(async move {
             let mut stdout_buffer: Vec<u8> = Vec::new();
             let mut stderr_buffer: Vec<u8> = Vec::new();
+            let mut delta_coalescer = SessionDeltaCoalescer::new(Duration::from_millis(16));
 
             while let Some(event) = event_rx.recv().await {
                 let should_continue = Self::handle_event(
@@ -72,6 +210,7 @@ impl EventHandler {
                     event,
                     &mut stdout_buffer,
                     &mut stderr_buffer,
+                    &mut delta_coalescer,
                 )
                 .await;
 
@@ -80,7 +219,9 @@ impl EventHandler {
                 }
             }
 
-            Self::flush_stdout_buffer(&app_clone, &state, &mut stdout_buffer).await;
+            Self::flush_stdout_buffer(&app_clone, &state, &mut stdout_buffer, &mut delta_coalescer)
+                .await;
+            delta_coalescer.flush_all(&app_clone);
             Self::flush_stderr_buffer(&mut stderr_buffer);
         });
     }
@@ -91,10 +232,11 @@ impl EventHandler {
         event: CommandEvent,
         stdout_buffer: &mut Vec<u8>,
         stderr_buffer: &mut Vec<u8>,
+        delta_coalescer: &mut SessionDeltaCoalescer,
     ) -> bool {
         match event {
             CommandEvent::Stdout(chunk) => {
-                Self::handle_stdout(app, state, chunk, stdout_buffer).await;
+                Self::handle_stdout(app, state, chunk, stdout_buffer, delta_coalescer).await;
                 true
             }
             CommandEvent::Stderr(chunk) => {
@@ -102,14 +244,16 @@ impl EventHandler {
                 true
             }
             CommandEvent::Terminated(payload) => {
-                Self::flush_stdout_buffer(app, state, stdout_buffer).await;
+                Self::flush_stdout_buffer(app, state, stdout_buffer, delta_coalescer).await;
+                delta_coalescer.flush_all(app);
                 Self::flush_stderr_buffer(stderr_buffer);
                 logger::log(format!("Sidecar terminated with code: {:?}", payload.code));
                 let _ = app.emit("agent-terminated", payload.code);
                 false
             }
             CommandEvent::Error(e) => {
-                Self::flush_stdout_buffer(app, state, stdout_buffer).await;
+                Self::flush_stdout_buffer(app, state, stdout_buffer, delta_coalescer).await;
+                delta_coalescer.flush_all(app);
                 Self::flush_stderr_buffer(stderr_buffer);
                 logger::log(format!("Sidecar error: {}", e));
                 let _ = app.emit("agent-error", e);
@@ -124,20 +268,27 @@ impl EventHandler {
         state: &Arc<Mutex<SidecarState>>,
         chunk: Vec<u8>,
         buffer: &mut Vec<u8>,
+        delta_coalescer: &mut SessionDeltaCoalescer,
     ) {
         for line in Self::extract_lines(chunk, buffer) {
-            Self::handle_stdout_line(app, state, line).await;
+            Self::handle_stdout_line(app, state, line, delta_coalescer).await;
+            delta_coalescer.flush_due(app);
         }
     }
 
-    async fn handle_stdout_line(app: &AppHandle, state: &Arc<Mutex<SidecarState>>, line: String) {
+    async fn handle_stdout_line(
+        app: &AppHandle,
+        state: &Arc<Mutex<SidecarState>>,
+        line: String,
+        delta_coalescer: &mut SessionDeltaCoalescer,
+    ) {
         let line = Self::sanitize_json_line(line);
         if line.trim().is_empty() {
             return;
         }
 
         match serde_json::from_str::<serde_json::Value>(&line) {
-            Ok(json) => Self::handle_parsed_json(app, state, line, json).await,
+            Ok(json) => Self::handle_parsed_json(app, state, line, json, delta_coalescer).await,
             Err(error) => {
                 logger::log(format!(
                     "Sidecar stdout invalid NDJSON line (len={}): {} ({}; prefix={})",
@@ -155,6 +306,7 @@ impl EventHandler {
         state: &Arc<Mutex<SidecarState>>,
         raw: String,
         json: serde_json::Value,
+        delta_coalescer: &mut SessionDeltaCoalescer,
     ) {
         let top_level_type = json.get("type").and_then(|t| t.as_str());
 
@@ -202,46 +354,17 @@ impl EventHandler {
         if top_level_type == Some("session_event") {
             match serde_json::from_value::<SessionEventEnvelope>(json.clone()) {
                 Ok(envelope) => {
-                    let payload = serde_json::json!({
-                        "sessionId": envelope.session_id,
-                        "event": Self::compact_session_event_for_frontend(envelope.event),
-                    });
+                    let session_id = envelope.session_id;
+                    let compact_event = Self::compact_session_event_for_frontend(envelope.event);
 
-                    let payload_string = match serde_json::to_string(&payload) {
-                        Ok(value) => value,
-                        Err(error) => {
-                            logger::log(format!(
-                                "Failed to serialize session_event payload for frontend: {}",
-                                error
-                            ));
-                            return;
-                        }
-                    };
-
-                    if payload_string.len() > MAX_AGENT_EVENT_CHARS {
-                        logger::log(format!(
-                            "Skipping emit of oversized session_event payload (len={})",
-                            payload_string.len()
-                        ));
+                    if SessionDeltaCoalescer::is_delta_event(&compact_event) {
+                        let _ = delta_coalescer.maybe_queue_delta(&session_id, compact_event);
+                        delta_coalescer.flush_due(app);
                         return;
                     }
 
-                    let should_log = payload
-                        .get("event")
-                        .and_then(|event| event.get("type"))
-                        .and_then(|value| value.as_str())
-                        != Some("message_update");
-
-                    if should_log {
-                        logger::log(format!(
-                            "Sidecar session_event: {}",
-                            Self::shorten_for_log(&payload_string, 2000)
-                        ));
-                    }
-
-                    if let Err(e) = app.emit("agent-event", payload_string) {
-                        logger::log(format!("Failed to emit agent event: {}", e));
-                    }
+                    delta_coalescer.flush_session(app, &session_id);
+                    Self::emit_session_event(app, &session_id, compact_event);
                 }
                 Err(error) => {
                     logger::log(format!(
@@ -276,6 +399,51 @@ impl EventHandler {
         }
     }
 
+    fn emit_session_event(app: &AppHandle, session_id: &str, event: serde_json::Value) {
+        const MAX_AGENT_EVENT_CHARS: usize = 60_000;
+
+        let payload = serde_json::json!({
+            "sessionId": session_id,
+            "event": event,
+        });
+
+        let payload_string = match serde_json::to_string(&payload) {
+            Ok(value) => value,
+            Err(error) => {
+                logger::log(format!(
+                    "Failed to serialize session_event payload for frontend: {}",
+                    error
+                ));
+                return;
+            }
+        };
+
+        if payload_string.len() > MAX_AGENT_EVENT_CHARS {
+            logger::log(format!(
+                "Skipping emit of oversized session_event payload (len={})",
+                payload_string.len()
+            ));
+            return;
+        }
+
+        let should_log = payload
+            .get("event")
+            .and_then(|value| value.get("type"))
+            .and_then(|value| value.as_str())
+            != Some("message_update");
+
+        if should_log {
+            logger::log(format!(
+                "Sidecar session_event: {}",
+                Self::shorten_for_log(&payload_string, 2000)
+            ));
+        }
+
+        if let Err(error) = app.emit("agent-event", payload_string) {
+            logger::log(format!("Failed to emit agent event: {}", error));
+        }
+    }
+
     fn shorten_for_log(value: &str, max_chars: usize) -> String {
         if value.chars().count() <= max_chars {
             return value.to_string();
@@ -286,6 +454,15 @@ impl EventHandler {
     }
 
     fn sanitize_json_line(line: String) -> String {
+        let trimmed = line
+            .trim()
+            .trim_start_matches('\u{feff}')
+            .trim_matches('\0');
+
+        if Self::is_probably_clean_json_line(trimmed) {
+            return trimmed.to_string();
+        }
+
         // Sidecars may occasionally emit terminal escape sequences (OSC/CSI),
         // UTF-8 BOMs, or stray control bytes around otherwise valid JSON.
         let stripped = Self::strip_ansi_escapes(&line);
@@ -301,6 +478,14 @@ impl EventHandler {
         }
 
         value
+    }
+
+    fn is_probably_clean_json_line(value: &str) -> bool {
+        if !value.starts_with('{') || !value.ends_with('}') {
+            return false;
+        }
+
+        !value.as_bytes().contains(&0x1b)
     }
 
     fn strip_ansi_escapes(input: &str) -> String {
@@ -476,6 +661,7 @@ impl EventHandler {
         app: &AppHandle,
         state: &Arc<Mutex<SidecarState>>,
         buffer: &mut Vec<u8>,
+        delta_coalescer: &mut SessionDeltaCoalescer,
     ) {
         if buffer.is_empty() {
             return;
@@ -490,7 +676,7 @@ impl EventHandler {
             return;
         }
 
-        Self::handle_stdout_line(app, state, line).await;
+        Self::handle_stdout_line(app, state, line, delta_coalescer).await;
     }
 
     fn flush_stderr_buffer(buffer: &mut Vec<u8>) {

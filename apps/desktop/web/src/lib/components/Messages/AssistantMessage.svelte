@@ -236,7 +236,7 @@
 <div class={cn("flex w-full animate-fade-in justify-start")}>
   <div class={cn("w-full wrap-break-word", isStreaming && "opacity-90")}>
     <!-- Render blocks in the order they arrive -->
-    {#each content as block, blockIndex (block.type === "toolCall" ? block.id : block)}
+    {#each content as block, blockIndex (block.type === "toolCall" ? block.id : `${block.type}-${blockIndex}`)}
       {#if isThinkingBlock(block)}
         <div
           class="mb-2 last:mb-0 bg-foreground/3 dark:bg-f6fff5/[0.03] border border-border rounded overflow-hidden"
