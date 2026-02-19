@@ -40,13 +40,97 @@
   let startupError = $state<string | null>(null);
   let sidebarCollapsed = $state(false);
   let sessionSidebarRefreshTimer: ReturnType<typeof setTimeout> | null = null;
+  const pendingSessionSidebarSync = new Set<string>();
+  let optimisticFirstPromptBySession = $state<
+    Record<string, { text: string; timestamp: string }>
+  >({});
+
+  function mergeScopeHistory(
+    persistedHistoryByScope: Record<string, PersistedSessionHistoryItem[]>,
+    descriptors: SessionDescriptor[],
+    runtimes: Record<string, SessionRuntime>,
+    optimisticBySession: Record<string, { text: string; timestamp: string }>,
+  ): Record<string, PersistedSessionHistoryItem[]> {
+    const merged: Record<string, PersistedSessionHistoryItem[]> = {};
+
+    for (const [scope, history] of Object.entries(persistedHistoryByScope)) {
+      merged[scope] = [...history];
+    }
+
+    for (const descriptor of descriptors) {
+      const runtime = runtimes[descriptor.sessionId];
+      if (!runtime) {
+        continue;
+      }
+
+      const firstUserMessage = runtime.messages.messages.find(
+        (message) => message.type === "user",
+      );
+      const optimistic = optimisticBySession[descriptor.sessionId];
+      if (!firstUserMessage && !optimistic) {
+        continue;
+      }
+
+      const filePath = descriptor.sessionFile?.trim() ?? "";
+      if (filePath.length === 0) {
+        continue;
+      }
+
+      const scope = normalizeScopePath(descriptor.projectDir);
+      if (scope.length === 0) {
+        continue;
+      }
+
+      const history = merged[scope] ?? (merged[scope] = []);
+      const alreadyPresent = history.some(
+        (entry) => entry.filePath.trim() === filePath,
+      );
+      if (alreadyPresent) {
+        continue;
+      }
+
+      const previewText = firstUserMessage?.content?.trim() || optimistic?.text;
+      const previewTimestamp =
+        firstUserMessage?.timestamp.toISOString() ?? optimistic?.timestamp;
+
+      history.push({
+        sessionId: descriptor.sessionId,
+        timestamp: previewTimestamp,
+        firstUserMessage:
+          previewText && previewText.length > 0 ? previewText : undefined,
+        source: "unknown",
+        filePath,
+      });
+    }
+
+    for (const history of Object.values(merged)) {
+      history.sort((a, b) => {
+        const timestampCmp = (b.timestamp ?? "").localeCompare(
+          a.timestamp ?? "",
+        );
+        if (timestampCmp !== 0) {
+          return timestampCmp;
+        }
+        return a.sessionId.localeCompare(b.sessionId);
+      });
+    }
+
+    return merged;
+  }
 
   const sessions = $derived(sessionsStore.sessions);
   const activeSessionId = $derived(sessionsStore.activeSessionId);
   const activeSession = $derived(sessionsStore.activeSession);
   const activeSessionFile = $derived(activeSession?.sessionFile ?? null);
   const persistedProjectScopes = $derived(projectScopesStore.scopes);
-  const scopeHistoryByProject = $derived(projectScopesStore.historyByScope);
+  const scopeHistoryByProject = $derived(
+    mergeScopeHistory(
+      projectScopesStore.historyByScope,
+      sessionsStore.sessions,
+      sessionRuntimes,
+      optimisticFirstPromptBySession,
+    ),
+  );
 
   const projectScopes = $derived(
     [
@@ -116,6 +200,74 @@
     }
   }
 
+  function maybeTrackOptimisticFirstPrompt(
+    runtime: SessionRuntime,
+    prompt: string,
+  ): void {
+    const alreadyHasUserMessages = runtime.messages.messages.some(
+      (message) => message.type === "user",
+    );
+    if (alreadyHasUserMessages) {
+      return;
+    }
+
+    if (optimisticFirstPromptBySession[runtime.sessionId]) {
+      return;
+    }
+
+    const trimmed = prompt.trim();
+    if (trimmed.length === 0) {
+      return;
+    }
+
+    optimisticFirstPromptBySession = {
+      ...optimisticFirstPromptBySession,
+      [runtime.sessionId]: {
+        text: trimmed,
+        timestamp: new Date().toISOString(),
+      },
+    };
+  }
+
+  function clearOptimisticFirstPrompt(sessionId: string): void {
+    if (!optimisticFirstPromptBySession[sessionId]) {
+      return;
+    }
+
+    const remaining = { ...optimisticFirstPromptBySession };
+    delete remaining[sessionId];
+    optimisticFirstPromptBySession = remaining;
+  }
+
+  function hasPersistedSidebarHistory(sessionId: string): boolean {
+    const descriptor = sessionsStore.sessions.find(
+      (session) => session.sessionId === sessionId,
+    );
+
+    if (!descriptor) {
+      return true;
+    }
+
+    const sessionFile = descriptor.sessionFile?.trim() ?? "";
+    if (sessionFile.length === 0) {
+      return true;
+    }
+
+    const scope = normalizeScopePath(descriptor.projectDir);
+    const history = projectScopesStore.historyByScope[scope] ?? [];
+
+    return history.some((entry) => entry.filePath.trim() === sessionFile);
+  }
+
+  function reconcilePendingSessionSidebarSync(): void {
+    for (const sessionId of pendingSessionSidebarSync) {
+      if (hasPersistedSidebarHistory(sessionId)) {
+        pendingSessionSidebarSync.delete(sessionId);
+        clearOptimisticFirstPrompt(sessionId);
+      }
+    }
+  }
+
   function scheduleSessionSidebarRefresh(delayMs = 450): void {
     if (sessionSidebarRefreshTimer) {
       clearTimeout(sessionSidebarRefreshTimer);
@@ -123,9 +275,18 @@
     }
 
     sessionSidebarRefreshTimer = setTimeout(() => {
-      void projectScopesStore.refresh().catch(() => undefined);
-      void sessionsStore.refreshFromBackend().catch(() => undefined);
       sessionSidebarRefreshTimer = null;
+
+      // Only refresh project scopes to pick up newly persisted session files.
+      // Do NOT refresh sessionsStore - the session is already tracked locally
+      // and refreshFromBackend() would replace the list, potentially losing
+      // the active session if there's a timing issue with the backend.
+      void projectScopesStore
+        .refresh()
+        .then(() => {
+          reconcilePendingSessionSidebarSync();
+        })
+        .catch(() => undefined);
     }, delayMs);
   }
 
@@ -288,6 +449,8 @@
       }
       // Clean up runtime state
       delete sessionRuntimes[session.sessionId];
+      pendingSessionSidebarSync.delete(session.sessionId);
+      clearOptimisticFirstPrompt(session.sessionId);
     }
 
     // Delete the scope (session files) via backend
@@ -330,6 +493,7 @@
 
   async function onSubmit(prompt: string): Promise<void> {
     if (!activeRuntime) return;
+    maybeTrackOptimisticFirstPrompt(activeRuntime, prompt);
     await handlePromptSubmit(activeRuntime, prompt);
   }
 
@@ -379,9 +543,14 @@
         activeRuntime.messages.addErrorMessage(result.message);
         break;
       case "submit":
+        maybeTrackOptimisticFirstPrompt(activeRuntime, result.text);
         await handlePromptSubmit(activeRuntime, result.text);
         break;
       case "handled":
+        if (command === "new") {
+          clearOptimisticFirstPrompt(activeRuntime.sessionId);
+          await sessionsStore.refreshFromBackend().catch(() => undefined);
+        }
         break;
     }
   }
@@ -458,20 +627,35 @@
           }
 
           const agentEvent = wrapped.event as AgentEvent;
-          const hasUserMessagesBeforeEvent = runtime.messages.messages.some(
+          const userMessageCountBeforeEvent = runtime.messages.messages.filter(
             (message) => message.type === "user",
-          );
+          ).length;
 
           handleAgentEvent(runtime, agentEvent);
 
-          if (
+          const isFirstUserMessageStart =
             agentEvent.type === "message_start" &&
             agentEvent.message.role === "user" &&
-            !hasUserMessagesBeforeEvent
+            userMessageCountBeforeEvent === 0;
+
+          const isFirstUserMessageEnd =
+            agentEvent.type === "message_end" &&
+            agentEvent.message.role === "user" &&
+            userMessageCountBeforeEvent <= 1;
+
+          if (isFirstUserMessageStart || isFirstUserMessageEnd) {
+            pendingSessionSidebarSync.add(wrapped.sessionId);
+            scheduleSessionSidebarRefresh(240);
+          } else if (
+            pendingSessionSidebarSync.has(wrapped.sessionId) &&
+            ((agentEvent.type === "message_end" &&
+              agentEvent.message.role === "assistant") ||
+              agentEvent.type === "turn_end" ||
+              agentEvent.type === "agent_end")
           ) {
-            // Refresh sidebar metadata only when the very first user message
-            // starts for a session (session files/scopes may become persisted).
-            scheduleSessionSidebarRefresh(220);
+            // Session files are flushed once assistant output is persisted.
+            // Run a follow-up refresh at turn/agent completion for reliability.
+            scheduleSessionSidebarRefresh(280);
           }
 
           if (sessionsStore.activeSessionId === wrapped.sessionId) {
@@ -509,6 +693,9 @@
       cancelAnimationFrame(scrollRaf);
       scrollRaf = null;
     }
+
+    pendingSessionSidebarSync.clear();
+    optimisticFirstPromptBySession = {};
   });
 </script>
 
