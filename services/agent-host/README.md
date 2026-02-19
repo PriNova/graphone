@@ -72,7 +72,7 @@ Transport: newline-delimited JSON over stdio.
 ```bash
 cd services/agent-host
 bun run build
-node dist/cli.js
+bun dist/cli.js
 ```
 
 Send newline-delimited JSON requests on stdin.

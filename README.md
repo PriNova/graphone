@@ -27,7 +27,6 @@ Graphone provides a desktop interface for the pi-mono coding agent using Tauri's
 Contributor notes:
 
 - See `CONTRIBUTING.md` for repository workflow and staging guidance.
-- See `docs/plans/repository-restructure-roadmap-2026-02.md` for the repository maintenance refactor plan.
 
 ---
 
@@ -210,11 +209,7 @@ graphone/
 │       └── dist/
 ├── tooling/
 │   └── scripts/                      # Build/run/verification helpers
-├── docs/
-│   ├── specs/
-│   ├── tasks/
-│   └── plans/
-├── reports/
+├── reports/                          # Benchmark and measurement output
 └── package.json
 ```
 
@@ -236,7 +231,7 @@ Canonical repo map (quick):
 
 ### WSL2 Development
 
-This project is developed in **WSL2 on Windows 11**. See [`docs/specs/wsl2-development-notes.md`](docs/specs/wsl2-development-notes.md) for detailed guidance.
+This project is developed in **WSL2 on Windows 11**.
 
 **Critical:** Keep the project in the **Linux filesystem** (e.g., `/home/username/projects/`), NOT in `/mnt/c/` (Windows filesystem) - performance difference is 10-100x.
 
@@ -371,132 +366,11 @@ Key configuration for sidecar support:
 
 ## Troubleshooting
 
-### bun not found
-
-```bash
-# Install bun
-curl -fsSL https://bun.sh/install | bash
-
-# Add to PATH in ~/.bashrc or ~/.zshrc
-export PATH="$HOME/.bun/bin:$PATH"
-```
-
-### Sidecar build fails
-
-```bash
-# Reinstall dependencies (ensures npm SDK assets are present)
-npm install
-
-# Verify package exists
-ls node_modules/@mariozechner/pi-coding-agent/dist/cli.js
-
-# Rebuild host sidecar path
-npm run build:linux
-```
-
-### Binary not found during Tauri build
-
-Ensure the binary naming matches the target triple:
-
-- Linux: `pi-agent-x86_64-unknown-linux-gnu`
-- Windows: `pi-agent-x86_64-pc-windows-msvc.exe`
-
-### Windows build fails with "link.exe not found" or "could not open 'shell32.lib'"
-
-This happens when `cargo-xwin` is not used. The npm scripts handle this automatically, but if running manually:
-
-```bash
-# Wrong - will fail:
-npm run tauri build -- --target x86_64-pc-windows-msvc
-
-# Correct - use cargo-xwin via --runner flag:
-source ~/.cargo/env && cargo tauri build --target x86_64-pc-windows-msvc --runner cargo-xwin
-
-# Or use the npm script (recommended):
-npm run build:windows
-```
-
-**Cause:** Cross-compiling for Windows requires Windows SDK libraries (kernel32.lib, shell32.lib, etc.) which `cargo-xwin` downloads and configures automatically.
-
-### Windows build fails with "makensis.exe: No such file or directory"
-
-**This error is expected if NSIS is not installed.** The good news is that the `.exe` file is still built successfully! Only the installer creation fails.
-
-**Quick Fix - Run without installer:**
-
-```bash
-# The exe is already built! Just run it:
-npm run run:windows
-```
-
-**To install NSIS (for creating Windows installers):**
-
-```bash
-sudo apt install nsis
-npm run build:windows  # Now creates both exe and installer
-```
-
-**Note:**
-
-- MSI installers can only be created on Windows (requires WiX)
-- NSIS installers (`-setup.exe`) can be created on Linux (requires `nsis` package)
-- The standalone `.exe` works fine without any installer
-- Use `npm run build:windows:exe` to build just the exe without bundling
-
-### Windows app doesn't open / crashes immediately
-
-**Most likely cause: Missing WebView2 Runtime**
-
-Tauri apps require Microsoft Edge WebView2 Runtime to be installed on Windows.
-
-**Check if WebView2 is installed:**
-
-1. Open PowerShell on Windows
-2. Run: `Get-ItemProperty -Path 'HKLM:\SOFTWARE\WOW6432Node\Microsoft\EdgeUpdate\Clients\{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}' -Name 'pv' -ErrorAction SilentlyContinue`
-3. If nothing is returned, WebView2 is not installed
-
-**Install WebView2:**
-
-- Download from: https://developer.microsoft.com/en-us/microsoft-edge/webview2/
-- Or use the Evergreen Bootstrapper (recommended)
-
-### "TaskDialogIndirect could not be located" Error
-
-**RESOLVED:** This issue has been fixed by embedding a Windows application manifest.
-
-The error occurred because the Windows executable needs an [application manifest](https://learn.microsoft.com/en-us/windows/win32/sbscs/application-manifests) to enable Common Controls version 6+, which provides the `TaskDialogIndirect` API used by Tauri.
-
-**Solution Applied:**
-
-- Added `src-tauri/windows-app.manifest` with Common Controls v6 dependency
-- Updated `build.rs` to use Tauri's native `WindowsAttributes.app_manifest()` API
-- The manifest is now properly embedded during cross-compilation
-
-**If you still encounter issues:**
-
-- **Antivirus/Windows Defender**: The app might be blocked. Check Windows Defender history.
-- **Missing sidecar**: Ensure `pi-agent-x86_64-pc-windows-msvc.exe` is in the same folder as `graphone.exe`
-- **Run from CMD**: Open Command Prompt and run the exe to see detailed error messages
-
-**Launch issues from WSL2:**
-If you get "Windows cannot find..." errors when running `npm run run:windows`:
-
-1. Manually navigate to `C:\Windows\Temp\graphone\` in Windows Explorer
-2. Double-click `graphone.exe` to run it
-3. Or open PowerShell and run: `C:\Windows\Temp\graphone\graphone.exe`
+See [TROUBLESHOOTING.md](TROUBLESHOOTING.md) for common issues and solutions.
 
 ---
 
-## Documentation
-
-| Document                                                                                   | Description                                |
-| ------------------------------------------------------------------------------------------ | ------------------------------------------ |
-| [`docs/specs/project-specs.md`](docs/specs/project-specs.md)                               | Original project specification             |
-| [`docs/specs/repository-structure-2026-02.md`](docs/specs/repository-structure-2026-02.md) | Current repository architecture and naming |
-| [`docs/specs/wsl2-development-notes.md`](docs/specs/wsl2-development-notes.md)             | WSL2 development environment guide         |
-| [`docs/tasks/scaffolding-tasks.md`](docs/tasks/scaffolding-tasks.md)                       | Setup tasks and checklist                  |
-
-### External References
+## External References
 
 - **Tauri 2.0 Docs**: https://v2.tauri.app
 - **pi-mono SDK**: https://github.com/badlogic/pi-mono/tree/main/packages/coding-agent/docs/sdk.md
@@ -512,7 +386,7 @@ Graphone builds and ships a local host sidecar from `services/agent-host`.
 To develop sidecar behavior:
 
 1. Edit `services/agent-host/src/*`
-2. Test with `node tooling/scripts/verify-path-b-host.mjs`
+2. Test with `bun tooling/scripts/verify-path-b-host.mjs`
 3. Build with `npm run build:linux` (or `cargo build --manifest-path src-tauri/Cargo.toml`)
 
 ---
@@ -528,8 +402,7 @@ MIT License - See [LICENSE](LICENSE) for details.
 - [pi-mono](https://github.com/badlogic/pi-mono) by Mario Zechner - The underlying coding agent (Node.js/TypeScript)
 - [Tauri](https://tauri.app) - Cross-platform application framework
 - [bun](https://bun.sh) - JavaScript runtime and bundler used for sidecar compilation
-- [Anthropic](https://anthropic.com), [OpenAI](https://openai.com), and other LLM providers supported by pi-mono
 
 ---
 
-**Status**: Active development | **Last Updated**: February 7, 2026
+**Status**: Active development | **Last Updated**: February 19, 2026

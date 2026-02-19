@@ -1,9 +1,5 @@
 # Contributing Guide
 
-Roadmap document:
-
-- `docs/plans/repository-restructure-roadmap-2026-02.md`
-
 ---
 
 ## Repository path conventions
@@ -48,5 +44,5 @@ ls -la apps/desktop/web
 ## Additional references
 
 - Main project overview: `README.md`
+- Troubleshooting guide: `TROUBLESHOOTING.md`
 - Agent/developer operational notes: `AGENTS.md`
-- Long-term restructure roadmap: `docs/plans/repository-restructure-roadmap-2026-02.md`
