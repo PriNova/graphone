@@ -17,7 +17,9 @@
     changing?: boolean;
     disabled?: boolean;
     enabledModels?: EnabledModelsStore;
+    filterMode?: FilterMode;
     onchange?: (provider: string, modelId: string) => void | Promise<void>;
+    onfilterchange?: (mode: FilterMode) => void | Promise<void>;
   }
 
   let {
@@ -28,10 +30,10 @@
     changing = false,
     disabled = false,
     enabledModels = defaultEnabledModelsStore,
+    filterMode = "all",
     onchange,
+    onfilterchange,
   }: Props = $props();
-
-  let filterMode = $state<FilterMode>("all");
 
   const hasEnabledScope = $derived(enabledModels.patterns.length > 0);
   const enabledKeys = $derived(enabledModels.resolveEnabledModelKeys(models));
@@ -128,7 +130,7 @@
   }
 
   function handleFilterChange(mode: FilterMode): void {
-    filterMode = mode;
+    onfilterchange?.(mode);
   }
 </script>
 

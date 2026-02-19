@@ -11,6 +11,8 @@
   import type { AvailableModel, ThinkingLevel } from "$lib/stores/agent.svelte";
   import type { EnabledModelsStore } from "$lib/stores/enabledModels.svelte";
 
+  type FilterMode = "all" | "enabled";
+
   interface Props {
     value?: string;
     onsubmit?: (value: string) => void | Promise<void>;
@@ -24,6 +26,7 @@
     onnewchat?: () => void | Promise<void>;
     onmodelchange?: (provider: string, modelId: string) => void | Promise<void>;
     onthinkingchange?: (level: ThinkingLevel) => void | Promise<void>;
+    onmodelfilterchange?: (mode: FilterMode) => void | Promise<void>;
     placeholder?: string;
     disabled?: boolean;
     autofocus?: boolean;
@@ -38,6 +41,7 @@
     modelChanging?: boolean;
     thinkingChanging?: boolean;
     enabledModels?: EnabledModelsStore;
+    modelFilter?: FilterMode;
     chatHasMessages?: boolean;
   }
 
@@ -50,6 +54,7 @@
     onnewchat,
     onmodelchange,
     onthinkingchange,
+    onmodelfilterchange,
     placeholder = "Ask anything...",
     disabled = false,
     autofocus = false,
@@ -64,6 +69,7 @@
     modelChanging = false,
     thinkingChanging = false,
     enabledModels,
+    modelFilter = "all",
     chatHasMessages = false,
   }: Props = $props();
 
@@ -431,7 +437,9 @@
         changing={modelChanging}
         disabled={modelSelectorDisabled}
         {enabledModels}
+        filterMode={modelFilter}
         onchange={onmodelchange}
+        onfilterchange={onmodelfilterchange}
       />
       <ThinkingSelector
         level={thinkingLevel}

@@ -12,6 +12,7 @@
     creating?: boolean;
     collapsed?: boolean;
     scopeHistoryByProject?: Record<string, PersistedSessionHistoryItem[]>;
+    collapsedScopes?: string[];
     ontoggle?: () => void;
     oncreatesession?: () => void | Promise<void>;
     onselectscope?: (projectDir: string) => void | Promise<void>;
@@ -21,6 +22,7 @@
     ) => void | Promise<void>;
     onprojectdirinput?: (value: string) => void;
     onremovescope?: (projectDir: string) => void | Promise<void>;
+    ontogglescopecollapse?: (projectDir: string) => void;
   }
 
   let {
@@ -32,19 +34,19 @@
     creating = false,
     collapsed = false,
     scopeHistoryByProject = {},
+    collapsedScopes = [],
     ontoggle,
     oncreatesession,
     onselectscope,
     onselecthistory,
     onprojectdirinput,
     onremovescope,
+    ontogglescopecollapse,
   }: Props = $props();
 
-  // Per-scope collapsed state: a projectDir in this set means its history is hidden
-  const collapsedScopes = new SvelteSet<string>();
-  // Per-scope pending deletion state: a projectDir in this set is awaiting confirmation
+  // Local UI state for pending deletion and expanded session lists
+  // (not persisted - these are transient UI states)
   const pendingDeletionScopes = new SvelteSet<string>();
-  // Per-scope expanded session list state: a projectDir in this set shows all sessions
   const expandedSessionLists = new SvelteSet<string>();
 
   let historyTooltip = $state<{
@@ -61,11 +63,7 @@
 
   function toggleScopeCollapse(projectDir: string, event: MouseEvent): void {
     event.stopPropagation();
-    if (collapsedScopes.has(projectDir)) {
-      collapsedScopes.delete(projectDir);
-    } else {
-      collapsedScopes.add(projectDir);
-    }
+    ontogglescopecollapse?.(projectDir);
   }
 
   function toggleSessionListExpand(
@@ -81,7 +79,7 @@
   }
 
   function isScopeCollapsed(projectDir: string): boolean {
-    return collapsedScopes.has(projectDir);
+    return collapsedScopes.includes(projectDir);
   }
 
   function toScopeTitle(projectDir: string): string {

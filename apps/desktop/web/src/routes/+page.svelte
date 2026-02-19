@@ -28,6 +28,7 @@
     sessionsStore,
     type SessionDescriptor,
   } from "$lib/stores/sessions.svelte";
+  import { settingsStore } from "$lib/stores/settings.svelte";
   import type { AgentEvent } from "$lib/types/agent";
   import type { SessionRuntime } from "$lib/types/session";
 
@@ -435,6 +436,9 @@
       return;
     }
 
+    // Save last selected scope
+    await settingsStore.setLastSelectedScope(normalizedTarget);
+
     await createSession(projectDir);
   }
 
@@ -442,15 +446,22 @@
     projectDir: string,
     history: PersistedSessionHistoryItem,
   ): Promise<void> {
+    const normalizedTarget = normalizeScopePath(projectDir);
+
     const existing = sessionsStore.sessions.find(
       (session) => session.sessionFile === history.filePath,
     );
     if (existing) {
+      // Save last selected scope
+      await settingsStore.setLastSelectedScope(normalizedTarget);
       sessionsStore.setActiveSession(existing.sessionId);
       await ensureRuntime(existing);
       requestAnimationFrame(() => scrollToBottom(false));
       return;
     }
+
+    // Save last selected scope
+    await settingsStore.setLastSelectedScope(normalizedTarget);
 
     await createSession(projectDir, history.filePath);
   }
@@ -559,6 +570,10 @@
     }
   }
 
+  async function onModelFilterChange(mode: "all" | "enabled"): Promise<void> {
+    await settingsStore.setModelFilter(mode);
+  }
+
   async function onSlashCommand(
     command: string,
     args: string,
@@ -601,10 +616,53 @@
     }
 
     if (sessionsStore.sessions.length === 0) {
-      const fallback =
+      // Prefer the last selected scope from settings, fall back to cwd
+      const lastScope = settingsStore.lastSelectedScope;
+      const cwdFallback =
         cwdStore.cwd ?? (await invoke<string>("get_working_directory"));
-      await createSession(fallback);
+
+      // Use last selected scope if it exists and is a valid directory
+      let projectDir = cwdFallback;
+      if (lastScope && lastScope.trim().length > 0) {
+        try {
+          // Check if it's a valid directory
+          const scopeHistory = projectScopesStore.historyByScope[lastScope];
+          const hasHistory = scopeHistory && scopeHistory.length > 0;
+
+          if (hasHistory) {
+            // Resume the most recent session for this scope
+            const mostRecent = scopeHistory[0];
+            if (mostRecent) {
+              await createSession(lastScope, mostRecent.filePath);
+              return;
+            }
+          }
+          // No history - start fresh with the last selected scope
+          projectDir = lastScope;
+        } catch {
+          // Fall back to cwd if lastScope is invalid
+        }
+      }
+
+      await createSession(projectDir);
     } else {
+      // Sessions exist - try to activate the last selected scope if it matches
+      const lastScope = settingsStore.lastSelectedScope;
+      if (lastScope && lastScope.trim().length > 0) {
+        const normalizedLast = normalizeScopePath(lastScope);
+        const matchingSession = sessionsStore.sessions.find(
+          (s) => normalizeScopePath(s.projectDir) === normalizedLast,
+        );
+        if (matchingSession) {
+          sessionsStore.setActiveSession(matchingSession.sessionId);
+          await ensureRuntime(matchingSession);
+          projectDirInput = matchingSession.projectDir;
+          requestAnimationFrame(() => scrollToBottom(false));
+          return;
+        }
+      }
+
+      // No match - use the first available session
       const active = sessionsStore.activeSession;
       if (active) {
         await ensureRuntime(active);
@@ -626,6 +684,9 @@
   });
 
   onMount(async () => {
+    // Load persistent UI settings first
+    await settingsStore.load();
+
     try {
       await bootstrapSessions();
     } catch (error) {
@@ -744,12 +805,16 @@
     {projectDirInput}
     creating={sessionsStore.creating}
     collapsed={sidebarCollapsed}
+    collapsedScopes={settingsStore.collapsedScopes}
     ontoggle={toggleSidebar}
     onprojectdirinput={onProjectDirInputChange}
     oncreatesession={createSessionFromInput}
     onselectscope={onSelectScope}
     onselecthistory={onSelectHistory}
     onremovescope={onRemoveScope}
+    ontogglescopecollapse={async (scope) => {
+      await settingsStore.toggleScopeCollapsed(scope);
+    }}
   />
 
   <section
@@ -816,6 +881,7 @@
           onnewchat={onNewChat}
           onmodelchange={onModelChange}
           onthinkingchange={onThinkingChange}
+          onmodelfilterchange={onModelFilterChange}
           {isLoading}
           disabled={!activeRuntime || !sessionStarted}
           placeholder={activeRuntime && sessionStarted
@@ -831,6 +897,7 @@
           modelChanging={isSettingModel}
           thinkingChanging={isSettingThinking}
           enabledModels={activeRuntime?.enabledModels}
+          modelFilter={settingsStore.modelFilter}
           autofocus={true}
           {chatHasMessages}
         />
