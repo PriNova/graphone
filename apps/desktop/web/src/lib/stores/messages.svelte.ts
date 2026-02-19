@@ -3,22 +3,43 @@ import type { ContentBlock, Message } from "$lib/types/agent";
 // Messages store manages message state and scroll behavior (session-scoped)
 export class MessagesStore {
   messages = $state<Message[]>([]);
-  isUserNearBottom = $state(true);
   streamingMessageId = $state<string | null>(null);
+
+  // Scroll pinning state is intentionally non-reactive to avoid rerenders
+  // during high-frequency scroll events.
+  private isUserPinnedToBottom = true;
+  private isProgrammaticScroll = false;
+  private static readonly SCROLL_EPSILON_PX = 24;
 
   // Scroll tracking
   updateScrollPosition(container: HTMLDivElement): void {
+    // Ignore scroll events caused by our own scrollToBottom calls.
+    if (this.isProgrammaticScroll) {
+      return;
+    }
+
     const { scrollTop, scrollHeight, clientHeight } = container;
-    this.isUserNearBottom = scrollHeight - scrollTop - clientHeight < 100;
+    this.isUserPinnedToBottom =
+      scrollHeight - scrollTop - clientHeight <=
+      MessagesStore.SCROLL_EPSILON_PX;
   }
 
   scrollToBottom(container: HTMLDivElement | null, smooth = true): void {
-    if (container && this.isUserNearBottom) {
-      container.scrollTo({
-        top: container.scrollHeight,
-        behavior: smooth ? "smooth" : "auto",
-      });
+    if (!container || !this.isUserPinnedToBottom) {
+      return;
     }
+
+    this.isProgrammaticScroll = true;
+    container.scrollTo({
+      top: container.scrollHeight,
+      behavior: smooth ? "smooth" : "auto",
+    });
+
+    // Release suppression in next frame and refresh pin state once.
+    requestAnimationFrame(() => {
+      this.isProgrammaticScroll = false;
+      this.updateScrollPosition(container);
+    });
   }
 
   // Message management

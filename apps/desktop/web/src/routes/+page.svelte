@@ -210,12 +210,14 @@
   // Performance: Debounced scroll using RAF throttling.
   // Prevents multiple scroll operations per animation frame during
   // high-frequency streaming events (text_delta, thinking_delta).
+  // Use instant scroll here for reliability while content grows rapidly;
+  // smooth scrolling can fall behind and temporarily mark the view as unpinned.
   let scrollRaf: number | null = null;
 
   function scheduleScrollToBottom(): void {
     if (scrollRaf === null) {
       scrollRaf = requestAnimationFrame(() => {
-        scrollToBottom(true);
+        scrollToBottom(false);
         scrollRaf = null;
       });
     }
@@ -766,7 +768,7 @@
       </header>
 
       <div
-        class="flex-1 min-h-0 overflow-y-auto py-4 px-2 flex flex-col gap-2 scroll-smooth"
+        class="flex-1 min-h-0 overflow-y-auto py-4 pl-2 pr-4 flex flex-col gap-2 scroll-smooth [scrollbar-gutter:stable]"
         bind:this={messagesContainerRef}
         onscroll={handleScroll}
       >
