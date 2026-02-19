@@ -435,9 +435,6 @@
         {enabledModels}
         onchange={onmodelchange}
       />
-      {#if isLoading}
-        <span>Click stop button or press Escape to cancel</span>
-      {/if}
     </span>
   </div>
 </div>

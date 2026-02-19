@@ -31,6 +31,27 @@
     thinkingCollapsed[index] = !isThinkingCollapsed(index);
   }
 
+  // Collapse thinking block on click, but only if no text is selected.
+  // This allows users to select/copy text without accidentally collapsing.
+  function handleThinkingContentClick(index: number, event: MouseEvent): void {
+    const selection = window.getSelection();
+    if (selection && selection.toString().length > 0) {
+      return; // User is selecting text, don't collapse
+    }
+    toggleThinking(index);
+  }
+
+  // Keyboard support for collapsing thinking block (a11y)
+  function handleThinkingContentKeydown(
+    index: number,
+    event: KeyboardEvent,
+  ): void {
+    if (event.key === "Enter" || event.key === " ") {
+      event.preventDefault();
+      toggleThinking(index);
+    }
+  }
+
   /**
    * Truncate tool result for display.
    * Returns the truncated result and truncation info.
@@ -257,8 +278,15 @@
             </svg>
           </button>
           {#if !isThinkingCollapsed(blockIndex)}
-            <pre
-              class="p-3 text-[0.8125rem] leading-normal text-muted-foreground whitespace-pre-wrap wrap-break-word m-0">{block.thinking}</pre>
+            <div
+              role="button"
+              tabindex="0"
+              class="p-3 font-mono text-[0.8125rem] leading-normal text-muted-foreground whitespace-pre-wrap wrap-break-word m-0 cursor-pointer hover:bg-foreground/3 dark:hover:bg-f6fff5/[0.02] transition-colors select-text focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset"
+              onclick={(e) => handleThinkingContentClick(blockIndex, e)}
+              onkeydown={(e) => handleThinkingContentKeydown(blockIndex, e)}
+            >
+              {block.thinking}
+            </div>
           {/if}
         </div>
       {:else if isToolCall(block)}
