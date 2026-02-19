@@ -130,6 +130,7 @@ pub fn init() {
 pub fn log(message: impl AsRef<str>) {
     let message = message.as_ref();
 
+    #[cfg(debug_assertions)]
     eprintln!("{}", message);
 
     if let Some(file_mutex) = LOG_FILE.get_or_init(init_log_file).as_ref() {
