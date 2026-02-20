@@ -1,4 +1,5 @@
 <script lang="ts">
+  import MessageMarkdown from "$lib/components/Messages/MessageMarkdown.svelte";
   import { cn } from "$lib/utils/cn";
   import type {
     ContentBlock,
@@ -412,11 +413,10 @@
         <div
           class="bg-card border border-border rounded-lg px-5 py-2 mb-2 last:mb-0"
         >
-          <div
-            class="text-[0.9375rem] leading-relaxed text-foreground whitespace-pre-wrap wrap-break-word"
-          >
-            {block.text}
-          </div>
+          <MessageMarkdown
+            content={block.text}
+            class="text-[0.9375rem] leading-relaxed text-foreground wrap-break-word"
+          />
         </div>
       {/if}
     {/each}

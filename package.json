@@ -34,7 +34,11 @@
     "@mariozechner/pi-coding-agent": "^0.53.0",
     "@tauri-apps/api": "^2",
     "@tauri-apps/plugin-opener": "^2",
-    "@tauri-apps/plugin-store": "^2"
+    "@tauri-apps/plugin-store": "^2",
+    "dompurify": "^3.2.7",
+    "highlight.js": "^11.11.1",
+    "marked": "^15.0.12",
+    "marked-highlight": "^2.2.2"
   },
   "devDependencies": {
     "@sveltejs/adapter-static": "^3.0.6",
