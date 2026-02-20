@@ -1,5 +1,7 @@
 # Graphone - Pi-Tauri Cross-Platform Agent
 
+📌 **Feature availability (what works today):** [FEATURES.md](./FEATURES.md)
+
 A unified cross-platform interface for the [pi-mono](https://github.com/badlogic/pi-mono) coding agent, built with [Tauri 2.0](https://v2.tauri.app/). This project provides native applications for Desktop (Windows, macOS, Linux) using a sidecar pattern with the pi-mono agent.
 
 ![Project Status](https://img.shields.io/badge/status-development-orange)
