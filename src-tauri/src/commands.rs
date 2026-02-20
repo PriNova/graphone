@@ -1,11 +1,14 @@
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::io::{BufRead, BufReader};
 use std::path::{Path, PathBuf};
+#[cfg(target_os = "linux")]
 use std::process::Command;
 use std::sync::Arc;
 use std::time::UNIX_EPOCH;
 
+#[cfg(target_os = "linux")]
 use base64::engine::general_purpose::STANDARD as BASE64_STANDARD;
+#[cfg(target_os = "linux")]
 use base64::Engine;
 use serde::Serialize;
 use tauri::{AppHandle, State};
