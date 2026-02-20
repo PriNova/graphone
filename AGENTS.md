@@ -6,6 +6,8 @@
 - **Check pi-mono first for feature implementations** - Since graphone is a visual wrapper around pi-mono, look up implementations in local `../pi-mono` first (when available). Many features already exist there and can be mimicked or adapted for desktop UI
 - Use GitHub tools only when you need to reference external repositories or when explicitly asked about remote code
 - **Do not track or push `docs/` changes** - The `docs/` folder and all files under it are local-only in this repo context. Do not `git add`/commit/push anything in `docs/` (including with `git add -f`) unless the user explicitly overrides this rule in the current task.
+- **Use title + body commit messages by default** - Unless the user explicitly requests otherwise, write commits with a concise title and a descriptive body (not title-only).
+- **Use robust multiline commit messages** - Do not embed literal `\n` in a single `git commit -m` string. Use multiple `-m` flags (one per paragraph) or `git commit -F` with a heredoc/file so line breaks render correctly on GitHub.
 
 ## Build Commands
 
