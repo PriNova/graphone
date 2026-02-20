@@ -5,6 +5,7 @@
 - **Check local code first** - Before using GitHub tools (`read_github`, `search_github`, etc.), always explore the local codebase using standard file tools (`read`, `bash` with `find`/`grep`, etc.)
 - **Check pi-mono first for feature implementations** - Since graphone is a visual wrapper around pi-mono, look up implementations in local `../pi-mono` first (when available). Many features already exist there and can be mimicked or adapted for desktop UI
 - Use GitHub tools only when you need to reference external repositories or when explicitly asked about remote code
+- **Do not track or push `docs/` changes** - The `docs/` folder and all files under it are local-only in this repo context. Do not `git add`/commit/push anything in `docs/` (including with `git add -f`) unless the user explicitly overrides this rule in the current task.
 
 ## Build Commands
 
