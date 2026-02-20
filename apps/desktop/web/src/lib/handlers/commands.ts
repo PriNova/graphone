@@ -1,6 +1,7 @@
 import { getCommandHandler } from "$lib/slash-commands";
 import type { AgentStore } from "$lib/stores/agent.svelte";
 import type { MessagesStore } from "$lib/stores/messages.svelte";
+import type { PromptImageAttachment } from "$lib/types/agent";
 
 export interface SessionRuntimeForCommands {
   agent: AgentStore;
@@ -69,6 +70,7 @@ export async function handleSlashCommand(
 export async function handlePromptSubmit(
   runtime: SessionRuntimeForCommands,
   prompt: string,
+  images?: PromptImageAttachment[],
 ): Promise<void> {
   if (!runtime.agent.sessionStarted) {
     runtime.messages.addErrorMessage(
@@ -77,8 +79,15 @@ export async function handlePromptSubmit(
     return;
   }
 
+  const optimisticContent = [
+    ...(prompt.length > 0 ? [{ type: "text" as const, text: prompt }] : []),
+    ...(images ?? []),
+  ];
+
+  runtime.messages.addOptimisticUserMessage(optimisticContent);
+
   try {
-    await runtime.agent.sendPrompt(prompt);
+    await runtime.agent.sendPrompt(prompt, images);
   } catch (error) {
     console.error("Error sending prompt:", error);
     runtime.messages.addErrorMessage(

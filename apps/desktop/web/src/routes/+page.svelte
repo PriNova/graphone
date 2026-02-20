@@ -29,7 +29,7 @@
     type SessionDescriptor,
   } from "$lib/stores/sessions.svelte";
   import { settingsStore } from "$lib/stores/settings.svelte";
-  import type { AgentEvent } from "$lib/types/agent";
+  import type { AgentEvent, PromptImageAttachment } from "$lib/types/agent";
   import type { SessionRuntime } from "$lib/types/session";
 
   // DOM refs
@@ -172,6 +172,9 @@
   );
   const isSettingThinking = $derived(
     activeRuntime ? activeRuntime.agent.isSettingThinking : false,
+  );
+  const currentModelSupportsImageInput = $derived(
+    activeRuntime ? activeRuntime.agent.supportsImageInput : false,
   );
   const isStreaming = $derived(
     activeRuntime ? activeRuntime.messages.streamingMessageId !== null : false,
@@ -557,10 +560,13 @@
     }
   }
 
-  async function onSubmit(prompt: string): Promise<void> {
+  async function onSubmit(
+    prompt: string,
+    images?: PromptImageAttachment[],
+  ): Promise<void> {
     if (!activeRuntime) return;
     maybeTrackOptimisticFirstPrompt(activeRuntime, prompt);
-    await handlePromptSubmit(activeRuntime, prompt);
+    await handlePromptSubmit(activeRuntime, prompt, images);
   }
 
   function onCancel(): void {
@@ -923,6 +929,7 @@
           model={currentModel}
           provider={currentProvider}
           thinkingLevel={currentThinkingLevel}
+          supportsImageInput={currentModelSupportsImageInput}
           {supportsThinking}
           {availableThinkingLevels}
           models={availableModels}

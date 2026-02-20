@@ -1,9 +1,11 @@
 import { invoke } from "@tauri-apps/api/core";
+import type { PromptImageAttachment } from "$lib/types/agent";
 
 export interface AvailableModel {
   provider: string;
   id: string;
   name: string;
+  supportsImageInput: boolean;
 }
 
 export type ThinkingLevel =
@@ -45,6 +47,7 @@ export class AgentStore {
   currentProvider = $state("");
   currentThinkingLevel = $state<ThinkingLevel>("off");
   supportsThinking = $state(false);
+  supportsImageInput = $state(false);
   availableThinkingLevels = $state<ThinkingLevel[]>(["off"]);
   availableModels = $state<AvailableModel[]>([]);
   isSettingThinking = $state(false);
@@ -68,7 +71,7 @@ export class AgentStore {
       | {
           success: true;
           data: {
-            model?: { id?: unknown; provider?: unknown };
+            model?: { id?: unknown; provider?: unknown; input?: unknown };
             thinkingLevel?: unknown;
             supportsThinking?: unknown;
             availableThinkingLevels?: unknown;
@@ -88,6 +91,7 @@ export class AgentStore {
       this.currentModel = typeof model?.id === "string" ? model.id : "";
       this.currentProvider =
         typeof model?.provider === "string" ? model.provider : "";
+      this.supportsImageInput = this.parseModelSupportsImageInput(model?.input);
 
       this.currentThinkingLevel = this.parseThinkingLevel(
         response.data?.thinkingLevel,
@@ -114,6 +118,15 @@ export class AgentStore {
 
       if (this.availableModels.length > 0) {
         this.availableModels = this.sortAvailableModels(this.availableModels);
+
+        const selected = this.availableModels.find(
+          (candidate) =>
+            candidate.provider === this.currentProvider &&
+            candidate.id === this.currentModel,
+        );
+        if (selected) {
+          this.supportsImageInput = selected.supportsImageInput;
+        }
       }
 
       return;
@@ -136,6 +149,15 @@ export class AgentStore {
     try {
       const models = await this.loadAvailableModelsViaRpcList();
       this.availableModels = this.sortAvailableModels(models);
+
+      const selected = this.availableModels.find(
+        (model) =>
+          model.provider === this.currentProvider &&
+          model.id === this.currentModel,
+      );
+      if (selected) {
+        this.supportsImageInput = selected.supportsImageInput;
+      }
     } catch (error) {
       console.warn("Failed to load models via get_available_models:", error);
       this.availableModels = [];
@@ -230,11 +252,18 @@ export class AgentStore {
     }
   }
 
-  async sendPrompt(prompt: string): Promise<void> {
+  async sendPrompt(
+    prompt: string,
+    images?: PromptImageAttachment[],
+  ): Promise<void> {
     if (!this.sessionStarted) {
       throw new Error("Agent session not started");
     }
-    await invoke("send_prompt", { prompt, sessionId: this.sessionId });
+    await invoke("send_prompt", {
+      prompt,
+      sessionId: this.sessionId,
+      images,
+    });
   }
 
   async abort(): Promise<void> {
@@ -277,7 +306,12 @@ export class AgentStore {
       | {
           success: true;
           data: {
-            models: Array<{ provider?: unknown; id?: unknown; name?: unknown }>;
+            models: Array<{
+              provider?: unknown;
+              id?: unknown;
+              name?: unknown;
+              supportsImageInput?: unknown;
+            }>;
           };
         }
       | { success: false; error: string }
@@ -317,6 +351,7 @@ export class AgentStore {
           provider,
           id,
           name: typeof name === "string" && name.length > 0 ? name : id,
+          supportsImageInput: model.supportsImageInput === true,
         } satisfies AvailableModel;
       })
       .filter((model): model is AvailableModel => model !== null);
@@ -329,6 +364,14 @@ export class AgentStore {
 
     const normalized = level.toLowerCase() as ThinkingLevel;
     return VALID_THINKING_LEVELS.has(normalized) ? normalized : "off";
+  }
+
+  private parseModelSupportsImageInput(input: unknown): boolean {
+    if (!Array.isArray(input)) {
+      return false;
+    }
+
+    return input.some((value) => value === "image");
   }
 
   private parseUsageIndicator(value: unknown): UsageIndicatorSnapshot | null {

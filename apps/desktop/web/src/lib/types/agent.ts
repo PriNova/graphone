@@ -1,5 +1,11 @@
 // Types for pi-mono RPC integration
 
+export interface PromptImageAttachment {
+  type: "image";
+  data: string;
+  mimeType: string;
+}
+
 export interface ToolCall {
   type: "toolCall";
   id: string;
@@ -22,6 +28,8 @@ export interface TextBlock {
 
 export type ContentBlock = TextBlock | ThinkingBlock | ToolCall;
 
+export type UserContentBlock = TextBlock | PromptImageAttachment;
+
 export interface AssistantMessage {
   role: "assistant";
   content: ContentBlock[];
@@ -29,7 +37,7 @@ export interface AssistantMessage {
 }
 
 export type Message =
-  | { id: string; type: "user"; content: string; timestamp: Date }
+  | { id: string; type: "user"; content: UserContentBlock[]; timestamp: Date }
   | {
       id: string;
       type: "assistant";

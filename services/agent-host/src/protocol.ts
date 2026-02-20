@@ -30,15 +30,23 @@ export interface CreateSessionCommand extends HostCommandBase {
   sessionFile?: string;
 }
 
+export interface HostImageAttachment {
+  type: "image";
+  data: string;
+  mimeType: string;
+}
+
 export interface PromptCommand extends HostCommandBase {
   type: "prompt";
   message: string;
+  images?: HostImageAttachment[];
   streamingBehavior?: "steer" | "followUp";
 }
 
 export interface SessionMessageCommand extends HostCommandBase {
   type: "steer" | "follow_up";
   message: string;
+  images?: HostImageAttachment[];
 }
 
 export interface SetModelCommand extends HostCommandBase {

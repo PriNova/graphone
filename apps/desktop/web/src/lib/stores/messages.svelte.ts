@@ -1,9 +1,18 @@
-import type { ContentBlock, Message } from "$lib/types/agent";
+import type {
+  ContentBlock,
+  Message,
+  PromptImageAttachment,
+  UserContentBlock,
+} from "$lib/types/agent";
 
 // Messages store manages message state and scroll behavior (session-scoped)
 export class MessagesStore {
   messages = $state<Message[]>([]);
   streamingMessageId = $state<string | null>(null);
+
+  // Optimistic user-message rendering (important for large attachment payloads,
+  // where remote echo events may be delayed or dropped by the platform IPC layer).
+  private static readonly OPTIMISTIC_DEDUPE_WINDOW_MS = 15_000;
 
   // Scroll pinning state is intentionally non-reactive to avoid rerenders
   // during high-frequency scroll events.
@@ -136,13 +145,39 @@ export class MessagesStore {
     this.messages = loadedMessages;
   }
 
-  // Add user message from agent event
-  addUserMessage(msg: { content?: unknown; timestamp?: number }): void {
+  addOptimisticUserMessage(content: UserContentBlock[]): void {
+    if (content.length === 0) {
+      return;
+    }
+
     this.addMessage({
       id: crypto.randomUUID(),
       type: "user",
-      content: this.convertUserContent(msg.content),
-      timestamp: msg.timestamp ? new Date(msg.timestamp) : new Date(),
+      content,
+      timestamp: new Date(),
+    });
+  }
+
+  // Add user message from agent event
+  addUserMessage(msg: { content?: unknown; timestamp?: number }): void {
+    const converted = this.convertUserContent(msg.content);
+    const timestamp = msg.timestamp ? new Date(msg.timestamp) : new Date();
+
+    const last = this.messages[this.messages.length - 1];
+    if (
+      last?.type === "user" &&
+      this.isSameUserContent(last.content, converted) &&
+      Math.abs(timestamp.getTime() - last.timestamp.getTime()) <=
+        MessagesStore.OPTIMISTIC_DEDUPE_WINDOW_MS
+    ) {
+      return;
+    }
+
+    this.addMessage({
+      id: crypto.randomUUID(),
+      type: "user",
+      content: converted,
+      timestamp,
     });
   }
 
@@ -322,6 +357,42 @@ export class MessagesStore {
     });
   }
 
+  private isSameUserContent(
+    left: UserContentBlock[],
+    right: UserContentBlock[],
+  ): boolean {
+    if (left.length !== right.length) {
+      return false;
+    }
+
+    for (let index = 0; index < left.length; index += 1) {
+      const leftBlock = left[index];
+      const rightBlock = right[index];
+
+      if (!leftBlock || !rightBlock || leftBlock.type !== rightBlock.type) {
+        return false;
+      }
+
+      if (leftBlock.type === "text" && rightBlock.type === "text") {
+        if (leftBlock.text !== rightBlock.text) {
+          return false;
+        }
+        continue;
+      }
+
+      if (leftBlock.type === "image" && rightBlock.type === "image") {
+        if (
+          leftBlock.mimeType !== rightBlock.mimeType ||
+          leftBlock.data !== rightBlock.data
+        ) {
+          return false;
+        }
+      }
+    }
+
+    return true;
+  }
+
   static formatToolResultContent(content: unknown): string {
     if (content === null || content === undefined) {
       return "";
@@ -361,7 +432,7 @@ export class MessagesStore {
     return MessagesStore.convertUnknownAssistantContent(content);
   }
 
-  convertUserContent(content: unknown): string {
+  convertUserContent(content: unknown): UserContentBlock[] {
     return MessagesStore.convertUnknownUserContent(content);
   }
 
@@ -394,31 +465,81 @@ export class MessagesStore {
     return [];
   }
 
-  static convertUnknownUserContent(content: unknown): string {
+  static convertUnknownUserContent(content: unknown): UserContentBlock[] {
     if (typeof content === "string") {
-      return content;
+      if (content.length === 0) return [];
+      return [{ type: "text", text: content }];
     }
 
     if (Array.isArray(content)) {
-      return content
-        .map((block) => {
-          if (typeof block === "string") return block;
-          if (typeof block === "object" && block !== null && "type" in block) {
-            const typed = block as { type: string; text?: string };
-            if (typed.type === "text") {
-              return typed.text ?? "";
-            }
+      const converted: UserContentBlock[] = [];
+
+      for (const block of content) {
+        if (typeof block === "string") {
+          if (block.length > 0) {
+            converted.push({ type: "text", text: block });
           }
-          return "";
-        })
-        .join("");
+          continue;
+        }
+
+        if (typeof block !== "object" || block === null || !("type" in block)) {
+          continue;
+        }
+
+        const typed = block as {
+          type?: unknown;
+          text?: unknown;
+          data?: unknown;
+          mimeType?: unknown;
+          source?: unknown;
+        };
+
+        if (typed.type === "text" && typeof typed.text === "string") {
+          converted.push({ type: "text", text: typed.text });
+          continue;
+        }
+
+        if (
+          typed.type === "image" &&
+          typeof typed.data === "string" &&
+          typeof typed.mimeType === "string"
+        ) {
+          converted.push({
+            type: "image",
+            data: typed.data,
+            mimeType: typed.mimeType,
+          } satisfies PromptImageAttachment);
+          continue;
+        }
+
+        // Compatibility fallback for providers that encode image source objects.
+        const source = typed.source as
+          | { type?: unknown; data?: unknown; mediaType?: unknown }
+          | undefined;
+        if (
+          typed.type === "image" &&
+          source &&
+          typeof source === "object" &&
+          source.type === "base64" &&
+          typeof source.data === "string" &&
+          typeof source.mediaType === "string"
+        ) {
+          converted.push({
+            type: "image",
+            data: source.data,
+            mimeType: source.mediaType,
+          } satisfies PromptImageAttachment);
+        }
+      }
+
+      return converted;
     }
 
     if (content === undefined || content === null) {
-      return "";
+      return [];
     }
 
-    return JSON.stringify(content);
+    return [{ type: "text", text: JSON.stringify(content) }];
   }
 
   // Convert agent content blocks to our format

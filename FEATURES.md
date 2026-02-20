@@ -28,11 +28,13 @@ This page helps you quickly understand what to expect from **Graphone** today, e
 - Session persistence and reopening from sidebar history
 - Usage/context indicator in the status area
 - Stop/cancel current generation
+- Image attachments in the prompt composer (paste, drag/drop, file picker)
 
 ---
 
 ## 🟡 Available with limitations
 
+- Image attachments are model-dependent (send is blocked on text-only models), limited to 4 images/message, 5MB/image, and PNG/JPEG/GIF/WebP payloads
 - Prompt templates and skills can work, but there is no full dedicated browser-style management UI yet
 - Extension-powered features can run, but Graphone does not yet expose all interactive extension UI capabilities available in the terminal experience
 - Session resume works through sidebar/history flow; command-level parity is still incomplete
@@ -42,7 +44,6 @@ This page helps you quickly understand what to expect from **Graphone** today, e
 ## ❌ Not available yet (compared to pi TUI)
 
 - Login/logout command flow in the GUI (`/login`, `/logout`)
-- Image input in prompt composer (paste/drag image)
 - `@` file reference picker in the input box
 - `!command` / `!!command` prompt behavior
 - Full queued message behavior parity (steer/follow-up queue UX)

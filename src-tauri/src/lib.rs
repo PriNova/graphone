@@ -35,6 +35,7 @@ pub fn run() {
             commands::close_agent,
             commands::list_agents,
             commands::send_prompt,
+            commands::read_clipboard_image,
             commands::abort_agent,
             commands::new_session,
             commands::get_messages,

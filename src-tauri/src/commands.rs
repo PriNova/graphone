@@ -1,9 +1,12 @@
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::io::{BufRead, BufReader};
 use std::path::{Path, PathBuf};
+use std::process::Command;
 use std::sync::Arc;
 use std::time::UNIX_EPOCH;
 
+use base64::engine::general_purpose::STANDARD as BASE64_STANDARD;
+use base64::Engine;
 use serde::Serialize;
 use tauri::{AppHandle, State};
 use tokio::sync::Mutex;
@@ -12,8 +15,7 @@ use tokio::time::{sleep, Duration};
 use crate::logger;
 use crate::sidecar::{EventHandler, RpcClient, SidecarManager};
 use crate::state::SidecarState;
-use crate::types::RpcCommand;
-use crate::types::RpcResponse;
+use crate::types::{RpcCommand, RpcImageAttachment, RpcResponse};
 use crate::utils::crypto_random_uuid;
 
 #[derive(Debug, Clone, Serialize)]
@@ -997,6 +999,7 @@ async fn wait_for_sidecar_ready(
             streaming_behavior: None,
             session_file: None,
             level: None,
+            images: None,
         };
 
         match send_command_with_response(state, cmd, timeout_secs).await {
@@ -1124,6 +1127,7 @@ async fn create_session_internal(
             streaming_behavior: None,
             session_file: session_file.clone(),
             level: None,
+            images: None,
         };
 
         match send_command_with_response(state, command, CREATE_SESSION_TIMEOUT_SECS).await {
@@ -1192,6 +1196,7 @@ pub async fn close_agent(
         streaming_behavior: None,
         session_file: None,
         level: None,
+        images: None,
     };
 
     let response = send_command_with_response(state.inner(), command, 5).await?;
@@ -1237,6 +1242,7 @@ pub async fn list_agents(
         streaming_behavior: None,
         session_file: None,
         level: None,
+        images: None,
     };
 
     let response = send_command_with_response(state.inner(), command, 5).await?;
@@ -1247,14 +1253,159 @@ pub async fn list_agents(
     Ok(response)
 }
 
+#[cfg(target_os = "linux")]
+fn run_command_stdout(command: &str, args: &[&str]) -> Option<Vec<u8>> {
+    let output = Command::new(command).args(args).output().ok()?;
+    if !output.status.success() || output.stdout.is_empty() {
+        return None;
+    }
+
+    Some(output.stdout)
+}
+
+#[cfg(target_os = "linux")]
+fn normalize_image_mime_type(mime_type: &str) -> String {
+    mime_type
+        .split(';')
+        .next()
+        .unwrap_or(mime_type)
+        .trim()
+        .to_lowercase()
+}
+
+#[cfg(target_os = "linux")]
+fn pick_preferred_image_mime_type(types: &[String]) -> Option<String> {
+    const PREFERRED_TYPES: [&str; 6] = [
+        "image/png",
+        "image/jpeg",
+        "image/webp",
+        "image/gif",
+        "image/bmp",
+        "image/x-ms-bmp",
+    ];
+
+    for preferred in PREFERRED_TYPES {
+        if let Some(found) = types
+            .iter()
+            .find(|mime| normalize_image_mime_type(mime) == preferred)
+        {
+            return Some(found.clone());
+        }
+    }
+
+    types
+        .iter()
+        .find(|mime| normalize_image_mime_type(mime).starts_with("image/"))
+        .cloned()
+}
+
+#[cfg(target_os = "linux")]
+fn read_clipboard_image_linux() -> Option<RpcImageAttachment> {
+    let mime_types = run_command_stdout("wl-paste", &["--list-types"])
+        .and_then(|output| String::from_utf8(output).ok())
+        .map(|text| {
+            text.lines()
+                .map(|line| line.trim().to_string())
+                .filter(|line| !line.is_empty())
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_default();
+
+    if let Some(selected_type) = pick_preferred_image_mime_type(&mime_types) {
+        if let Some(bytes) = run_command_stdout(
+            "wl-paste",
+            &["--type", selected_type.as_str(), "--no-newline"],
+        ) {
+            return Some(RpcImageAttachment {
+                r#type: "image".to_string(),
+                data: BASE64_STANDARD.encode(bytes),
+                mime_type: normalize_image_mime_type(&selected_type),
+            });
+        }
+    }
+
+    let target_types =
+        run_command_stdout("xclip", &["-selection", "clipboard", "-t", "TARGETS", "-o"])
+            .and_then(|output| String::from_utf8(output).ok())
+            .map(|text| {
+                text.lines()
+                    .map(|line| line.trim().to_string())
+                    .filter(|line| !line.is_empty())
+                    .collect::<Vec<_>>()
+            })
+            .unwrap_or_default();
+
+    let fallback_types = if target_types.is_empty() {
+        vec![
+            "image/png".to_string(),
+            "image/jpeg".to_string(),
+            "image/webp".to_string(),
+            "image/gif".to_string(),
+            "image/bmp".to_string(),
+            "image/x-ms-bmp".to_string(),
+        ]
+    } else {
+        target_types
+    };
+
+    for mime_type in fallback_types {
+        if !normalize_image_mime_type(&mime_type).starts_with("image/") {
+            continue;
+        }
+
+        if let Some(bytes) = run_command_stdout(
+            "xclip",
+            &["-selection", "clipboard", "-t", mime_type.as_str(), "-o"],
+        ) {
+            return Some(RpcImageAttachment {
+                r#type: "image".to_string(),
+                data: BASE64_STANDARD.encode(bytes),
+                mime_type: normalize_image_mime_type(&mime_type),
+            });
+        }
+    }
+
+    None
+}
+
+/// Best-effort native clipboard image read.
+/// Primarily used as a fallback on Linux/WSLg when WebView clipboard events
+/// do not expose image items reliably.
+#[tauri::command]
+pub async fn read_clipboard_image() -> Result<Option<RpcImageAttachment>, String> {
+    #[cfg(target_os = "linux")]
+    {
+        return Ok(read_clipboard_image_linux());
+    }
+
+    #[cfg(not(target_os = "linux"))]
+    {
+        Ok(None)
+    }
+}
+
 /// Send a prompt to the agent
 #[tauri::command]
 pub async fn send_prompt(
     state: State<'_, Arc<Mutex<SidecarState>>>,
     prompt: String,
     session_id: String,
+    images: Option<Vec<RpcImageAttachment>>,
 ) -> Result<(), String> {
     let session_id = require_session_id(session_id, "prompt")?;
+
+    let images = images
+        .map(|attachments| {
+            attachments
+                .into_iter()
+                .filter(|attachment| {
+                    attachment.r#type == "image"
+                        && !attachment.data.is_empty()
+                        && attachment.mime_type.starts_with("image/")
+                })
+                .collect::<Vec<_>>()
+        })
+        .filter(|attachments| !attachments.is_empty());
 
     let cmd = RpcCommand {
         id: Some(crypto_random_uuid()),
@@ -1267,6 +1418,7 @@ pub async fn send_prompt(
         streaming_behavior: None,
         session_file: None,
         level: None,
+        images,
     };
 
     RpcClient::send_command(state.inner(), cmd).await
@@ -1291,6 +1443,7 @@ pub async fn abort_agent(
         streaming_behavior: None,
         session_file: None,
         level: None,
+        images: None,
     };
 
     RpcClient::send_command(state.inner(), cmd).await
@@ -1315,6 +1468,7 @@ pub async fn new_session(
         streaming_behavior: None,
         session_file: None,
         level: None,
+        images: None,
     };
 
     send_command_with_response(state.inner(), cmd, 5).await
@@ -1339,6 +1493,7 @@ pub async fn get_messages(
         streaming_behavior: None,
         session_file: None,
         level: None,
+        images: None,
     };
 
     send_command_with_response(state.inner(), cmd, 5).await
@@ -1363,6 +1518,7 @@ pub async fn get_state(
         streaming_behavior: None,
         session_file: None,
         level: None,
+        images: None,
     };
 
     send_command_with_response(state.inner(), cmd, 5).await
@@ -1387,6 +1543,7 @@ pub async fn get_available_models(
         streaming_behavior: None,
         session_file: None,
         level: None,
+        images: None,
     };
 
     let mut response = send_command_with_response(state.inner(), cmd, 5).await?;
@@ -1405,11 +1562,16 @@ pub async fn get_available_models(
                             let provider = model.get("provider")?.as_str()?;
                             let id = model.get("id")?.as_str()?;
                             let name = model.get("name").and_then(|v| v.as_str()).unwrap_or(id);
+                            let supports_image_input = model
+                                .get("supportsImageInput")
+                                .and_then(|v| v.as_bool())
+                                .unwrap_or(false);
 
                             Some(serde_json::json!({
                                 "provider": provider,
                                 "id": id,
                                 "name": name,
+                                "supportsImageInput": supports_image_input,
                             }))
                         })
                         .collect::<Vec<serde_json::Value>>()
@@ -1444,6 +1606,7 @@ pub async fn set_model(
         streaming_behavior: None,
         session_file: None,
         level: None,
+        images: None,
     };
 
     send_command_with_response(state.inner(), cmd, 5).await
@@ -1469,6 +1632,7 @@ pub async fn set_thinking_level(
         streaming_behavior: None,
         session_file: None,
         level: Some(level),
+        images: None,
     };
 
     send_command_with_response(state.inner(), cmd, 5).await
@@ -1493,6 +1657,7 @@ pub async fn cycle_model(
         streaming_behavior: None,
         session_file: None,
         level: None,
+        images: None,
     };
 
     send_command_with_response(state.inner(), cmd, 5).await

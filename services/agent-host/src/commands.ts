@@ -3,6 +3,7 @@ import {
   failure,
   success,
   type HostCommand,
+  type HostImageAttachment,
   type HostResponse,
 } from "./protocol.js";
 
@@ -15,6 +16,44 @@ function requireNonEmptyString(value: unknown, field: string): string {
 
 function requireSessionId(command: HostCommand): string {
   return requireNonEmptyString(command.sessionId, "sessionId");
+}
+
+function parseImageAttachments(
+  value: unknown,
+): HostImageAttachment[] | undefined {
+  if (!Array.isArray(value)) {
+    return undefined;
+  }
+
+  const parsed = value
+    .map((item) => {
+      if (!item || typeof item !== "object") {
+        return null;
+      }
+
+      const source = item as {
+        type?: unknown;
+        data?: unknown;
+        mimeType?: unknown;
+      };
+
+      if (
+        source.type !== "image" ||
+        typeof source.data !== "string" ||
+        typeof source.mimeType !== "string"
+      ) {
+        return null;
+      }
+
+      return {
+        type: "image" as const,
+        data: source.data,
+        mimeType: source.mimeType,
+      };
+    })
+    .filter((item): item is HostImageAttachment => item !== null);
+
+  return parsed.length > 0 ? parsed : undefined;
 }
 
 export async function handleHostCommand(
@@ -60,28 +99,43 @@ export async function handleHostCommand(
 
       case "prompt": {
         const sessionId = requireSessionId(command);
-        const message = requireNonEmptyString(command.message, "message");
+        const message =
+          typeof command.message === "string" ? command.message : "";
+        const images = parseImageAttachments(command.images);
+
+        if (message.trim().length === 0 && !images) {
+          throw new Error("message must be a non-empty string");
+        }
+
         const streamingBehavior =
           command.streamingBehavior === "steer" ||
           command.streamingBehavior === "followUp"
             ? command.streamingBehavior
             : undefined;
 
-        await runtime.prompt(sessionId, message, streamingBehavior);
+        await runtime.prompt(sessionId, message, images, streamingBehavior);
         return success(requestId, "prompt");
       }
 
       case "steer": {
         const sessionId = requireSessionId(command);
         const message = requireNonEmptyString(command.message, "message");
-        await runtime.steer(sessionId, message);
+        await runtime.steer(
+          sessionId,
+          message,
+          parseImageAttachments(command.images),
+        );
         return success(requestId, "steer");
       }
 
       case "follow_up": {
         const sessionId = requireSessionId(command);
         const message = requireNonEmptyString(command.message, "message");
-        await runtime.followUp(sessionId, message);
+        await runtime.followUp(
+          sessionId,
+          message,
+          parseImageAttachments(command.images),
+        );
         return success(requestId, "follow_up");
       }
 

@@ -3,7 +3,7 @@ import { resolve } from "node:path";
 import { randomUUID } from "node:crypto";
 
 import type { ThinkingLevel } from "@mariozechner/pi-agent-core";
-import type { AssistantMessage } from "@mariozechner/pi-ai";
+import type { AssistantMessage, ImageContent } from "@mariozechner/pi-ai";
 
 import {
   AuthStorage,
@@ -153,6 +153,7 @@ export class HostRuntime {
   async prompt(
     sessionId: string,
     message: string,
+    images?: ImageContent[],
     streamingBehavior?: "steer" | "followUp",
   ): Promise<void> {
     const session = this.requireSession(sessionId, "prompt");
@@ -161,6 +162,7 @@ export class HostRuntime {
     // matching RPC mode behavior where streaming continues via events.
     session
       .prompt(message, {
+        images,
         streamingBehavior,
         source: "rpc",
       })
@@ -172,14 +174,22 @@ export class HostRuntime {
       });
   }
 
-  async steer(sessionId: string, message: string): Promise<void> {
+  async steer(
+    sessionId: string,
+    message: string,
+    images?: ImageContent[],
+  ): Promise<void> {
     const session = this.requireSession(sessionId, "steer");
-    await session.steer(message);
+    await session.steer(message, images);
   }
 
-  async followUp(sessionId: string, message: string): Promise<void> {
+  async followUp(
+    sessionId: string,
+    message: string,
+    images?: ImageContent[],
+  ): Promise<void> {
     const session = this.requireSession(sessionId, "follow_up");
-    await session.followUp(message);
+    await session.followUp(message, images);
   }
 
   async abort(sessionId: string): Promise<void> {
@@ -288,7 +298,12 @@ export class HostRuntime {
   }
 
   async getAvailableModels(): Promise<{
-    models: Array<{ provider: string; id: string; name: string }>;
+    models: Array<{
+      provider: string;
+      id: string;
+      name: string;
+      supportsImageInput: boolean;
+    }>;
   }> {
     const models = await this.modelRegistry.getAvailable();
 
@@ -297,6 +312,7 @@ export class HostRuntime {
         provider: model.provider,
         id: model.id,
         name: model.name || model.id,
+        supportsImageInput: (model.input ?? []).includes("image"),
       })),
     };
   }
