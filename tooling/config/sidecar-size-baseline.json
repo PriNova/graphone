@@ -1,0 +1,15 @@
+{
+  "updatedAt": "2026-02-20",
+  "warnDeltaMb": 10,
+  "failDeltaMb": 20,
+  "targets": {
+    "linux": {
+      "path": "src-tauri/binaries/pi-agent-x86_64-unknown-linux-gnu",
+      "baselineBytes": 188103426
+    },
+    "windows": {
+      "path": "src-tauri/binaries/pi-agent-x86_64-pc-windows-msvc.exe",
+      "baselineBytes": 199697920
+    }
+  }
+}

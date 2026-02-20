@@ -142,6 +142,7 @@ fn compile_sidecar_binary(
     target_triple: &str,
     is_cross_compiling_windows: bool,
     compile_dir: &Path,
+    external_koffi: bool,
 ) -> PathBuf {
     fs::create_dir_all(compile_dir).expect("Failed to create temporary sidecar compile directory");
 
@@ -174,6 +175,11 @@ fn compile_sidecar_binary(
 
     if let Some(target) = compile_target {
         args.push(format!("--target={}", target));
+    }
+
+    if external_koffi {
+        args.push("--external".to_string());
+        args.push("koffi".to_string());
     }
 
     let entrypoint = match source.kind {
@@ -286,7 +292,75 @@ fn find_dependency_file(start: &Path, relative_path: &str) -> Option<PathBuf> {
     None
 }
 
-fn copy_runtime_assets(source: &SidecarSource, project_root: &Path, destination: &Path) {
+fn resolve_koffi_triplet(target_os: &str, target_triple: &str) -> Option<&'static str> {
+    if target_os == "windows" && target_triple.starts_with("x86_64-") {
+        return Some("win32_x64");
+    }
+
+    if target_os == "linux" && target_triple.starts_with("x86_64-") {
+        return Some("linux_x64");
+    }
+
+    None
+}
+
+fn copy_external_koffi_runtime(
+    project_root: &Path,
+    destination: &Path,
+    target_os: &str,
+    target_triple: &str,
+) {
+    let koffi_root = project_root.join("node_modules").join("koffi");
+    if !koffi_root.exists() {
+        panic!(
+            "koffi package not found at {}. Run 'npm install'.",
+            koffi_root.display()
+        );
+    }
+
+    let triplet = resolve_koffi_triplet(target_os, target_triple).unwrap_or_else(|| {
+        panic!(
+            "No koffi runtime triplet mapping for target {} ({})",
+            target_triple, target_os
+        )
+    });
+
+    let destination_root = destination.join("node_modules").join("koffi");
+    let destination_triplet_root = destination_root.join("build").join("koffi").join(triplet);
+
+    remove_path_if_exists(&destination_triplet_root);
+
+    copy_required_file(
+        &[koffi_root.join("package.json")],
+        &destination_root.join("package.json"),
+        "koffi package.json",
+    );
+
+    copy_required_file(
+        &[koffi_root.join("index.js")],
+        &destination_root.join("index.js"),
+        "koffi index.js",
+    );
+
+    copy_required_file(
+        &[koffi_root
+            .join("build")
+            .join("koffi")
+            .join(triplet)
+            .join("koffi.node")],
+        &destination_triplet_root.join("koffi.node"),
+        "koffi native module",
+    );
+}
+
+fn copy_runtime_assets(
+    source: &SidecarSource,
+    project_root: &Path,
+    destination: &Path,
+    target_os: &str,
+    target_triple: &str,
+    external_koffi: bool,
+) {
     let dist_path = source.package_root.join("dist");
 
     fs::create_dir_all(destination).unwrap_or_else(|error| {
@@ -384,6 +458,10 @@ fn copy_runtime_assets(source: &SidecarSource, project_root: &Path, destination:
         &destination.join("photon_rs_bg.wasm"),
         "photon_rs_bg.wasm",
     );
+
+    if external_koffi {
+        copy_external_koffi_runtime(project_root, destination, target_os, target_triple);
+    }
 }
 
 fn sidecar_destination_binary_path(
@@ -442,6 +520,7 @@ fn ensure_sidecar_placeholder_binary(manifest_dir: &Path, target_os: &str, targe
 
 fn build_sidecar() {
     println!("cargo:rerun-if-env-changed=GRAPHONE_PI_AGENT_BUN_TARGET");
+    println!("cargo:rerun-if-env-changed=GRAPHONE_PI_AGENT_EXTERNAL_KOFFI");
 
     let target_os = env::var("CARGO_CFG_TARGET_OS").unwrap();
     let target_triple = env::var("TARGET").unwrap();
@@ -499,6 +578,22 @@ fn build_sidecar() {
     ensure_bun_installed();
     ensure_source_is_ready(&source);
 
+    let external_koffi = env::var("GRAPHONE_PI_AGENT_EXTERNAL_KOFFI")
+        .ok()
+        .map(|value| {
+            matches!(
+                value.trim().to_ascii_lowercase().as_str(),
+                "1" | "true" | "yes" | "on"
+            )
+        })
+        .unwrap_or(true);
+
+    if external_koffi {
+        println!("cargo:warning=Compiling pi-agent with externalized koffi runtime assets");
+    } else {
+        println!("cargo:warning=Compiling pi-agent with bundled koffi runtime");
+    }
+
     let is_cross_compiling_windows = target_os == "windows" && env::consts::OS != "windows";
 
     if is_cross_compiling_windows {
@@ -516,6 +611,7 @@ fn build_sidecar() {
         &target_triple,
         is_cross_compiling_windows,
         &compile_dir,
+        external_koffi,
     );
 
     let dest_binary = sidecar_destination_binary_path(&manifest_dir, &target_os, &target_triple);
@@ -543,18 +639,39 @@ fn build_sidecar() {
     }
 
     println!("cargo:warning=Copying pi-agent runtime assets...");
-    copy_runtime_assets(&runtime_assets_source, &project_root, &dest_dir);
+    copy_runtime_assets(
+        &runtime_assets_source,
+        &project_root,
+        &dest_dir,
+        &target_os,
+        &target_triple,
+        external_koffi,
+    );
 
     let target_debug_dir = manifest_dir.join("target").join("debug");
     if target_debug_dir.exists() {
         println!("cargo:warning=Copying runtime assets to target/debug for development...");
-        copy_runtime_assets(&runtime_assets_source, &project_root, &target_debug_dir);
+        copy_runtime_assets(
+            &runtime_assets_source,
+            &project_root,
+            &target_debug_dir,
+            &target_os,
+            &target_triple,
+            external_koffi,
+        );
     }
 
     let target_release_dir = manifest_dir.join("target").join("release");
     if target_release_dir.exists() {
         println!("cargo:warning=Copying runtime assets to target/release...");
-        copy_runtime_assets(&runtime_assets_source, &project_root, &target_release_dir);
+        copy_runtime_assets(
+            &runtime_assets_source,
+            &project_root,
+            &target_release_dir,
+            &target_os,
+            &target_triple,
+            external_koffi,
+        );
     }
 
     println!(

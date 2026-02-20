@@ -94,6 +94,7 @@ copy_if_exists "${BINARIES_DIR}/theme" "$PORTABLE_DIR/"
 copy_if_exists "${BINARIES_DIR}/export-html" "$PORTABLE_DIR/"
 copy_if_exists "${BINARIES_DIR}/docs" "$PORTABLE_DIR/"
 copy_if_exists "${BINARIES_DIR}/examples" "$PORTABLE_DIR/"
+copy_if_exists "${BINARIES_DIR}/node_modules" "$PORTABLE_DIR/"
 
 # Any runtime DLLs produced for graphone
 shopt -s nullglob
