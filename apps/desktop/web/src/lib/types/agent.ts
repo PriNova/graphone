@@ -119,6 +119,21 @@ export interface TurnEndEvent {
   toolResults: unknown[];
 }
 
+export interface ToolExecutionStartEvent {
+  type: "tool_execution_start";
+  toolCallId: string;
+  toolName: string;
+  args: Record<string, unknown>;
+}
+
+export interface ToolExecutionUpdateEvent {
+  type: "tool_execution_update";
+  toolCallId: string;
+  toolName: string;
+  args: Record<string, unknown>;
+  partialResult: unknown;
+}
+
 export interface ToolExecutionEndEvent {
   type: "tool_execution_end";
   toolCallId: string;
@@ -162,6 +177,8 @@ export type AgentEvent =
   | AgentEndEvent
   | TurnStartEvent
   | TurnEndEvent
+  | ToolExecutionStartEvent
+  | ToolExecutionUpdateEvent
   | ToolExecutionEndEvent
   | AutoCompactionStartEvent
   | AutoCompactionEndEvent

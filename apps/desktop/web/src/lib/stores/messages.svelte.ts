@@ -11,6 +11,13 @@ export class MessagesStore {
   private isProgrammaticScroll = false;
   private static readonly SCROLL_EPSILON_PX = 24;
 
+  // Out-of-order safety: tool results can arrive before we have rendered the
+  // corresponding toolCall block (e.g. dropped/delayed toolcall_end event).
+  private pendingToolResultsById = new Map<
+    string,
+    { result: string; isError: boolean }
+  >();
+
   // Scroll tracking
   updateScrollPosition(container: HTMLDivElement): void {
     // Ignore scroll events caused by our own scrollToBottom calls.
@@ -49,6 +56,7 @@ export class MessagesStore {
 
   clearMessages(): void {
     this.messages = [];
+    this.pendingToolResultsById.clear();
   }
 
   setStreamingMessageId(id: string | null): void {
@@ -66,6 +74,7 @@ export class MessagesStore {
       [key: string]: unknown;
     }>,
   ): void {
+    this.pendingToolResultsById.clear();
     const loadedMessages: Message[] = [];
 
     const toolResultsByCallId = new Map<
@@ -183,6 +192,86 @@ export class MessagesStore {
     this.streamingMessageId = null;
   }
 
+  // Ensure a tool call block exists as soon as execution starts.
+  // Correlates by toolCallId so we can handle out-of-order/dropped toolcall_end events.
+  upsertToolCall(toolCall: {
+    id: string;
+    name: string;
+    arguments: Record<string, unknown>;
+  }): void {
+    // Check if already present in any assistant message.
+    for (let i = this.messages.length - 1; i >= 0; i--) {
+      const message = this.messages[i];
+      if (!message || message.type !== "assistant") continue;
+
+      const existing = message.content.find(
+        (b) => b.type === "toolCall" && b.id === toolCall.id,
+      );
+      if (existing && existing.type === "toolCall") {
+        existing.name = toolCall.name;
+        existing.arguments = toolCall.arguments;
+
+        const pending = this.pendingToolResultsById.get(toolCall.id);
+        if (pending) {
+          existing.result = pending.result;
+          existing.isError = pending.isError;
+          this.pendingToolResultsById.delete(toolCall.id);
+        }
+        return;
+      }
+    }
+
+    // Fallback: append to the most recent assistant message.
+    for (let i = this.messages.length - 1; i >= 0; i--) {
+      const message = this.messages[i];
+      if (!message || message.type !== "assistant") continue;
+
+      const nextBlock: Extract<ContentBlock, { type: "toolCall" }> = {
+        type: "toolCall",
+        id: toolCall.id,
+        name: toolCall.name,
+        arguments: toolCall.arguments,
+      };
+
+      const pending = this.pendingToolResultsById.get(toolCall.id);
+      if (pending) {
+        nextBlock.result = pending.result;
+        nextBlock.isError = pending.isError;
+        this.pendingToolResultsById.delete(toolCall.id);
+      }
+
+      (message as Extract<Message, { type: "assistant" }>).content.push(
+        nextBlock,
+      );
+      return;
+    }
+
+    // Last resort: create a streaming assistant message and attach block.
+    const id = this.createStreamingMessage();
+    const message = this.messages.find(
+      (m) => m.id === id && m.type === "assistant",
+    );
+    if (!message) return;
+
+    const nextBlock: Extract<ContentBlock, { type: "toolCall" }> = {
+      type: "toolCall",
+      id: toolCall.id,
+      name: toolCall.name,
+      arguments: toolCall.arguments,
+    };
+
+    const pending = this.pendingToolResultsById.get(toolCall.id);
+    if (pending) {
+      nextBlock.result = pending.result;
+      nextBlock.isError = pending.isError;
+      this.pendingToolResultsById.delete(toolCall.id);
+    }
+
+    (message as Extract<Message, { type: "assistant" }>).content.push(
+      nextBlock,
+    );
+  }
+
   // Update a tool call with its result.
   // We resolve by toolCallId (not by current streaming message) because tool_execution_end
   // is emitted after assistant message_end in pi-agent-core.
@@ -208,6 +297,7 @@ export class MessagesStore {
       }
     }
 
+    this.pendingToolResultsById.set(toolCallId, { result, isError });
     console.warn("Tool result received for unknown toolCallId:", toolCallId);
   }
 

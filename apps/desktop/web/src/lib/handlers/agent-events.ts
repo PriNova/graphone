@@ -338,7 +338,10 @@ export function handleMessageUpdate(
   }
 
   // Apply other events immediately (text_start, text_end, thinking_start, thinking_end, toolcall_end)
-  applyAssistantMessageDelta(currentContent, assistantEvent);
+  const didUpdate = applyAssistantMessageDelta(currentContent, assistantEvent);
+  if (didUpdate) {
+    runtime.messages.updateStreamingMessage(currentContent);
+  }
 }
 
 export function handleMessageEnd(
@@ -465,6 +468,17 @@ function formatToolResult(result: unknown): string {
   return String(result);
 }
 
+export function handleToolExecutionStart(
+  runtime: SessionRuntimeForEvents,
+  event: Extract<AgentEvent, { type: "tool_execution_start" }>,
+): void {
+  runtime.messages.upsertToolCall({
+    id: event.toolCallId,
+    name: event.toolName,
+    arguments: event.args,
+  });
+}
+
 export function handleToolExecutionEnd(
   runtime: SessionRuntimeForEvents,
   event: Extract<AgentEvent, { type: "tool_execution_end" }>,
@@ -508,6 +522,14 @@ export function handleAgentEvent(
 
     case "turn_end":
       handleTurnEnd(runtime);
+      break;
+
+    case "tool_execution_start":
+      handleToolExecutionStart(runtime, event);
+      break;
+
+    case "tool_execution_update":
+      // Optional: can be wired to progressive tool output in future.
       break;
 
     case "tool_execution_end":
