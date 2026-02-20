@@ -196,6 +196,59 @@
     }
   }
 
+  const EXTENSION_LANGUAGE_MAP: Record<string, string> = {
+    ts: "typescript",
+    tsx: "typescript",
+    js: "javascript",
+    jsx: "javascript",
+    mjs: "javascript",
+    cjs: "javascript",
+    py: "python",
+    rs: "rust",
+    md: "markdown",
+    yml: "yaml",
+    sh: "bash",
+  };
+
+  function getReadToolPath(block: ToolCall): string | null {
+    const path = block.arguments?.path;
+    if (typeof path !== "string") return null;
+
+    const trimmed = path.trim();
+    return trimmed.length > 0 ? trimmed : null;
+  }
+
+  function detectLanguageFromPath(path: string): string | null {
+    const normalized = path.split("#")[0]?.split("?")[0] ?? path;
+    const dotIndex = normalized.lastIndexOf(".");
+    if (dotIndex < 0 || dotIndex === normalized.length - 1) {
+      return null;
+    }
+
+    const extension = normalized.slice(dotIndex + 1).toLowerCase();
+    return EXTENSION_LANGUAGE_MAP[extension] ?? extension;
+  }
+
+  function stripReadLineNumberPrefixes(result: string): string {
+    return result
+      .split("\n")
+      .map((line) => {
+        if (line.includes("[... omitted lines")) {
+          return line;
+        }
+        return line.replace(/^\d+:\s/, "");
+      })
+      .join("\n");
+  }
+
+  function formatReadResultMarkdown(block: ToolCall, result: string): string {
+    const path = getReadToolPath(block);
+    const language = path ? detectLanguageFromPath(path) : null;
+    const content = stripReadLineNumberPrefixes(result).trimEnd();
+
+    return `\`\`\`${language ?? ""}\n${content}\n\`\`\``;
+  }
+
   function isThinkingBlock(block: ContentBlock): block is ThinkingBlock {
     return block.type === "thinking";
   }
@@ -307,6 +360,7 @@
         {@const truncated = getTruncatedResult(block)}
         {@const callSummary = getToolCallSummary(block)}
         {@const collapsed = isToolCollapsed(block.id)}
+        {@const isReadResult = block.name === "read" && !block.isError}
         <div
           class={cn(
             "mb-2 last:mb-0 border rounded overflow-hidden",
@@ -388,8 +442,17 @@
             </svg>
           </button>
           {#if hasResult && truncated && !collapsed}
-            <pre
-              class="p-3 font-mono text-[0.8125rem] leading-normal text-foreground whitespace-pre-wrap wrap-break-word m-0 max-h-75 overflow-y-auto">{truncated.text}</pre>
+            {#if isReadResult}
+              <div class="p-3 m-0 max-h-75 overflow-y-auto">
+                <MessageMarkdown
+                  content={formatReadResultMarkdown(block, truncated.text)}
+                  class="message-markdown-read text-[0.8125rem] leading-normal text-foreground wrap-break-word"
+                />
+              </div>
+            {:else}
+              <pre
+                class="p-3 font-mono text-[0.8125rem] leading-normal text-foreground whitespace-pre-wrap wrap-break-word m-0 max-h-75 overflow-y-auto">{truncated.text}</pre>
+            {/if}
             {#if truncated.truncated}
               <div
                 class={cn(

@@ -37,6 +37,7 @@
     "@tauri-apps/plugin-store": "^2",
     "dompurify": "^3.2.7",
     "highlight.js": "^11.11.1",
+    "highlightjs-svelte": "^1.0.6",
     "marked": "^15.0.12",
     "marked-highlight": "^2.2.2"
   },

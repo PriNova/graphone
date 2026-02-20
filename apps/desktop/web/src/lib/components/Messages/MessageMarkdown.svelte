@@ -1,14 +1,35 @@
 <script lang="ts" module>
   import hljs from "highlight.js";
+  // highlightjs-svelte currently ships without TypeScript typings.
+  // eslint-disable-next-line @typescript-eslint/ban-ts-comment
+  // @ts-ignore
+  import registerSvelteLanguage from "highlightjs-svelte";
   import { Marked } from "marked";
   import { markedHighlight } from "marked-highlight";
+
+  if (!hljs.getLanguage("svelte")) {
+    registerSvelteLanguage(hljs);
+  }
+
+  function resolveHighlightLanguage(lang: string): string {
+    const normalized = lang.trim().toLowerCase();
+
+    // Vue isn't available as a built-in highlight.js grammar in this setup.
+    // Fallback to XML/HTML highlighting, which still gives useful template colors.
+    if (normalized === "vue") {
+      return "xml";
+    }
+
+    return normalized;
+  }
 
   export const marked = new Marked(
     markedHighlight({
       emptyLangClass: "hljs",
       langPrefix: "hljs language-",
       highlight(code, lang) {
-        const language = hljs.getLanguage(lang) ? lang : "plaintext";
+        const resolved = resolveHighlightLanguage(lang);
+        const language = hljs.getLanguage(resolved) ? resolved : "plaintext";
         return hljs.highlight(code, { language }).value;
       },
     }),
@@ -29,10 +50,47 @@
     ...restProps
   }: { content: string; class?: string } & SvelteHTMLElements["div"] = $props();
 
-  const preEscapeDangerousTags = (markdown: string): string =>
-    markdown.replace(/<(?:\/?)(script|style)(?=\s|>|$)/gi, (match) =>
-      match.replace("<", "&lt;"),
-    );
+  function preEscapeDangerousTags(markdown: string): string {
+    const lines = markdown.split("\n");
+    const escapedLines: string[] = [];
+
+    let activeFence: { marker: "`" | "~"; length: number } | null = null;
+
+    const fencePattern = /^\s{0,3}([`~]{3,})/;
+
+    for (const line of lines) {
+      const fenceMatch = line.match(fencePattern);
+
+      if (fenceMatch) {
+        const fence = fenceMatch[1] ?? "";
+        const marker = fence[0] as "`" | "~";
+        const length = fence.length;
+
+        if (!activeFence) {
+          activeFence = { marker, length };
+        } else if (
+          marker === activeFence.marker &&
+          length >= activeFence.length
+        ) {
+          activeFence = null;
+        }
+
+        escapedLines.push(line);
+        continue;
+      }
+
+      if (activeFence) {
+        escapedLines.push(line);
+        continue;
+      }
+
+      escapedLines.push(
+        line.replace(/<(\/?)(script|style)(?=\s|>|$)/gi, "&lt;$1$2"),
+      );
+    }
+
+    return escapedLines.join("\n");
+  }
 
   // Memoized parsing pipeline. These $derived values only recompute when
   // the upstream content string changes, including during streaming deltas.
@@ -266,5 +324,19 @@
   .message-markdown :global(.hljs-literal),
   .message-markdown :global(.hljs-number) {
     color: color-mix(in srgb, #8bdd96 80%, var(--foreground));
+  }
+
+  /* Read-tool result already sits inside a bordered container; keep code block plain. */
+  .message-markdown.message-markdown-read :global(pre) {
+    margin: 0;
+    padding: 0;
+    border: none;
+    border-radius: 0;
+    background: transparent;
+  }
+
+  .message-markdown.message-markdown-read :global(pre code) {
+    min-width: 0;
+    width: auto;
   }
 </style>
