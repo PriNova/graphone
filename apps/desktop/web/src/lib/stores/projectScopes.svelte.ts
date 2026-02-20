@@ -13,6 +13,10 @@ interface SessionProjectScopesResponse {
   histories?: unknown;
 }
 
+interface DeleteProjectSessionResponse {
+  deleted?: unknown;
+}
+
 function normalizeScopePath(path: string): string {
   return path.trim().replace(/[\\/]+$/, "");
 }
@@ -181,6 +185,26 @@ export class ProjectScopesStore {
     });
     await this.refresh();
     return deletedCount;
+  }
+
+  async deleteSession(
+    projectDir: string,
+    sessionId: string,
+    filePath: string,
+  ): Promise<boolean> {
+    const response = await invoke<DeleteProjectSessionResponse>(
+      "delete_project_session",
+      {
+        projectDir,
+        sessionId,
+        filePath,
+      },
+    );
+
+    const deleted = response?.deleted;
+    const wasDeleted = typeof deleted === "boolean" ? deleted : false;
+    await this.refresh();
+    return wasDeleted;
   }
 }
 

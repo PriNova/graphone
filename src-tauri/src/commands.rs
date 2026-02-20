@@ -61,6 +61,12 @@ pub struct SessionProjectScopesResponse {
     pub histories: Vec<SessionScopeHistory>,
 }
 
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DeleteProjectSessionResponse {
+    pub deleted: bool,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum SessionRootSource {
     Global,
@@ -256,6 +262,26 @@ fn normalize_path_for_comparison(path: &str) -> String {
     trimmed
         .trim_end_matches(|c| c == '/' || c == '\\')
         .to_string()
+}
+
+fn canonicalize_if_exists(path: &Path) -> Option<PathBuf> {
+    if !path.exists() {
+        return None;
+    }
+
+    std::fs::canonicalize(path).ok()
+}
+
+fn path_is_within_root(path: &Path, root: &Path) -> bool {
+    let Some(path_canonical) = canonicalize_if_exists(path) else {
+        return false;
+    };
+
+    let Some(root_canonical) = canonicalize_if_exists(root) else {
+        return false;
+    };
+
+    path_canonical.starts_with(root_canonical)
 }
 
 fn extract_session_header_from_file(path: &Path) -> Option<SessionFileHeader> {
@@ -609,6 +635,114 @@ pub fn delete_project_scope(project_dir: String) -> Result<usize, String> {
     }
 
     Ok(deleted_count)
+}
+
+/// Delete a single persisted session file for a project scope.
+///
+/// Validates that the provided file is a JSONL session file under known session
+/// roots, and that its parsed header matches the provided scope + session id.
+#[tauri::command]
+pub fn delete_project_session(
+    project_dir: String,
+    session_id: String,
+    file_path: String,
+) -> Result<DeleteProjectSessionResponse, String> {
+    let normalized_scope = normalize_path_for_comparison(&project_dir);
+    if normalized_scope.is_empty() {
+        return Err("project_dir cannot be empty".to_string());
+    }
+
+    let normalized_session_id = session_id.trim().to_string();
+    if normalized_session_id.is_empty() {
+        return Err("session_id cannot be empty".to_string());
+    }
+
+    let normalized_file_path = file_path.trim();
+    if normalized_file_path.is_empty() {
+        return Err("file_path cannot be empty".to_string());
+    }
+
+    let target_path = PathBuf::from(normalized_file_path);
+
+    // Idempotent success: file already gone.
+    if !target_path.exists() {
+        return Ok(DeleteProjectSessionResponse { deleted: false });
+    }
+
+    if target_path.extension().and_then(|ext| ext.to_str()) != Some("jsonl") {
+        return Err("file_path must point to a .jsonl session file".to_string());
+    }
+
+    let mut roots = candidate_session_roots();
+    roots.extend(local_session_roots_for_scope(&normalized_scope));
+
+    let mut seen_roots = HashSet::<String>::new();
+    let is_under_known_root = roots.into_iter().any(|root| {
+        let root_key = root.path.to_string_lossy().to_string();
+        if !seen_roots.insert(root_key) {
+            return false;
+        }
+
+        path_is_within_root(&target_path, &root.path)
+    });
+
+    if !is_under_known_root {
+        return Err("file_path is outside known session roots".to_string());
+    }
+
+    let Some(header) = extract_session_header_from_file(&target_path) else {
+        return Err("file_path is not a valid session file".to_string());
+    };
+
+    if normalize_path_for_comparison(&header.scope) != normalized_scope {
+        return Err("session scope mismatch for provided project_dir".to_string());
+    }
+
+    if header.session_id.trim() != normalized_session_id {
+        return Err("session id mismatch for provided file_path".to_string());
+    }
+
+    std::fs::remove_file(&target_path).map_err(|e| {
+        format!(
+            "Failed to delete session file {}: {e}",
+            target_path.display()
+        )
+    })?;
+
+    logger::log(format!(
+        "Deleted single session file for scope '{}': {}",
+        normalized_scope,
+        target_path.display()
+    ));
+
+    // Opportunistic cleanup: if this was under an encoded scope dir and it is
+    // now empty, remove that directory.
+    let encoded_dir_name = encode_scope_dir_name(&normalized_scope);
+    if let Some(parent) = target_path.parent() {
+        let parent_name_matches = parent
+            .file_name()
+            .and_then(|name| name.to_str())
+            .map(|name| name == encoded_dir_name)
+            .unwrap_or(false);
+
+        if parent_name_matches {
+            let is_empty = std::fs::read_dir(parent)
+                .map(|mut entries| entries.next().is_none())
+                .unwrap_or(false);
+
+            if is_empty {
+                if let Err(error) = std::fs::remove_dir(parent) {
+                    logger::log(format!(
+                        "Failed to remove empty scope directory {}: {}",
+                        parent.display(),
+                        error
+                    ));
+                }
+            }
+        }
+    }
+
+    Ok(DeleteProjectSessionResponse { deleted: true })
 }
 
 /// Get the current working directory (the directory in which the app executes).

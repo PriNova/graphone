@@ -20,6 +20,10 @@
       projectDir: string,
       history: PersistedSessionHistoryItem,
     ) => void | Promise<void>;
+    onremovehistory?: (
+      projectDir: string,
+      history: PersistedSessionHistoryItem,
+    ) => void | Promise<void>;
     onprojectdirinput?: (value: string) => void;
     onremovescope?: (projectDir: string) => void | Promise<void>;
     ontogglescopecollapse?: (projectDir: string) => void;
@@ -39,6 +43,7 @@
     oncreatesession,
     onselectscope,
     onselecthistory,
+    onremovehistory,
     onprojectdirinput,
     onremovescope,
     ontogglescopecollapse,
@@ -47,6 +52,7 @@
   // Local UI state for pending deletion and expanded session lists
   // (not persisted - these are transient UI states)
   const pendingDeletionScopes = new SvelteSet<string>();
+  const pendingDeletionHistory = new SvelteSet<string>();
   const expandedSessionLists = new SvelteSet<string>();
 
   let historyTooltip = $state<{
@@ -202,6 +208,42 @@
     }
 
     await onselectscope?.(projectDir);
+  }
+
+  function historyDeletionKey(history: PersistedSessionHistoryItem): string {
+    return history.filePath.trim();
+  }
+
+  function startDeleteHistory(
+    history: PersistedSessionHistoryItem,
+    event: MouseEvent,
+  ): void {
+    event.stopPropagation();
+    pendingDeletionHistory.add(historyDeletionKey(history));
+  }
+
+  function cancelDeleteHistory(
+    history: PersistedSessionHistoryItem,
+    event: MouseEvent,
+  ): void {
+    event.stopPropagation();
+    pendingDeletionHistory.delete(historyDeletionKey(history));
+  }
+
+  async function confirmDeleteHistory(
+    projectDir: string,
+    history: PersistedSessionHistoryItem,
+    event: MouseEvent,
+  ): Promise<void> {
+    event.stopPropagation();
+    pendingDeletionHistory.delete(historyDeletionKey(history));
+    await onremovehistory?.(projectDir, history);
+  }
+
+  function isPendingHistoryDeletion(
+    history: PersistedSessionHistoryItem,
+  ): boolean {
+    return pendingDeletionHistory.has(historyDeletionKey(history));
   }
 
   function handleProjectDirInput(event: Event): void {
@@ -502,46 +544,127 @@
                 class="px-2 pb-2 ml-6 pl-2 border-l border-border/70 space-y-1"
               >
                 {#each displayedHistory as history (history.filePath)}
-                  <button
-                    type="button"
+                  <div
                     class={cn(
-                      "w-full rounded border px-1.5 py-1 text-left text-[11px] transition-colors",
+                      "w-full rounded border px-1.5 py-1 text-left text-[11px] transition-colors group/session",
                       isHistoryActive(history)
                         ? "border-foreground/70 bg-secondary text-foreground"
                         : "border-border/70 hover:bg-secondary",
                     )}
-                    onclick={() => handleHistorySelect(projectDir, history)}
-                    onmouseenter={(event) =>
-                      showHistoryTooltip(event, historyTooltipText(history))}
-                    onmouseleave={hideHistoryTooltip}
-                    onfocus={(event) =>
-                      showHistoryTooltip(event, historyTooltipText(history))}
-                    onblur={hideHistoryTooltip}
-                    aria-current={isHistoryActive(history) ? "true" : undefined}
-                    aria-label={`Open project scope ${toScopeTitle(projectDir)} from session ${history.sessionId}`}
                   >
-                    <div class="flex items-center justify-between gap-2">
-                      <div class="min-w-0 flex items-center gap-1.5">
-                        <span
-                          class="font-mono text-[10px] text-muted-foreground shrink-0"
-                        >
-                          {history.source === "local"
-                            ? "L"
-                            : history.source === "global"
-                              ? "G"
-                              : "?"}
-                        </span>
-                        <span class="truncate"
-                          >{historyPreviewText(history)}</span
-                        >
-                      </div>
-                      {#if history.timestamp}
-                        <span class="text-muted-foreground shrink-0"
-                          >{formatHistoryTimestamp(history.timestamp)}</span
-                        >
+                    <div class="flex items-center gap-2">
+                      <button
+                        type="button"
+                        class="min-w-0 flex-1 text-left"
+                        onclick={() => handleHistorySelect(projectDir, history)}
+                        onmouseenter={(event) =>
+                          showHistoryTooltip(
+                            event,
+                            historyTooltipText(history),
+                          )}
+                        onmouseleave={hideHistoryTooltip}
+                        onfocus={(event) =>
+                          showHistoryTooltip(
+                            event,
+                            historyTooltipText(history),
+                          )}
+                        onblur={hideHistoryTooltip}
+                        aria-current={isHistoryActive(history)
+                          ? "true"
+                          : undefined}
+                        aria-label={`Open project scope ${toScopeTitle(projectDir)} from session ${history.sessionId}`}
+                      >
+                        <div class="flex items-center justify-between gap-2">
+                          <div class="min-w-0 flex items-center gap-1.5">
+                            <span
+                              class="font-mono text-[10px] text-muted-foreground shrink-0"
+                            >
+                              {history.source === "local"
+                                ? "L"
+                                : history.source === "global"
+                                  ? "G"
+                                  : "?"}
+                            </span>
+                            <span class="truncate"
+                              >{historyPreviewText(history)}</span
+                            >
+                          </div>
+                          {#if history.timestamp}
+                            <span class="text-muted-foreground shrink-0"
+                              >{formatHistoryTimestamp(history.timestamp)}</span
+                            >
+                          {/if}
+                        </div>
+                      </button>
+
+                      {#if onremovehistory}
+                        {#if isPendingHistoryDeletion(history)}
+                          <div class="shrink-0 flex items-center gap-1">
+                            <span class="text-[10px] text-muted-foreground"
+                              >Delete?</span
+                            >
+                            <button
+                              type="button"
+                              class="inline-flex h-5 w-5 items-center justify-center rounded text-success hover:bg-success/10"
+                              onclick={(e) =>
+                                confirmDeleteHistory(projectDir, history, e)}
+                              aria-label="Confirm delete session"
+                              title="Confirm delete"
+                            >
+                              <svg
+                                class="h-3 w-3"
+                                viewBox="0 0 24 24"
+                                fill="none"
+                                stroke="currentColor"
+                                stroke-width="2.5"
+                              >
+                                <polyline points="20 6 9 17 4 12"></polyline>
+                              </svg>
+                            </button>
+                            <button
+                              type="button"
+                              class="inline-flex h-5 w-5 items-center justify-center rounded text-muted-foreground hover:bg-secondary"
+                              onclick={(e) => cancelDeleteHistory(history, e)}
+                              aria-label="Cancel delete session"
+                              title="Cancel"
+                            >
+                              <svg
+                                class="h-3 w-3"
+                                viewBox="0 0 24 24"
+                                fill="none"
+                                stroke="currentColor"
+                                stroke-width="2.5"
+                              >
+                                <line x1="18" y1="6" x2="6" y2="18"></line>
+                                <line x1="6" y1="6" x2="18" y2="18"></line>
+                              </svg>
+                            </button>
+                          </div>
+                        {:else}
+                          <button
+                            type="button"
+                            class="shrink-0 inline-flex h-5 w-5 items-center justify-center rounded text-muted-foreground hover:text-destructive hover:bg-destructive/10 opacity-0 group-hover/session:opacity-100 transition-opacity"
+                            onclick={(e) => startDeleteHistory(history, e)}
+                            aria-label="Delete session"
+                            title="Delete session"
+                          >
+                            <svg
+                              class="h-3 w-3"
+                              viewBox="0 0 24 24"
+                              fill="none"
+                              stroke="currentColor"
+                              stroke-width="2"
+                            >
+                              <polyline points="3 6 5 6 21 6"></polyline>
+                              <path
+                                d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"
+                              ></path>
+                            </svg>
+                          </button>
+                        {/if}
                       {/if}
                     </div>
-                  </button>
+                  </div>
                 {/each}
 
                 {#if scopeHistory.length > 6}

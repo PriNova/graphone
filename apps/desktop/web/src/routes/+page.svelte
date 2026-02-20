@@ -452,6 +452,52 @@
     await createSession(projectDir, history.filePath);
   }
 
+  async function onRemoveHistory(
+    projectDir: string,
+    history: PersistedSessionHistoryItem,
+  ): Promise<void> {
+    const normalizedProjectDir = normalizeScopePath(projectDir);
+    const normalizedFilePath = history.filePath.trim();
+    const normalizedSessionId = history.sessionId.trim();
+
+    const openSession = sessionsStore.sessions.find(
+      (session) => session.sessionFile?.trim() === normalizedFilePath,
+    );
+
+    if (openSession) {
+      try {
+        await sessionsStore.closeSession(openSession.sessionId);
+      } catch {
+        // Ignore close errors - session may already be closed in backend
+      }
+
+      delete sessionRuntimes[openSession.sessionId];
+      pendingSessionSidebarSync.delete(openSession.sessionId);
+      clearOptimisticFirstPrompt(openSession.sessionId);
+    }
+
+    await projectScopesStore.deleteSession(
+      normalizedProjectDir,
+      normalizedSessionId,
+      normalizedFilePath,
+    );
+
+    await sessionsStore.refreshFromBackend().catch(() => undefined);
+
+    if (sessionsStore.sessions.length === 0) {
+      const fallback =
+        cwdStore.cwd ?? (await invoke<string>("get_working_directory"));
+      await createSession(fallback);
+    } else if (!sessionsStore.activeSession) {
+      const first = sessionsStore.sessions[0];
+      if (first) {
+        sessionsStore.setActiveSession(first.sessionId);
+        await ensureRuntime(first);
+        requestAnimationFrame(() => scrollToBottom(false));
+      }
+    }
+  }
+
   async function onRemoveScope(projectDir: string): Promise<void> {
     // Normalize project dir for comparison (remove trailing slashes)
     const normalizedProjectDir = projectDir.replace(/[\\/]+$/, "");
@@ -797,6 +843,7 @@
     oncreatesession={createSessionFromInput}
     onselectscope={onSelectScope}
     onselecthistory={onSelectHistory}
+    onremovehistory={onRemoveHistory}
     onremovescope={onRemoveScope}
     ontogglescopecollapse={async (scope) => {
       await settingsStore.toggleScopeCollapsed(scope);

@@ -30,6 +30,7 @@ pub fn run() {
             commands::get_working_directory,
             commands::list_session_project_scopes,
             commands::delete_project_scope,
+            commands::delete_project_session,
             commands::create_agent,
             commands::close_agent,
             commands::list_agents,
