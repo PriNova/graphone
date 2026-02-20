@@ -18,6 +18,9 @@
   // State for collapsible thinking blocks (default collapsed)
   let thinkingCollapsed = $state<Record<number, boolean>>({});
 
+  // State for collapsible tool blocks (default collapsed)
+  let toolCollapsed = $state<Record<string, boolean>>({});
+
   // Limits for tool result display (UI-level safety truncation)
   const MAX_RESULT_LINES = 10;
   const MAX_RESULT_BYTES = 10 * 1024; // 10KB
@@ -29,6 +32,15 @@
 
   function toggleThinking(index: number) {
     thinkingCollapsed[index] = !isThinkingCollapsed(index);
+  }
+
+  function isToolCollapsed(id: string): boolean {
+    // Default collapsed when we haven't seen/toggled this tool call yet.
+    return toolCollapsed[id] ?? true;
+  }
+
+  function toggleTool(id: string) {
+    toolCollapsed[id] = !isToolCollapsed(id);
   }
 
   // Collapse thinking block on click, but only if no text is selected.
@@ -293,6 +305,7 @@
         {@const hasResult = block.result !== undefined}
         {@const truncated = getTruncatedResult(block)}
         {@const callSummary = getToolCallSummary(block)}
+        {@const collapsed = isToolCollapsed(block.id)}
         <div
           class={cn(
             "mb-2 last:mb-0 border rounded overflow-hidden",
@@ -305,18 +318,21 @@
               "bg-destructive/3 dark:bg-destructive/3 border-destructive/20",
           )}
         >
-          <div
+          <button
+            type="button"
             class={cn(
-              "flex items-center gap-2 px-3 py-2 border-b text-xs font-semibold uppercase tracking-wider",
+              "flex items-center w-full gap-2 px-3 py-2 text-xs font-semibold uppercase tracking-wider transition-colors cursor-pointer",
+              hasResult && !collapsed && "border-b",
               !hasResult &&
-                "bg-foreground/5 dark:bg-f6fff5/[0.05] border-border text-muted-foreground",
+                "bg-foreground/5 dark:bg-f6fff5/[0.05] border-border text-muted-foreground hover:bg-foreground/8 dark:hover:bg-f6fff5/[0.08]",
               hasResult &&
                 !block.isError &&
-                "bg-emerald-500/10 border-emerald-500/20 text-emerald-600 dark:text-emerald-400",
+                "bg-emerald-500/10 border-emerald-500/20 text-emerald-600 dark:text-emerald-400 hover:bg-emerald-500/15",
               hasResult &&
                 block.isError &&
-                "bg-destructive/10 border-destructive/20 text-destructive",
+                "bg-destructive/10 border-destructive/20 text-destructive hover:bg-destructive/15",
             )}
+            onclick={() => toggleTool(block.id)}
           >
             <svg
               class="w-3.5 h-3.5 shrink-0"
@@ -355,8 +371,22 @@
             {:else}
               <span class="ml-auto normal-case opacity-60 shrink-0">Done</span>
             {/if}
-          </div>
-          {#if hasResult && truncated}
+            <svg
+              class="w-3.5 h-3.5 shrink-0 transition-transform duration-200"
+              class:rotate-90={!collapsed}
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+            >
+              <path
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                stroke-width="2"
+                d="M9 5l7 7-7 7"
+              />
+            </svg>
+          </button>
+          {#if hasResult && truncated && !collapsed}
             <pre
               class="p-3 font-mono text-[0.8125rem] leading-normal text-foreground whitespace-pre-wrap wrap-break-word m-0 max-h-75 overflow-y-auto">{truncated.text}</pre>
             {#if truncated.truncated}
