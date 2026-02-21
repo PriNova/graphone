@@ -256,37 +256,38 @@ export class MessagesStore {
       }
     }
 
-    // Fallback: append to the most recent assistant message.
-    for (let i = this.messages.length - 1; i >= 0; i--) {
-      const message = this.messages[i];
-      if (!message || message.type !== "assistant") continue;
+    // Fallback: append to the current assistant message for this turn.
+    // If there is no active assistant message yet (e.g. tool starts before
+    // assistant streaming blocks are materialized), create one.
+    let message: Extract<Message, { type: "assistant" }> | undefined;
 
-      const nextBlock: Extract<ContentBlock, { type: "toolCall" }> = {
-        type: "toolCall",
-        id: toolCall.id,
-        name: toolCall.name,
-        arguments: toolCall.arguments,
-      };
-
-      const pending = this.pendingToolResultsById.get(toolCall.id);
-      if (pending) {
-        nextBlock.result = pending.result;
-        nextBlock.isError = pending.isError;
-        this.pendingToolResultsById.delete(toolCall.id);
-      }
-
-      (message as Extract<Message, { type: "assistant" }>).content.push(
-        nextBlock,
+    const streamingId = this.streamingMessageId;
+    if (streamingId) {
+      const streamingMessage = this.messages.find(
+        (m): m is Extract<Message, { type: "assistant" }> =>
+          m.id === streamingId && m.type === "assistant",
       );
-      return;
+      if (streamingMessage) {
+        message = streamingMessage;
+      }
     }
 
-    // Last resort: create a streaming assistant message and attach block.
-    const id = this.createStreamingMessage();
-    const message = this.messages.find(
-      (m) => m.id === id && m.type === "assistant",
-    );
-    if (!message) return;
+    if (!message) {
+      const lastMessage = this.messages[this.messages.length - 1];
+      if (lastMessage?.type === "assistant") {
+        message = lastMessage;
+      }
+    }
+
+    if (!message) {
+      const id = this.createStreamingMessage();
+      const createdMessage = this.messages.find(
+        (m): m is Extract<Message, { type: "assistant" }> =>
+          m.id === id && m.type === "assistant",
+      );
+      if (!createdMessage) return;
+      message = createdMessage;
+    }
 
     const nextBlock: Extract<ContentBlock, { type: "toolCall" }> = {
       type: "toolCall",

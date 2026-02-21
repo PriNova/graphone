@@ -254,6 +254,24 @@ function applyAssistantMessageDelta(
       return true;
     }
 
+    case "toolcall_start": {
+      if (!assistantEvent.toolCall) {
+        return false;
+      }
+      ensureContentIndex(content, index);
+      content[index] = assistantEvent.toolCall;
+      return true;
+    }
+
+    case "toolcall_delta": {
+      if (!assistantEvent.toolCall) {
+        return false;
+      }
+      ensureContentIndex(content, index);
+      content[index] = assistantEvent.toolCall;
+      return true;
+    }
+
     case "toolcall_end": {
       if (!assistantEvent.toolCall) {
         return false;
@@ -263,7 +281,6 @@ function applyAssistantMessageDelta(
       return true;
     }
 
-    // For toolcall_start/toolcall_delta we wait for toolcall_end (full object).
     default:
       return false;
   }
@@ -475,7 +492,7 @@ export function handleToolExecutionStart(
   runtime.messages.upsertToolCall({
     id: event.toolCallId,
     name: event.toolName,
-    arguments: event.args,
+    arguments: event.args ?? {},
   });
 }
 
