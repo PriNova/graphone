@@ -31,12 +31,47 @@ npm run build:linux
 
 ---
 
+## Compile check fails with `resource path \`sidecar/linux\` doesn't exist`
+
+This can happen if Linux sidecar resources were not staged (for example on older commits when using `GRAPHONE_SKIP_SIDECAR_BUILD=true`).
+
+```bash
+# Re-run Rust compile check (build.rs should stage sidecar/linux automatically)
+GRAPHONE_SKIP_SIDECAR_BUILD=true cargo check --manifest-path src-tauri/Cargo.toml
+
+# Verify staged resource exists
+ls src-tauri/sidecar/linux/pi-agent.gz
+```
+
+If the file is still missing, ensure you're on a commit that includes the Linux sidecar resource staging fix and retry.
+
+---
+
 ## Binary not found during Tauri build
 
 Ensure the binary naming matches the target triple:
 
 - Linux: `pi-agent-x86_64-unknown-linux-gnu`
 - Windows: `pi-agent-x86_64-pc-windows-msvc.exe`
+
+---
+
+## Session initialization fails with `Failed to spawn sidecar: Exec format error (os error 8)`
+
+This indicates the Linux sidecar binary being launched is invalid for the current platform (for example, stale placeholder content in extracted runtime cache).
+
+```bash
+# 1) Rebuild normally (do not skip sidecar build)
+npm run build:linux
+
+# 2) Clear extracted Linux runtime cache
+rm -rf ~/.local/share/com.prinova.graphone/sidecar/linux-runtime
+
+# 3) Start app again
+npm run dev:linux
+```
+
+If you must run compile checks in CI with `GRAPHONE_SKIP_SIDECAR_BUILD=true`, that is fine, but production/dev Linux runs should use a real sidecar build.
 
 ---
 
