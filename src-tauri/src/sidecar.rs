@@ -11,7 +11,7 @@ use flate2::read::GzDecoder;
 #[cfg(target_os = "linux")]
 use std::fs;
 #[cfg(target_os = "linux")]
-use std::io;
+use std::io::{self, Read};
 #[cfg(target_os = "linux")]
 use std::path::{Path, PathBuf};
 #[cfg(target_os = "linux")]
@@ -35,10 +35,6 @@ impl SidecarManager {
 
         #[cfg(target_os = "linux")]
         {
-            if let Ok(command) = app.shell().sidecar("pi-agent") {
-                return Ok(command);
-            }
-
             let sidecar_runtime_dir = prepare_linux_sidecar_runtime(app)?;
             let sidecar_binary = sidecar_runtime_dir.join("pi-agent");
 
@@ -165,6 +161,35 @@ fn source_stamp(path: &Path) -> Result<String, String> {
 }
 
 #[cfg(target_os = "linux")]
+fn validate_linux_sidecar_binary(path: &Path) -> Result<(), String> {
+    let mut file = fs::File::open(path).map_err(|error| {
+        format!(
+            "Failed to open {} for validation: {}",
+            path.display(),
+            error
+        )
+    })?;
+
+    let mut header = [0_u8; 4];
+    file.read_exact(&mut header).map_err(|error| {
+        format!(
+            "Failed to read ELF header from {}: {}",
+            path.display(),
+            error
+        )
+    })?;
+
+    if header == [0x7f, b'E', b'L', b'F'] {
+        return Ok(());
+    }
+
+    Err(format!(
+        "Linux sidecar binary {} is not a valid ELF executable. Rebuild without GRAPHONE_SKIP_SIDECAR_BUILD.",
+        path.display()
+    ))
+}
+
+#[cfg(target_os = "linux")]
 fn prepare_linux_sidecar_runtime(app: &AppHandle) -> Result<PathBuf, String> {
     let source_dir = resolve_linux_sidecar_source_dir(app)?;
     let compressed_binary = source_dir.join("pi-agent.gz");
@@ -187,7 +212,15 @@ fn prepare_linux_sidecar_runtime(app: &AppHandle) -> Result<PathBuf, String> {
     };
 
     if !needs_refresh {
-        return Ok(runtime_dir);
+        if let Err(error) = validate_linux_sidecar_binary(&extracted_binary) {
+            logger::log(format!(
+                "Linux sidecar runtime at {} failed validation ({}). Refreshing runtime.",
+                extracted_binary.display(),
+                error
+            ));
+        } else {
+            return Ok(runtime_dir);
+        }
     }
 
     if runtime_dir.exists() {
@@ -288,6 +321,8 @@ fn prepare_linux_sidecar_runtime(app: &AppHandle) -> Result<PathBuf, String> {
             )
         })?;
     }
+
+    validate_linux_sidecar_binary(&extracted_binary)?;
 
     fs::write(&stamp_path, source_stamp).map_err(|error| {
         format!(

@@ -627,7 +627,13 @@ fn ensure_sidecar_placeholder_binary(manifest_dir: &Path, target_os: &str, targe
         });
     }
 
-    fs::write(&dest_binary, b"graphone ci placeholder sidecar binary").unwrap_or_else(|error| {
+    let placeholder_bytes: &[u8] = if target_os == "windows" {
+        b"graphone ci placeholder sidecar binary"
+    } else {
+        b"#!/bin/sh\necho \"Graphone sidecar build was skipped (GRAPHONE_SKIP_SIDECAR_BUILD).\" >&2\nexit 1\n"
+    };
+
+    fs::write(&dest_binary, placeholder_bytes).unwrap_or_else(|error| {
         panic!(
             "Failed to create placeholder sidecar binary at {}: {}",
             dest_binary.display(),
@@ -649,6 +655,23 @@ fn ensure_sidecar_placeholder_binary(manifest_dir: &Path, target_os: &str, targe
     );
 }
 
+fn ensure_linux_sidecar_bundle_for_skip_build(
+    manifest_dir: &Path,
+    target_os: &str,
+    target_triple: &str,
+) {
+    if target_os != "linux" {
+        return;
+    }
+
+    let sidecar_binary = sidecar_destination_binary_path(manifest_dir, target_os, target_triple);
+    let binaries_dir = sidecar_binary
+        .parent()
+        .expect("sidecar destination should always have a parent directory");
+
+    stage_linux_sidecar_resource_bundle(manifest_dir, binaries_dir, &sidecar_binary, target_os);
+}
+
 fn build_sidecar() {
     println!("cargo:rerun-if-env-changed=GRAPHONE_PI_AGENT_BUN_TARGET");
     println!("cargo:rerun-if-env-changed=GRAPHONE_PI_AGENT_EXTERNAL_KOFFI");
@@ -662,6 +685,7 @@ fn build_sidecar() {
             "cargo:warning=Skipping pi-agent build because GRAPHONE_SKIP_SIDECAR_BUILD is set"
         );
         ensure_sidecar_placeholder_binary(&manifest_dir, &target_os, &target_triple);
+        ensure_linux_sidecar_bundle_for_skip_build(&manifest_dir, &target_os, &target_triple);
         return;
     }
 
