@@ -1,5 +1,8 @@
+use flate2::write::GzEncoder;
+use flate2::Compression;
 use std::env;
 use std::fs;
+use std::io;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
@@ -27,6 +30,134 @@ fn copy_dir_all(src: impl AsRef<Path>, dst: impl AsRef<Path>) -> std::io::Result
         }
     }
     Ok(())
+}
+
+fn copy_path(src: &Path, dst: &Path) -> io::Result<()> {
+    if src.is_dir() {
+        copy_dir_all(src, dst)
+    } else {
+        if let Some(parent) = dst.parent() {
+            fs::create_dir_all(parent)?;
+        }
+        fs::copy(src, dst)?;
+        Ok(())
+    }
+}
+
+fn gzip_file(source: &Path, destination: &Path) {
+    let input = fs::File::open(source).unwrap_or_else(|error| {
+        panic!(
+            "Failed to open sidecar binary for compression {}: {}",
+            source.display(),
+            error
+        )
+    });
+
+    if let Some(parent) = destination.parent() {
+        fs::create_dir_all(parent).unwrap_or_else(|error| {
+            panic!(
+                "Failed to create sidecar resource directory {}: {}",
+                parent.display(),
+                error
+            )
+        });
+    }
+
+    let output = fs::File::create(destination).unwrap_or_else(|error| {
+        panic!(
+            "Failed to create compressed sidecar {}: {}",
+            destination.display(),
+            error
+        )
+    });
+
+    let mut encoder = GzEncoder::new(output, Compression::best());
+    let mut reader = io::BufReader::new(input);
+    io::copy(&mut reader, &mut encoder).unwrap_or_else(|error| {
+        panic!(
+            "Failed to compress sidecar binary {} to {}: {}",
+            source.display(),
+            destination.display(),
+            error
+        )
+    });
+
+    encoder.finish().unwrap_or_else(|error| {
+        panic!(
+            "Failed to finalize compressed sidecar {}: {}",
+            destination.display(),
+            error
+        )
+    });
+}
+
+fn stage_linux_sidecar_resource_bundle(
+    manifest_dir: &Path,
+    binaries_dir: &Path,
+    sidecar_binary: &Path,
+    target_os: &str,
+) {
+    if target_os != "linux" {
+        return;
+    }
+
+    let bundle_dir = manifest_dir.join("sidecar").join("linux");
+    remove_path_if_exists(&bundle_dir);
+    fs::create_dir_all(&bundle_dir).unwrap_or_else(|error| {
+        panic!(
+            "Failed to create linux sidecar bundle directory {}: {}",
+            bundle_dir.display(),
+            error
+        )
+    });
+
+    let binary_file_name = sidecar_binary
+        .file_name()
+        .and_then(|name| name.to_str())
+        .unwrap_or("");
+
+    for entry in fs::read_dir(binaries_dir).unwrap_or_else(|error| {
+        panic!(
+            "Failed to read sidecar binaries directory {}: {}",
+            binaries_dir.display(),
+            error
+        )
+    }) {
+        let entry = entry.unwrap_or_else(|error| {
+            panic!(
+                "Failed to iterate sidecar binaries directory {}: {}",
+                binaries_dir.display(),
+                error
+            )
+        });
+
+        let file_name = entry.file_name();
+        let file_name = file_name.to_string_lossy();
+
+        if file_name == binary_file_name || file_name.starts_with("pi-agent-") {
+            continue;
+        }
+
+        let source_path = entry.path();
+        let destination_path = bundle_dir.join(&*file_name);
+
+        copy_path(&source_path, &destination_path).unwrap_or_else(|error| {
+            panic!(
+                "Failed to copy sidecar runtime asset from {} to {}: {}",
+                source_path.display(),
+                destination_path.display(),
+                error
+            )
+        });
+    }
+
+    let compressed_binary = bundle_dir.join("pi-agent.gz");
+    gzip_file(sidecar_binary, &compressed_binary);
+
+    println!(
+        "cargo:warning=Staged linux sidecar resources at {}",
+        bundle_dir.display()
+    );
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -647,6 +778,8 @@ fn build_sidecar() {
         &target_triple,
         external_koffi,
     );
+
+    stage_linux_sidecar_resource_bundle(&manifest_dir, &dest_dir, &dest_binary, &target_os);
 
     let target_debug_dir = manifest_dir.join("target").join("debug");
     if target_debug_dir.exists() {

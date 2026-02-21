@@ -6,5 +6,6 @@
 # will have schema files for capabilities auto-completion
 /gen/schemas
 
-# Sidecar binaries (auto-built during compilation)
+# Sidecar binaries/runtime bundles (auto-built during compilation)
 /binaries/
+/sidecar/
