@@ -1,9 +1,14 @@
 <script lang="ts">
-  import { onDestroy, onMount } from "svelte";
+  import { onDestroy, onMount, tick } from "svelte";
   import { listen, type UnlistenFn } from "@tauri-apps/api/event";
   import { invoke } from "@tauri-apps/api/core";
+  import { getCurrentWindow } from "@tauri-apps/api/window";
 
-  import { AssistantMessage, UserMessage } from "$lib/components/Messages";
+  import {
+    AssistantMessage,
+    CompactActivityRail,
+    UserMessage,
+  } from "$lib/components/Messages";
   import { PromptInput } from "$lib/components/PromptInput";
   import { SessionSidebar } from "$lib/components/SessionSidebar";
   import { StatusBar } from "$lib/components/StatusBar";
@@ -29,11 +34,22 @@
     type SessionDescriptor,
   } from "$lib/stores/sessions.svelte";
   import { settingsStore } from "$lib/stores/settings.svelte";
-  import type { AgentEvent, PromptImageAttachment } from "$lib/types/agent";
+  import type {
+    AgentEvent,
+    ContentBlock,
+    PromptImageAttachment,
+    UserContentBlock,
+  } from "$lib/types/agent";
   import type { SessionRuntime } from "$lib/types/session";
+  import {
+    applyWindowMode,
+    syncCompactWindowHeight,
+    type DisplayMode,
+  } from "$lib/utils/window-mode";
 
   // DOM refs
   let messagesContainerRef = $state<HTMLDivElement | null>(null);
+  let compactLayoutRef = $state<HTMLDivElement | null>(null);
 
   // Event unlisteners
   let unlistenEvent: UnlistenFn | null = null;
@@ -44,11 +60,17 @@
   let projectDirInput = $state("");
   let startupError = $state<string | null>(null);
   let sidebarCollapsed = $state(false);
+  let compactScopesSidebarOpen = $state(false);
   let sessionSidebarRefreshTimer: ReturnType<typeof setTimeout> | null = null;
   const pendingSessionSidebarSync = new Set<string>();
   let optimisticFirstPromptBySession = $state<
     Record<string, { text: string; timestamp: string }>
   >({});
+  let promptDraftBySession = $state<Record<string, string>>({});
+  let promptAttachmentDraftBySession = $state<
+    Record<string, PromptImageAttachment[]>
+  >({});
+  const EMPTY_PROMPT_ATTACHMENTS: PromptImageAttachment[] = [];
 
   function mergeScopeHistory(
     persistedHistoryByScope: Record<string, PersistedSessionHistoryItem[]>,
@@ -134,6 +156,15 @@
   const activeRuntime = $derived(
     activeSessionId ? (sessionRuntimes[activeSessionId] ?? null) : null,
   );
+  const activePromptDraft = $derived(
+    activeSessionId ? (promptDraftBySession[activeSessionId] ?? "") : "",
+  );
+  const activePromptAttachmentDraft = $derived(
+    activeSessionId
+      ? (promptAttachmentDraftBySession[activeSessionId] ??
+          EMPTY_PROMPT_ATTACHMENTS)
+      : EMPTY_PROMPT_ATTACHMENTS,
+  );
 
   const messages = $derived(
     activeRuntime ? activeRuntime.messages.messages : [],
@@ -186,6 +217,228 @@
   const activeProjectDir = $derived(
     activeRuntime ? normalizeScopePath(activeRuntime.projectDir) : null,
   );
+  const compactScopeTooltip = $derived(
+    activeProjectDir
+      ? `Project scopes (${toScopeTitle(activeProjectDir)})`
+      : "Project scopes",
+  );
+  const displayMode = $derived(settingsStore.displayMode);
+  const isCompactMode = $derived(displayMode === "compact");
+
+  type CompactActivityItem =
+    | {
+        key: string;
+        type: "user";
+        block: { summary: string };
+      }
+    | {
+        key: string;
+        type: "assistant";
+        block: { markdown: string };
+      }
+    | {
+        key: string;
+        type: "thinking";
+        block: { type: "thinking"; thinking: string };
+      }
+    | {
+        key: string;
+        type: "toolCall";
+        block: {
+          type: "toolCall";
+          id: string;
+          name: string;
+          arguments: Record<string, unknown>;
+          result?: string;
+          isError?: boolean;
+        };
+      };
+
+  function summarizeUserPrompt(content: UserContentBlock[]): string {
+    const text = content
+      .filter(
+        (block): block is Extract<UserContentBlock, { type: "text" }> =>
+          block.type === "text",
+      )
+      .map((block) => block.text)
+      .join("")
+      .replace(/\s+/g, " ")
+      .trim();
+
+    const imageCount = content.filter((block) => block.type === "image").length;
+
+    let summary = "Prompt sent";
+    if (text.length > 0 && imageCount > 0) {
+      summary = `${text} • ${imageCount} image${imageCount === 1 ? "" : "s"}`;
+    } else if (text.length > 0) {
+      summary = text;
+    } else if (imageCount > 0) {
+      summary = `${imageCount} image${imageCount === 1 ? "" : "s"} attached`;
+    }
+
+    return summary.length > 120 ? `${summary.slice(0, 119)}…` : summary;
+  }
+
+  function extractAssistantMarkdown(content: ContentBlock[]): string {
+    return content
+      .filter((block): block is Extract<ContentBlock, { type: "text" }> => {
+        return block.type === "text";
+      })
+      .map((block) => block.text.trim())
+      .filter((text) => text.length > 0)
+      .join("\n\n")
+      .trim();
+  }
+
+  const compactActivityItems = $derived.by((): CompactActivityItem[] => {
+    if (!activeRuntime || messages.length === 0) {
+      return [];
+    }
+
+    let lastUserIndex = -1;
+    for (let i = messages.length - 1; i >= 0; i -= 1) {
+      if (messages[i]?.type === "user") {
+        lastUserIndex = i;
+        break;
+      }
+    }
+
+    if (lastUserIndex === -1) {
+      return [];
+    }
+
+    const assistantMarkdownByMessageId = new Map<string, string>();
+    let latestAssistantMessageIdWithText: string | null = null;
+
+    for (
+      let messageIndex = lastUserIndex;
+      messageIndex < messages.length;
+      messageIndex += 1
+    ) {
+      const message = messages[messageIndex];
+      if (!message || message.type !== "assistant") {
+        continue;
+      }
+
+      const markdown = extractAssistantMarkdown(message.content);
+      if (markdown.length === 0) {
+        continue;
+      }
+
+      assistantMarkdownByMessageId.set(message.id, markdown);
+      latestAssistantMessageIdWithText = message.id;
+    }
+
+    const items: CompactActivityItem[] = [];
+
+    for (
+      let messageIndex = lastUserIndex;
+      messageIndex < messages.length;
+      messageIndex += 1
+    ) {
+      const message = messages[messageIndex];
+      if (!message) {
+        continue;
+      }
+
+      if (message.type === "user") {
+        items.push({
+          key: `user:${message.id}`,
+          type: "user",
+          block: { summary: summarizeUserPrompt(message.content) },
+        });
+        continue;
+      }
+
+      for (
+        let blockIndex = 0;
+        blockIndex < message.content.length;
+        blockIndex += 1
+      ) {
+        const block = message.content[blockIndex];
+        if (!block) {
+          continue;
+        }
+
+        if (block.type === "thinking") {
+          items.push({
+            key: `thinking:${message.id}:${blockIndex}`,
+            type: "thinking",
+            block,
+          });
+          continue;
+        }
+
+        if (block.type === "toolCall") {
+          const fallbackId = `${message.id}:${blockIndex}`;
+          items.push({
+            key: `tool:${block.id || fallbackId}`,
+            type: "toolCall",
+            block,
+          });
+        }
+      }
+
+      if (message.id === latestAssistantMessageIdWithText) {
+        const markdown = assistantMarkdownByMessageId.get(message.id);
+        if (markdown) {
+          items.push({
+            key: `assistant:${message.id}`,
+            type: "assistant",
+            block: { markdown },
+          });
+        }
+      }
+    }
+
+    return items.slice(-3);
+  });
+
+  let hideCompactRail = $state(false);
+  let lastCompactRailSessionId = $state<string | null>(null);
+
+  $effect(() => {
+    const currentSessionId = activeSessionId;
+
+    if (currentSessionId !== lastCompactRailSessionId) {
+      hideCompactRail = false;
+      lastCompactRailSessionId = currentSessionId;
+    }
+  });
+
+  const showCompactActivityRail = $derived.by(() => {
+    if (
+      hideCompactRail ||
+      !isCompactMode ||
+      compactActivityItems.length === 0
+    ) {
+      return false;
+    }
+
+    return true;
+  });
+
+  let compactHeightRaf: number | null = null;
+  let compactLayoutResizeObserver: ResizeObserver | null = null;
+
+  function scheduleCompactHeightSync(): void {
+    if (!isCompactMode || compactHeightRaf !== null) {
+      return;
+    }
+
+    compactHeightRaf = requestAnimationFrame(() => {
+      compactHeightRaf = null;
+
+      if (!isCompactMode || !compactLayoutRef) {
+        return;
+      }
+
+      // offsetHeight tracks layout height only (ignores transform animations),
+      // which keeps compact window sizing stable while chips animate in.
+      const targetHeight = Math.max(1, compactLayoutRef.offsetHeight);
+      void syncCompactWindowHeight(targetHeight).catch(() => undefined);
+    });
+  }
 
   function handleScroll(): void {
     if (messagesContainerRef && activeRuntime) {
@@ -410,6 +663,82 @@
     sidebarCollapsed = !sidebarCollapsed;
   }
 
+  function toggleCompactScopesSidebar(): void {
+    compactScopesSidebarOpen = !compactScopesSidebarOpen;
+  }
+
+  async function setDisplayMode(mode: DisplayMode): Promise<void> {
+    if (settingsStore.displayMode === mode) {
+      return;
+    }
+
+    const previousMode = settingsStore.displayMode;
+
+    try {
+      await applyWindowMode(mode);
+      await settingsStore.setDisplayMode(mode);
+    } catch (error) {
+      console.error("Failed to switch display mode:", error);
+
+      // Best effort rollback for window visuals if apply partially succeeded.
+      try {
+        await applyWindowMode(previousMode);
+      } catch {
+        // ignore rollback errors
+      }
+    }
+  }
+
+  async function enterCompactMode(): Promise<void> {
+    await setDisplayMode("compact");
+  }
+
+  async function enterFullMode(): Promise<void> {
+    compactScopesSidebarOpen = false;
+    await setDisplayMode("full");
+
+    await tick();
+    requestAnimationFrame(() => scrollToBottom(false));
+  }
+
+  async function onCompactDragHandleMouseDown(
+    event: MouseEvent,
+  ): Promise<void> {
+    if (event.button !== 0) {
+      return;
+    }
+
+    await getCurrentWindow()
+      .startDragging()
+      .catch(() => undefined);
+  }
+
+  async function onCompactResizeHandleMouseDown(
+    event: MouseEvent,
+    direction: "West" | "East",
+  ): Promise<void> {
+    if (event.button !== 0) {
+      return;
+    }
+
+    event.preventDefault();
+    event.stopPropagation();
+
+    await getCurrentWindow()
+      .startResizeDragging(direction)
+      .catch(() => undefined);
+  }
+
+  function toScopeTitle(projectDir: string | null): string {
+    if (!projectDir) {
+      return "No active scope";
+    }
+
+    const trimmed = projectDir.replace(/[\\/]+$/, "");
+    const parts = trimmed.split(/[\\/]/).filter(Boolean);
+    return parts[parts.length - 1] ?? projectDir;
+  }
+
   function onProjectDirInputChange(value: string): void {
     projectDirInput = value;
   }
@@ -422,6 +751,7 @@
       activeRuntime &&
       normalizeScopePath(activeRuntime.projectDir) === normalizedTarget
     ) {
+      compactScopesSidebarOpen = false;
       return;
     }
 
@@ -429,6 +759,7 @@
     await settingsStore.setLastSelectedScope(normalizedTarget);
 
     await createSession(projectDir);
+    compactScopesSidebarOpen = false;
   }
 
   async function onSelectHistory(
@@ -446,6 +777,7 @@
       sessionsStore.setActiveSession(existing.sessionId);
       await ensureRuntime(existing);
       requestAnimationFrame(() => scrollToBottom(false));
+      compactScopesSidebarOpen = false;
       return;
     }
 
@@ -453,6 +785,7 @@
     await settingsStore.setLastSelectedScope(normalizedTarget);
 
     await createSession(projectDir, history.filePath);
+    compactScopesSidebarOpen = false;
   }
 
   async function onRemoveHistory(
@@ -560,11 +893,36 @@
     }
   }
 
+  function onPromptInput(value: string): void {
+    const sessionId = activeSessionId;
+    if (!sessionId) {
+      return;
+    }
+
+    promptDraftBySession = {
+      ...promptDraftBySession,
+      [sessionId]: value,
+    };
+  }
+
+  function onPromptAttachmentsChange(images: PromptImageAttachment[]): void {
+    const sessionId = activeSessionId;
+    if (!sessionId) {
+      return;
+    }
+
+    promptAttachmentDraftBySession = {
+      ...promptAttachmentDraftBySession,
+      [sessionId]: images,
+    };
+  }
+
   async function onSubmit(
     prompt: string,
     images?: PromptImageAttachment[],
   ): Promise<void> {
     if (!activeRuntime) return;
+    hideCompactRail = false;
     maybeTrackOptimisticFirstPrompt(activeRuntime, prompt);
     await handlePromptSubmit(activeRuntime, prompt, images);
   }
@@ -578,6 +936,7 @@
       return;
     }
 
+    hideCompactRail = true;
     await onSlashCommand("new", "", "/new");
   }
 
@@ -619,6 +978,10 @@
   ): Promise<void> {
     if (!activeRuntime) return;
 
+    if (command === "new") {
+      hideCompactRail = true;
+    }
+
     const result = await handleSlashCommand(
       activeRuntime,
       command,
@@ -631,6 +994,7 @@
         activeRuntime.messages.addErrorMessage(result.message);
         break;
       case "submit":
+        hideCompactRail = false;
         maybeTrackOptimisticFirstPrompt(activeRuntime, result.text);
         await handlePromptSubmit(activeRuntime, result.text);
         break;
@@ -721,12 +1085,99 @@
     }
   });
 
+  $effect(() => {
+    const validSessionIds = new Set(
+      sessionsStore.sessions.map((s) => s.sessionId),
+    );
+
+    const promptEntries = Object.entries(promptDraftBySession).filter(
+      ([sessionId]) => validSessionIds.has(sessionId),
+    );
+    if (promptEntries.length !== Object.keys(promptDraftBySession).length) {
+      promptDraftBySession = Object.fromEntries(promptEntries);
+    }
+
+    const attachmentEntries = Object.entries(
+      promptAttachmentDraftBySession,
+    ).filter(([sessionId]) => validSessionIds.has(sessionId));
+    if (
+      attachmentEntries.length !==
+      Object.keys(promptAttachmentDraftBySession).length
+    ) {
+      promptAttachmentDraftBySession = Object.fromEntries(attachmentEntries);
+    }
+  });
+
+  $effect(() => {
+    document.documentElement.setAttribute(
+      "data-display-mode",
+      settingsStore.displayMode,
+    );
+  });
+
+  $effect(() => {
+    if (!isCompactMode && compactScopesSidebarOpen) {
+      compactScopesSidebarOpen = false;
+    }
+  });
+
+  $effect(() => {
+    const layout = compactLayoutRef;
+
+    compactLayoutResizeObserver?.disconnect();
+    compactLayoutResizeObserver = null;
+
+    if (!isCompactMode || !layout) {
+      return;
+    }
+
+    if (typeof ResizeObserver !== "undefined") {
+      compactLayoutResizeObserver = new ResizeObserver(() => {
+        scheduleCompactHeightSync();
+      });
+      compactLayoutResizeObserver.observe(layout);
+    }
+
+    showCompactActivityRail;
+    compactActivityItems.length;
+    compactScopesSidebarOpen;
+    isLoading;
+
+    scheduleCompactHeightSync();
+
+    return () => {
+      compactLayoutResizeObserver?.disconnect();
+      compactLayoutResizeObserver = null;
+    };
+  });
+
   onMount(async () => {
-    // Load persistent UI settings first
-    await settingsStore.load();
+    // Never block startup on settings/plugin-store load.
+    // If store access stalls, keep bootstrapping sessions with defaults.
+    const settingsLoad = settingsStore
+      .load()
+      .catch((error) => {
+        console.warn("Failed to load settings:", error);
+      })
+      .then(() => {
+        // Do not block session/bootstrap initialization on window-manager APIs.
+        // On some Linux setups, mode application can stall temporarily.
+        return applyWindowMode(settingsStore.displayMode).catch((error) => {
+          console.warn("Failed to apply initial window mode:", error);
+        });
+      });
+
+    void settingsLoad;
 
     try {
-      await bootstrapSessions();
+      await Promise.race([
+        bootstrapSessions(),
+        new Promise<never>((_, reject) => {
+          setTimeout(() => {
+            reject(new Error("Session bootstrap timed out"));
+          }, 20_000);
+        }),
+      ]);
     } catch (error) {
       startupError = error instanceof Error ? error.message : String(error);
     }
@@ -828,122 +1279,333 @@
       scrollRaf = null;
     }
 
+    if (compactHeightRaf !== null) {
+      cancelAnimationFrame(compactHeightRaf);
+      compactHeightRaf = null;
+    }
+
+    compactLayoutResizeObserver?.disconnect();
+    compactLayoutResizeObserver = null;
+
     pendingSessionSidebarSync.clear();
     optimisticFirstPromptBySession = {};
+    promptDraftBySession = {};
+    promptAttachmentDraftBySession = {};
   });
 </script>
 
-<main class="flex w-full h-screen overflow-hidden">
-  <SessionSidebar
-    {projectScopes}
-    {scopeHistoryByProject}
-    {activeProjectDir}
-    {activeSessionId}
-    {activeSessionFile}
-    {projectDirInput}
-    creating={sessionsStore.creating}
-    collapsed={sidebarCollapsed}
-    collapsedScopes={settingsStore.collapsedScopes}
-    ontoggle={toggleSidebar}
-    onprojectdirinput={onProjectDirInputChange}
-    oncreatesession={createSessionFromInput}
-    onselectscope={onSelectScope}
-    onselecthistory={onSelectHistory}
-    onremovehistory={onRemoveHistory}
-    onremovescope={onRemoveScope}
-    ontogglescopecollapse={async (scope) => {
-      await settingsStore.toggleScopeCollapsed(scope);
-    }}
-  />
-
-  <section
-    class="flex-1 min-w-0 h-full flex items-stretch justify-center overflow-hidden"
-  >
-    <div
-      class="flex flex-col w-full h-full max-w-[min(95vw,1200px)] lg:max-w-[min(88vw,1360px)] px-4 py-4"
-    >
-      <header class="shrink-0 py-2 text-center">
-        <h1
-          class="text-3xl font-semibold tracking-tight mb-1 bg-linear-to-r from-foreground to-muted-foreground bg-clip-text text-transparent"
-        >
-          Graphone
-        </h1>
-        <p class="text-sm text-muted-foreground">Parallel project sessions</p>
-      </header>
-
+{#if isCompactMode}
+  <main class="flex w-full h-screen overflow-hidden bg-transparent">
+    <section class="flex items-end w-full h-full">
       <div
-        class="flex-1 min-h-0 overflow-y-auto py-4 pl-2 pr-4 flex flex-col gap-2 scroll-smooth [scrollbar-gutter:stable]"
-        bind:this={messagesContainerRef}
-        onscroll={handleScroll}
+        bind:this={compactLayoutRef}
+        class="flex w-full flex-col gap-1 px-1 py-1"
       >
-        {#if startupError}
-          <div class="flex items-center justify-center h-full">
-            <p class="text-destructive text-sm">
-              Failed to initialize sessions: {startupError}
-            </p>
-          </div>
-        {:else if !activeRuntime}
-          <div class="flex items-center justify-center h-full">
-            <p class="text-muted-foreground text-sm">
-              Create a session to start chatting.
-            </p>
-          </div>
-        {:else if messages.length === 0}
-          <div class="flex items-center justify-center h-full">
-            <p class="text-muted-foreground text-sm">
-              Start a conversation by typing below
-            </p>
-          </div>
-        {:else}
-          {#each messages as message (message.id)}
-            {#if message.type === "user"}
-              <UserMessage
-                content={message.content}
-                timestamp={message.timestamp}
-              />
-            {:else}
-              <AssistantMessage
-                content={message.content}
-                timestamp={message.timestamp}
-                isStreaming={message.isStreaming}
-              />
-            {/if}
-          {/each}
+        {#if showCompactActivityRail}
+          <CompactActivityRail
+            items={compactActivityItems}
+            assistantStreaming={isStreaming}
+          />
         {/if}
+
+        <div
+          id="compact-session-sidebar"
+          class={`w-full overflow-hidden ${
+            compactScopesSidebarOpen
+              ? "max-h-[440px] pb-1"
+              : "max-h-0 pointer-events-none"
+          }`}
+          aria-hidden={!compactScopesSidebarOpen}
+        >
+          <div
+            class={`h-[440px] overflow-hidden rounded-2xl border-[2px] border-[rgba(255,255,255,0.92)] bg-background shadow-2xl transition-[opacity,transform] duration-200 ${
+              compactScopesSidebarOpen
+                ? "opacity-100 translate-y-0"
+                : "opacity-0 -translate-y-2"
+            }`}
+          >
+            <SessionSidebar
+              {projectScopes}
+              {scopeHistoryByProject}
+              {activeProjectDir}
+              {activeSessionId}
+              {activeSessionFile}
+              {projectDirInput}
+              creating={sessionsStore.creating}
+              collapsed={false}
+              collapsedScopes={settingsStore.collapsedScopes}
+              ontoggle={toggleCompactScopesSidebar}
+              onprojectdirinput={onProjectDirInputChange}
+              oncreatesession={createSessionFromInput}
+              onselectscope={onSelectScope}
+              onselecthistory={onSelectHistory}
+              onremovehistory={onRemoveHistory}
+              onremovescope={onRemoveScope}
+              ontogglescopecollapse={async (scope) => {
+                await settingsStore.toggleScopeCollapsed(scope);
+              }}
+            />
+          </div>
+        </div>
+
+        <div class="relative w-full">
+          <button
+            type="button"
+            class="absolute left-0 top-1/2 z-10 h-10 w-2 -translate-x-1/2 -translate-y-1/2 rounded-full bg-white/45 opacity-70 transition-opacity hover:opacity-100 active:opacity-100 cursor-ew-resize"
+            onmousedown={(event) =>
+              onCompactResizeHandleMouseDown(event, "West")}
+            aria-label="Resize compact width from left edge"
+            title="Resize width"
+          ></button>
+
+          <div
+            class="flex items-center gap-2 w-full rounded-[999px] border-[3px] border-[rgba(255,255,255,0.92)] bg-background px-2 py-0.5 shadow-2xl"
+          >
+            <button
+              type="button"
+              class="shrink-0 h-9 w-9 rounded-full border border-border text-muted-foreground hover:text-foreground hover:border-foreground hover:bg-secondary cursor-move select-none"
+              data-tauri-drag-region
+              onmousedown={onCompactDragHandleMouseDown}
+              aria-label="Move window"
+              title="Move window"
+            >
+              <span data-tauri-drag-region class="text-base leading-none"
+                >⋮</span
+              >
+            </button>
+
+            <button
+              type="button"
+              class={`shrink-0 flex items-center justify-center h-9 w-9 rounded-full border text-sm font-semibold transition-colors ${
+                compactScopesSidebarOpen
+                  ? "border-foreground bg-secondary text-foreground"
+                  : "border-border text-muted-foreground hover:text-foreground hover:border-foreground hover:bg-secondary"
+              }`}
+              onclick={toggleCompactScopesSidebar}
+              aria-label={compactScopesSidebarOpen
+                ? "Hide project scopes"
+                : "Show project scopes"}
+              aria-expanded={compactScopesSidebarOpen}
+              aria-controls="compact-session-sidebar"
+              title={compactScopeTooltip}
+            >
+              P
+            </button>
+
+            <div class="flex-1 min-w-0">
+              <PromptInput
+                value={activePromptDraft}
+                attachments={activePromptAttachmentDraft}
+                oninput={onPromptInput}
+                onattachmentschange={onPromptAttachmentsChange}
+                onsubmit={onSubmit}
+                oncancel={onCancel}
+                onslashcommand={onSlashCommand}
+                onnewchat={onNewChat}
+                onmodelchange={onModelChange}
+                onthinkingchange={onThinkingChange}
+                onmodelfilterchange={onModelFilterChange}
+                {isLoading}
+                disabled={!activeRuntime || !sessionStarted}
+                placeholder={activeRuntime && sessionStarted
+                  ? "What would you like to get done today?"
+                  : "Create a session to begin..."}
+                model={currentModel}
+                provider={currentProvider}
+                thinkingLevel={currentThinkingLevel}
+                supportsImageInput={currentModelSupportsImageInput}
+                {supportsThinking}
+                {availableThinkingLevels}
+                models={availableModels}
+                modelsLoading={isModelsLoading}
+                modelChanging={isSettingModel}
+                thinkingChanging={isSettingThinking}
+                enabledModels={activeRuntime?.enabledModels}
+                modelFilter={settingsStore.modelFilter}
+                autofocus={true}
+                {chatHasMessages}
+                compact={true}
+              />
+            </div>
+
+            <button
+              type="button"
+              class="shrink-0 flex items-center justify-center h-9 w-9 rounded-full border border-border text-muted-foreground hover:text-foreground hover:border-foreground hover:bg-secondary transition-colors"
+              onclick={enterFullMode}
+              aria-label="Switch to full mode"
+              title="Full mode"
+            >
+              <svg
+                aria-hidden="true"
+                class="h-4 w-4"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2.2"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              >
+                <path d="M10 10L5 5" />
+                <path d="M5 8V5H8" />
+                <path d="M14 14L19 19" />
+                <path d="M16 19H19V16" />
+              </svg>
+            </button>
+          </div>
+
+          <button
+            type="button"
+            class="absolute right-0 top-1/2 z-10 h-10 w-2 translate-x-1/2 -translate-y-1/2 rounded-full bg-white/45 opacity-70 transition-opacity hover:opacity-100 active:opacity-100 cursor-ew-resize"
+            onmousedown={(event) =>
+              onCompactResizeHandleMouseDown(event, "East")}
+            aria-label="Resize compact width from right edge"
+            title="Resize width"
+          ></button>
+        </div>
       </div>
+    </section>
+  </main>
+{:else}
+  <main class="relative flex w-full h-screen overflow-hidden">
+    <button
+      type="button"
+      class="absolute top-3 right-4 z-20 flex items-center justify-center h-9 w-9 rounded border border-border text-muted-foreground hover:text-foreground hover:border-foreground hover:bg-secondary transition-colors"
+      onclick={enterCompactMode}
+      aria-label="Switch to compact mode"
+      title="Compact mode"
+    >
+      <svg
+        aria-hidden="true"
+        class="h-4 w-4"
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        stroke-width="2.2"
+        stroke-linecap="round"
+        stroke-linejoin="round"
+      >
+        <path d="M5 5L10 10" />
+        <path d="M7 10H10V7" />
+        <path d="M19 19L14 14" />
+        <path d="M17 14H14V17" />
+      </svg>
+    </button>
 
-      <section class="shrink-0 w-full px-2 pb-1 pt-1">
-        <PromptInput
-          onsubmit={onSubmit}
-          oncancel={onCancel}
-          onslashcommand={onSlashCommand}
-          onnewchat={onNewChat}
-          onmodelchange={onModelChange}
-          onthinkingchange={onThinkingChange}
-          onmodelfilterchange={onModelFilterChange}
-          {isLoading}
-          disabled={!activeRuntime || !sessionStarted}
-          placeholder={activeRuntime && sessionStarted
-            ? "What would you like to get done today?"
-            : "Create a session to begin..."}
-          model={currentModel}
-          provider={currentProvider}
-          thinkingLevel={currentThinkingLevel}
-          supportsImageInput={currentModelSupportsImageInput}
-          {supportsThinking}
-          {availableThinkingLevels}
-          models={availableModels}
-          modelsLoading={isModelsLoading}
-          modelChanging={isSettingModel}
-          thinkingChanging={isSettingThinking}
-          enabledModels={activeRuntime?.enabledModels}
-          modelFilter={settingsStore.modelFilter}
-          autofocus={true}
-          {chatHasMessages}
-        />
-      </section>
+    <SessionSidebar
+      {projectScopes}
+      {scopeHistoryByProject}
+      {activeProjectDir}
+      {activeSessionId}
+      {activeSessionFile}
+      {projectDirInput}
+      creating={sessionsStore.creating}
+      collapsed={sidebarCollapsed}
+      collapsedScopes={settingsStore.collapsedScopes}
+      ontoggle={toggleSidebar}
+      onprojectdirinput={onProjectDirInputChange}
+      oncreatesession={createSessionFromInput}
+      onselectscope={onSelectScope}
+      onselecthistory={onSelectHistory}
+      onremovehistory={onRemoveHistory}
+      onremovescope={onRemoveScope}
+      ontogglescopecollapse={async (scope) => {
+        await settingsStore.toggleScopeCollapsed(scope);
+      }}
+    />
 
-      <StatusBar cwd={activeProjectDir} {usageIndicator} />
-    </div>
-  </section>
-</main>
+    <section
+      class="flex-1 min-w-0 h-full flex items-stretch justify-center overflow-hidden"
+    >
+      <div
+        class="flex flex-col w-full h-full max-w-[min(95vw,1200px)] lg:max-w-[min(88vw,1360px)] px-4 py-4"
+      >
+        <header class="shrink-0 py-2 text-center">
+          <h1
+            class="text-3xl font-semibold tracking-tight mb-1 bg-linear-to-r from-foreground to-muted-foreground bg-clip-text text-transparent"
+          >
+            Graphone
+          </h1>
+          <p class="text-sm text-muted-foreground">Parallel project sessions</p>
+        </header>
+
+        <div
+          class="flex-1 min-h-0 overflow-y-auto py-4 pl-2 pr-4 flex flex-col gap-2 scroll-smooth [scrollbar-gutter:stable]"
+          bind:this={messagesContainerRef}
+          onscroll={handleScroll}
+        >
+          {#if startupError}
+            <div class="flex items-center justify-center h-full">
+              <p class="text-destructive text-sm">
+                Failed to initialize sessions: {startupError}
+              </p>
+            </div>
+          {:else if !activeRuntime}
+            <div class="flex items-center justify-center h-full">
+              <p class="text-muted-foreground text-sm">
+                Create a session to start chatting.
+              </p>
+            </div>
+          {:else if messages.length === 0}
+            <div class="flex items-center justify-center h-full">
+              <p class="text-muted-foreground text-sm">
+                Start a conversation by typing below
+              </p>
+            </div>
+          {:else}
+            {#each messages as message (message.id)}
+              {#if message.type === "user"}
+                <UserMessage
+                  content={message.content}
+                  timestamp={message.timestamp}
+                />
+              {:else}
+                <AssistantMessage
+                  content={message.content}
+                  timestamp={message.timestamp}
+                  isStreaming={message.isStreaming}
+                />
+              {/if}
+            {/each}
+          {/if}
+        </div>
+
+        <section class="shrink-0 w-full px-2 pb-1 pt-1">
+          <PromptInput
+            value={activePromptDraft}
+            attachments={activePromptAttachmentDraft}
+            oninput={onPromptInput}
+            onattachmentschange={onPromptAttachmentsChange}
+            onsubmit={onSubmit}
+            oncancel={onCancel}
+            onslashcommand={onSlashCommand}
+            onnewchat={onNewChat}
+            onmodelchange={onModelChange}
+            onthinkingchange={onThinkingChange}
+            onmodelfilterchange={onModelFilterChange}
+            {isLoading}
+            disabled={!activeRuntime || !sessionStarted}
+            placeholder={activeRuntime && sessionStarted
+              ? "What would you like to get done today?"
+              : "Create a session to begin..."}
+            model={currentModel}
+            provider={currentProvider}
+            thinkingLevel={currentThinkingLevel}
+            supportsImageInput={currentModelSupportsImageInput}
+            {supportsThinking}
+            {availableThinkingLevels}
+            models={availableModels}
+            modelsLoading={isModelsLoading}
+            modelChanging={isSettingModel}
+            thinkingChanging={isSettingThinking}
+            enabledModels={activeRuntime?.enabledModels}
+            modelFilter={settingsStore.modelFilter}
+            autofocus={true}
+            {chatHasMessages}
+          />
+        </section>
+
+        <StatusBar cwd={activeProjectDir} {usageIndicator} />
+      </div>
+    </section>
+  </main>
+{/if}

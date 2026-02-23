@@ -22,6 +22,8 @@
       images?: PromptImageAttachment[],
     ) => void | Promise<void>;
     oninput?: (value: string) => void;
+    attachments?: PromptImageAttachment[];
+    onattachmentschange?: (images: PromptImageAttachment[]) => void;
     oncancel?: () => void;
     onslashcommand?: (
       command: string,
@@ -49,12 +51,15 @@
     enabledModels?: EnabledModelsStore;
     modelFilter?: FilterMode;
     chatHasMessages?: boolean;
+    compact?: boolean;
   }
 
   let {
     value: externalValue = "",
+    attachments: externalAttachments = [],
     onsubmit,
     oninput,
+    onattachmentschange,
     oncancel,
     onslashcommand,
     onnewchat,
@@ -78,7 +83,116 @@
     enabledModels,
     modelFilter = "all",
     chatHasMessages = false,
+    compact = false,
   }: Props = $props();
+
+  type LocalPromptImageAttachment = PromptImageAttachment & { id: string };
+
+  function toLocalAttachments(
+    images: PromptImageAttachment[],
+  ): LocalPromptImageAttachment[] {
+    return images.map((image) => ({
+      id: crypto.randomUUID(),
+      ...image,
+    }));
+  }
+
+  function toExternalAttachments(
+    images: LocalPromptImageAttachment[],
+  ): PromptImageAttachment[] {
+    return images.map(({ id, ...image }) => image);
+  }
+
+  function areExternalAttachmentsEqual(
+    a: PromptImageAttachment[] | null | undefined,
+    b: PromptImageAttachment[] | null | undefined,
+  ): boolean {
+    if (a === b) {
+      return true;
+    }
+
+    if (!a || !b) {
+      return false;
+    }
+
+    if (a.length !== b.length) {
+      return false;
+    }
+
+    for (let i = 0; i < a.length; i += 1) {
+      const left = a[i];
+      const right = b[i];
+
+      if (!left || !right) {
+        return false;
+      }
+
+      if (left.mimeType !== right.mimeType || left.data !== right.data) {
+        return false;
+      }
+    }
+
+    return true;
+  }
+
+  function areLocalAttachmentsEqual(
+    a: LocalPromptImageAttachment[],
+    b: LocalPromptImageAttachment[],
+  ): boolean {
+    if (a === b) {
+      return true;
+    }
+
+    if (a.length !== b.length) {
+      return false;
+    }
+
+    for (let i = 0; i < a.length; i += 1) {
+      const left = a[i];
+      const right = b[i];
+
+      if (!left || !right) {
+        return false;
+      }
+
+      if (
+        left.id !== right.id ||
+        left.mimeType !== right.mimeType ||
+        left.data !== right.data
+      ) {
+        return false;
+      }
+    }
+
+    return true;
+  }
+
+  function areLocalAndExternalAttachmentsEqual(
+    localImages: LocalPromptImageAttachment[],
+    externalImages: PromptImageAttachment[],
+  ): boolean {
+    if (localImages.length !== externalImages.length) {
+      return false;
+    }
+
+    for (let i = 0; i < localImages.length; i += 1) {
+      const local = localImages[i];
+      const external = externalImages[i];
+
+      if (!local || !external) {
+        return false;
+      }
+
+      if (
+        local.mimeType !== external.mimeType ||
+        local.data !== external.data
+      ) {
+        return false;
+      }
+    }
+
+    return true;
+  }
 
   // Internal state for the input value
   // svelte-ignore state_referenced_locally
@@ -97,7 +211,7 @@
   let fileInputRef = $state<HTMLInputElement | null>(null);
   let isFocused = $state(false);
   let commandJustSelected = $state(false);
-  let attachments = $state<(PromptImageAttachment & { id: string })[]>([]);
+  let attachments = $state<LocalPromptImageAttachment[]>([]);
   let attachmentError = $state<string | null>(null);
   let isDragOver = $state(false);
   let dragDepth = $state(0);
@@ -154,12 +268,47 @@
     }
   });
 
+  function applyTextareaHeight(target: HTMLTextAreaElement): void {
+    target.style.height = "auto";
+    const newHeight = Math.min(target.scrollHeight, 300);
+    target.style.height = newHeight > 44 ? `${newHeight}px` : "auto";
+  }
+
+  let lastSyncedExternalAttachments = $state<PromptImageAttachment[] | null>(
+    null,
+  );
+
+  function setInternalValue(nextValue: string, notify = true): void {
+    internalValue = nextValue;
+    if (notify) {
+      oninput?.(nextValue);
+    }
+  }
+
+  function setAttachments(
+    nextAttachments: LocalPromptImageAttachment[],
+    notify = true,
+  ): void {
+    if (areLocalAttachmentsEqual(attachments, nextAttachments)) {
+      return;
+    }
+
+    attachments = nextAttachments;
+
+    if (!notify) {
+      return;
+    }
+
+    const externalImages = toExternalAttachments(nextAttachments);
+    lastSyncedExternalAttachments = externalImages;
+    onattachmentschange?.(externalImages);
+  }
+
   function selectCommand(cmd: (typeof ALL_SLASH_COMMANDS)[0]) {
     // Set flag to prevent dropdown from reopening immediately
     commandJustSelected = true;
     // Update value with trailing space to prevent dropdown from reopening
-    internalValue = `/${cmd.name} `;
-    oninput?.(internalValue);
+    setInternalValue(`/${cmd.name} `);
     // Re-focus textarea
     textareaRef?.focus();
     // Clear the flag after a short delay to allow future slash commands
@@ -170,14 +319,10 @@
 
   function handleInput(event: Event) {
     const target = event.target as HTMLTextAreaElement;
-    internalValue = target.value;
-    oninput?.(internalValue);
+    setInternalValue(target.value);
 
-    // Auto-resize textarea - preserve current height until we know new height
-    const currentHeight = target.style.height;
-    target.style.height = "auto";
-    const newHeight = Math.min(target.scrollHeight, 300);
-    target.style.height = newHeight > 44 ? `${newHeight}px` : "auto";
+    // Auto-resize textarea based on content.
+    applyTextareaHeight(target);
   }
 
   function clearAttachmentError(): void {
@@ -189,8 +334,9 @@
   }
 
   function removeAttachment(id: string): void {
-    attachments = attachments.filter((image) => image.id !== id);
-    if (attachments.length === 0) {
+    const nextAttachments = attachments.filter((image) => image.id !== id);
+    setAttachments(nextAttachments);
+    if (nextAttachments.length === 0) {
       clearAttachmentError();
     }
   }
@@ -302,7 +448,7 @@
         ? declaredMimeType
         : "image/png";
 
-    attachments = [
+    setAttachments([
       ...attachments,
       {
         id: crypto.randomUUID(),
@@ -310,7 +456,7 @@
         data: base64Data,
         mimeType: resolvedMimeType,
       },
-    ];
+    ]);
     clearAttachmentError();
   }
 
@@ -492,8 +638,8 @@
     }
 
     // Clear input after submission
-    internalValue = "";
-    attachments = [];
+    setInternalValue("");
+    setAttachments([]);
     clearAttachmentError();
     if (textareaRef) {
       textareaRef.style.height = "auto";
@@ -552,8 +698,8 @@
       if (isLoading) {
         oncancel?.();
       } else {
-        internalValue = "";
-        attachments = [];
+        setInternalValue("");
+        setAttachments([]);
         clearAttachmentError();
         if (textareaRef) {
           textareaRef.style.height = "auto";
@@ -561,6 +707,63 @@
       }
     }
   }
+
+  let lastSyncedExternalValue = $state<string | null>(null);
+
+  $effect(() => {
+    if (lastSyncedExternalValue === null) {
+      lastSyncedExternalValue = externalValue;
+      return;
+    }
+
+    if (externalValue === lastSyncedExternalValue) {
+      return;
+    }
+
+    lastSyncedExternalValue = externalValue;
+    internalValue = externalValue;
+    if (textareaRef) {
+      applyTextareaHeight(textareaRef);
+    }
+  });
+
+  $effect(() => {
+    if (lastSyncedExternalAttachments === null) {
+      lastSyncedExternalAttachments = externalAttachments;
+
+      if (
+        !areLocalAndExternalAttachmentsEqual(attachments, externalAttachments)
+      ) {
+        setAttachments(toLocalAttachments(externalAttachments), false);
+      }
+
+      if (externalAttachments.length === 0) {
+        clearAttachmentError();
+      }
+      return;
+    }
+
+    if (
+      areExternalAttachmentsEqual(
+        externalAttachments,
+        lastSyncedExternalAttachments,
+      )
+    ) {
+      return;
+    }
+
+    lastSyncedExternalAttachments = externalAttachments;
+
+    if (
+      !areLocalAndExternalAttachmentsEqual(attachments, externalAttachments)
+    ) {
+      setAttachments(toLocalAttachments(externalAttachments), false);
+    }
+
+    if (externalAttachments.length === 0) {
+      clearAttachmentError();
+    }
+  });
 
   // Auto-focus on mount if requested
   $effect(() => {
@@ -685,7 +888,7 @@
         {placeholder}
         {disabled}
         class={cn(
-          "w-full min-h-11 max-h-[40vh] py-3 px-4 pr-32 bg-transparent border-none outline-none resize-none text-foreground overflow-y-auto text-base leading-normal",
+          "w-full min-h-11 max-h-[40vh] py-2.5 px-4 pr-32 bg-transparent border-none outline-none resize-none text-foreground overflow-y-auto text-base leading-6",
           "placeholder:text-muted-foreground/60",
           disabled && "cursor-not-allowed",
         )}
@@ -805,85 +1008,89 @@
     </div>
   </div>
 
-  <div class="flex justify-between pt-1.5 px-1">
-    <span class="text-xs flex flex-col gap-0.5">
-      {#if isSlashCommand}
-        {#if isKnownCommand}
-          {#if commandHandler === "local"}
-            <span class="text-success font-medium"
-              >/{parsedCommand?.command}</span
-            >
-            <span class="text-muted-foreground ml-1">
-              {ALL_SLASH_COMMANDS.find((c) => c.name === parsedCommand?.command)
-                ?.description}
-            </span>
-          {:else if commandHandler === "unimplemented"}
-            <span class="text-warning font-medium"
-              >/{parsedCommand?.command}</span
-            >
-            <span class="text-muted-foreground ml-1">
-              Not yet implemented • {ALL_SLASH_COMMANDS.find(
-                (c) => c.name === parsedCommand?.command,
-              )?.description}
-            </span>
+  {#if !compact}
+    <div class="flex justify-between pt-1.5 px-1">
+      <span class="text-xs flex flex-col gap-0.5">
+        {#if isSlashCommand}
+          {#if isKnownCommand}
+            {#if commandHandler === "local"}
+              <span class="text-success font-medium"
+                >/{parsedCommand?.command}</span
+              >
+              <span class="text-muted-foreground ml-1">
+                {ALL_SLASH_COMMANDS.find(
+                  (c) => c.name === parsedCommand?.command,
+                )?.description}
+              </span>
+            {:else if commandHandler === "unimplemented"}
+              <span class="text-warning font-medium"
+                >/{parsedCommand?.command}</span
+              >
+              <span class="text-muted-foreground ml-1">
+                Not yet implemented • {ALL_SLASH_COMMANDS.find(
+                  (c) => c.name === parsedCommand?.command,
+                )?.description}
+              </span>
+            {:else}
+              <span class="text-primary font-medium"
+                >/{parsedCommand?.command}</span
+              >
+              <span class="text-muted-foreground ml-1">
+                {ALL_SLASH_COMMANDS.find(
+                  (c) => c.name === parsedCommand?.command,
+                )?.description}
+              </span>
+            {/if}
           {:else}
-            <span class="text-primary font-medium"
-              >/{parsedCommand?.command}</span
-            >
-            <span class="text-muted-foreground ml-1">
-              {ALL_SLASH_COMMANDS.find((c) => c.name === parsedCommand?.command)
-                ?.description}
-            </span>
+            <span class="text-destructive">/{parsedCommand?.command}</span>
+            <span class="text-muted-foreground ml-1">Unknown command</span>
           {/if}
-        {:else}
-          <span class="text-destructive">/{parsedCommand?.command}</span>
-          <span class="text-muted-foreground ml-1">Unknown command</span>
         {/if}
-      {/if}
 
-      {#if attachments.length > 0}
-        <span class="text-muted-foreground ml-1">
-          {attachments.length}/{MAX_IMAGES_PER_MESSAGE} image{attachments.length ===
-          1
-            ? ""
-            : "s"}
-        </span>
-      {/if}
+        {#if attachments.length > 0}
+          <span class="text-muted-foreground ml-1">
+            {attachments.length}/{MAX_IMAGES_PER_MESSAGE} image{attachments.length ===
+            1
+              ? ""
+              : "s"}
+          </span>
+        {/if}
 
-      {#if submitBlockedByModel}
-        <span class="text-warning ml-1">
-          Current model does not support image input. Remove images or switch
-          models.
-        </span>
-      {/if}
+        {#if submitBlockedByModel}
+          <span class="text-warning ml-1">
+            Current model does not support image input. Remove images or switch
+            models.
+          </span>
+        {/if}
 
-      {#if attachmentError}
-        <span class="text-destructive ml-1">{attachmentError}</span>
-      {/if}
-    </span>
-    <span
-      class="text-xs text-muted-foreground/70 text-right flex items-center gap-2"
-    >
-      <ModelSelector
-        {models}
-        currentModel={model}
-        currentProvider={provider}
-        loading={modelsLoading}
-        changing={modelChanging}
-        disabled={modelSelectorDisabled}
-        {enabledModels}
-        filterMode={modelFilter}
-        onchange={onmodelchange}
-        onfilterchange={onmodelfilterchange}
-      />
-      <ThinkingSelector
-        level={thinkingLevel}
-        {supportsThinking}
-        availableLevels={availableThinkingLevels}
-        changing={thinkingChanging}
-        disabled={thinkingSelectorDisabled}
-        onchange={onthinkingchange}
-      />
-    </span>
-  </div>
+        {#if attachmentError}
+          <span class="text-destructive ml-1">{attachmentError}</span>
+        {/if}
+      </span>
+      <span
+        class="text-xs text-muted-foreground/70 text-right flex items-center gap-2"
+      >
+        <ModelSelector
+          {models}
+          currentModel={model}
+          currentProvider={provider}
+          loading={modelsLoading}
+          changing={modelChanging}
+          disabled={modelSelectorDisabled}
+          {enabledModels}
+          filterMode={modelFilter}
+          onchange={onmodelchange}
+          onfilterchange={onmodelfilterchange}
+        />
+        <ThinkingSelector
+          level={thinkingLevel}
+          {supportsThinking}
+          availableLevels={availableThinkingLevels}
+          changing={thinkingChanging}
+          disabled={thinkingSelectorDisabled}
+          onchange={onthinkingchange}
+        />
+      </span>
+    </div>
+  {/if}
 </div>

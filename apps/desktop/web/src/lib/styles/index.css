@@ -171,6 +171,14 @@
     width: 100%;
   }
 
+  /* Compact mode: let desktop wallpaper/background show through the window. */
+  html[data-display-mode='compact'],
+  html[data-display-mode='compact'] body,
+  html[data-display-mode='compact'] #app,
+  html[data-display-mode='compact'] #svelte {
+    background: transparent !important;
+  }
+
   /* Native select styling - override OS defaults for consistent dark mode */
   select {
     appearance: none;

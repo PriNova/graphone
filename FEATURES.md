@@ -1,6 +1,6 @@
 # Graphone Feature Availability (User Guide)
 
-_Last updated: 2026-02-20_
+_Last updated: 2026-02-23_
 
 This page helps you quickly understand what to expect from **Graphone** today, especially if you already know the pi terminal app (TUI).
 
@@ -16,6 +16,11 @@ This page helps you quickly understand what to expect from **Graphone** today, e
 
 - Multi-session chat experience
 - Project-scope sidebar with session history
+- Full-mode and compact-mode UI toggle
+- Compact mode activity rail + collapsible project-scope drawer
+- Resizable compact window width (left/right drag handles)
+- Prompt draft is preserved when switching between full and compact mode
+- Window placement/size is preserved when toggling compact mode
 - Deleting an entire project scope
 - Deleting a **single session** from a project scope
 - Real-time streaming assistant responses
@@ -50,7 +55,7 @@ This page helps you quickly understand what to expect from **Graphone** today, e
 - Full command parity for advanced session/workflow commands, including:
   - `/settings`, `/scoped-models`, `/fork`, `/tree`, `/resume`
   - `/export`, `/share`, `/copy`, `/name`, `/session`
-  - `/compact`, `/reload`, `/hotkeys`, `/changelog`, `/quit`
+  - `/compact` command parity (compact mode is available via the GUI toggle), `/reload`, `/hotkeys`, `/changelog`, `/quit`
 - TUI-style keyboard shortcut parity (model cycling, thinking cycling, tree/fork shortcuts, etc.)
 - Full tree-branch navigation and branch summary workflow parity
 - Full theme/settings/package management parity with TUI
@@ -59,6 +64,6 @@ This page helps you quickly understand what to expect from **Graphone** today, e
 
 ## What this means for you
 
-Graphone already covers the core day-to-day chat workflow well (sessions, model selection, streaming, tools, and history management). Advanced terminal workflows are still being brought over.
+Graphone already covers the core day-to-day chat workflow well (sessions, model selection, streaming, tools, history management, and compact/full display mode). Advanced terminal workflows are still being brought over.
 
 If you depend on specific TUI commands, check this page first before expecting full parity in the GUI.

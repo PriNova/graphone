@@ -15,7 +15,8 @@
         "title": "Graphone",
         "width": 1024,
         "height": 768,
-        "theme": "Dark"
+        "theme": "Dark",
+        "transparent": true
       }
     ],
     "security": {
