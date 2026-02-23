@@ -159,8 +159,8 @@
         {@const chipStyle = !hasResult
           ? "background-color:#1f2329;border-color:#3b3f46;color:#f5f7fa;"
           : item.block.isError
-            ? "background-color:#dc2626;border-color:#dc2626;color:#ffffff;"
-            : "background-color:#0b0d0b;border-color:#0b0d0b;color:#f6fff5;"}
+            ? "background-color:#dc2626;border-color:#fca5a5;color:#ffffff;"
+            : "background-color:#0b0d0b;border-color:#3b3f46;color:#f6fff5;"}
         <div
           class={cn(
             "animate-fade-in flex h-7 w-full items-center gap-2 rounded-full border px-3 text-[0.6875rem]",
