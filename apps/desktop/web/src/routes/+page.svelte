@@ -418,6 +418,22 @@
     return true;
   });
 
+  const showCompactActivityRailShell = $derived(
+    !hideCompactRail && isCompactMode && sessionStarted,
+  );
+
+  const compactRailViewportClass = $derived.by(() => {
+    if (!showCompactActivityRailShell) {
+      return "";
+    }
+
+    const hasAssistantCard = compactActivityItems.some(
+      (item) => item.type === "assistant",
+    );
+
+    return hasAssistantCard ? "h-[18rem]" : "h-[5.75rem]";
+  });
+
   let compactHeightRaf: number | null = null;
   let compactLayoutResizeObserver: ResizeObserver | null = null;
 
@@ -1139,6 +1155,8 @@
     }
 
     showCompactActivityRail;
+    showCompactActivityRailShell;
+    compactRailViewportClass;
     compactActivityItems.length;
     compactScopesSidebarOpen;
     isLoading;
@@ -1301,11 +1319,18 @@
         bind:this={compactLayoutRef}
         class="flex w-full flex-col gap-1 px-1 py-1"
       >
-        {#if showCompactActivityRail}
-          <CompactActivityRail
-            items={compactActivityItems}
-            assistantStreaming={isStreaming}
-          />
+        {#if showCompactActivityRailShell}
+          <div
+            class={`flex w-full flex-col justify-end overflow-hidden ${compactRailViewportClass}`}
+            aria-hidden={!showCompactActivityRail}
+          >
+            {#if showCompactActivityRail}
+              <CompactActivityRail
+                items={compactActivityItems}
+                assistantStreaming={isStreaming}
+              />
+            {/if}
+          </div>
         {/if}
 
         <div

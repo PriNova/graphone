@@ -32,6 +32,9 @@ let requestedCompactWidth: number | null = null;
 let currentCompactWidth: number | null = null;
 let compactHeightApplyQueue: Promise<void> = Promise.resolve();
 
+const IS_WINDOWS =
+  typeof navigator !== "undefined" && /Windows/i.test(navigator.userAgent);
+
 async function readCurrentInnerLogicalSize(): Promise<{
   width: number;
   height: number;
@@ -384,7 +387,9 @@ async function applyCompactWindowSize(
       }
     }
 
-    await clampWindowIntoVisibleWorkArea();
+    if (!IS_WINDOWS) {
+      await clampWindowIntoVisibleWorkArea();
+    }
   }
 }
 
