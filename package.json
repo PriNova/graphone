@@ -31,9 +31,9 @@
     "format": "npm run format:svelte && npm run format:ts && npm run format:md && npm run format:rust",
     "format:svelte": "prettier --write 'apps/desktop/web/src/**/*.svelte'",
     "format:ts": "prettier --write 'apps/desktop/web/src/**/*.ts' 'services/agent-host/src/**/*.ts'",
-    "format:md": "prettier --write '*.md' 'docs/**/*.md'",
+    "format:md": "prettier --write --no-error-on-unmatched-pattern '*.md' 'docs/**/*.md'",
     "format:rust": "cargo fmt --manifest-path src-tauri/Cargo.toml",
-    "format:check": "prettier --check 'apps/desktop/web/src/**/*.svelte' 'apps/desktop/web/src/**/*.ts' 'services/agent-host/src/**/*.ts' '*.md' 'docs/**/*.md' && cargo fmt --manifest-path src-tauri/Cargo.toml -- --check"
+    "format:check": "prettier --check --no-error-on-unmatched-pattern 'apps/desktop/web/src/**/*.svelte' 'apps/desktop/web/src/**/*.ts' 'services/agent-host/src/**/*.ts' '*.md' 'docs/**/*.md' && cargo fmt --manifest-path src-tauri/Cargo.toml -- --check"
   },
   "license": "MIT",
   "dependencies": {
