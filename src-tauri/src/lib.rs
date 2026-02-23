@@ -28,6 +28,7 @@ pub fn run() {
         .manage(sidecar_state)
         .invoke_handler(tauri::generate_handler![
             commands::get_working_directory,
+            commands::open_external_url,
             commands::list_session_project_scopes,
             commands::delete_project_scope,
             commands::delete_project_session,
@@ -41,6 +42,12 @@ pub fn run() {
             commands::get_messages,
             commands::get_state,
             commands::get_available_models,
+            commands::get_oauth_providers,
+            commands::start_oauth_login,
+            commands::poll_oauth_login,
+            commands::submit_oauth_login_input,
+            commands::cancel_oauth_login,
+            commands::logout_oauth_provider,
             commands::set_model,
             commands::set_thinking_level,
             commands::cycle_model,

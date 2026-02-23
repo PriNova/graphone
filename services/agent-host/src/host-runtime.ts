@@ -43,6 +43,41 @@ interface UsageIndicatorSnapshot {
   contextSeverity: ContextSeverity;
 }
 
+type OAuthLoginStatus =
+  | "idle"
+  | "running"
+  | "awaiting_input"
+  | "completed"
+  | "failed"
+  | "cancelled";
+
+type OAuthLoginUpdate =
+  | { type: "auth"; url: string; instructions?: string }
+  | {
+      type: "prompt";
+      message: string;
+      placeholder?: string;
+      allowEmpty: boolean;
+      inputType: "prompt" | "manual_code";
+    }
+  | { type: "progress"; message: string }
+  | { type: "complete"; success: boolean; error?: string };
+
+interface PendingOAuthInput {
+  allowEmpty: boolean;
+  resolve: (value: string) => void;
+  reject: (error: Error) => void;
+}
+
+interface OAuthLoginFlow {
+  sessionId: string;
+  providerId: string;
+  status: Exclude<OAuthLoginStatus, "idle" | "awaiting_input">;
+  updates: OAuthLoginUpdate[];
+  pendingInput?: PendingOAuthInput;
+  abortController: AbortController;
+}
+
 function formatTokens(count: number): string {
   if (count < 1000) return count.toString();
   if (count < 10000) return `${(count / 1000).toFixed(1)}k`;
@@ -55,6 +90,7 @@ export class HostRuntime {
   private readonly sessions = new Map<string, HostedSession>();
   private readonly authStorage = AuthStorage.create();
   private readonly modelRegistry = new ModelRegistry(this.authStorage);
+  private readonly oauthLoginFlows = new Map<string, OAuthLoginFlow>();
 
   constructor(
     private readonly emitSessionEvent: (event: SessionEventEnvelope) => void,
@@ -142,6 +178,13 @@ export class HostRuntime {
     hosted.unsubscribe();
     hosted.session.dispose();
     this.sessions.delete(sessionId);
+
+    const flow = this.oauthLoginFlows.get(sessionId);
+    if (flow) {
+      flow.abortController.abort();
+      flow.pendingInput?.reject(new Error("Login cancelled"));
+      this.oauthLoginFlows.delete(sessionId);
+    }
   }
 
   listSessions(): HostedSessionInfo[] {
@@ -317,11 +360,313 @@ export class HostRuntime {
     };
   }
 
+  listOAuthProviders(sessionId: string): {
+    providers: Array<{
+      id: string;
+      name: string;
+      usesCallbackServer: boolean;
+      loggedIn: boolean;
+    }>;
+  } {
+    this.requireSession(sessionId, "oauth_list_providers");
+
+    const providers = this.authStorage.getOAuthProviders();
+    return {
+      providers: providers.map((provider) => ({
+        id: provider.id,
+        name: provider.name,
+        usesCallbackServer: provider.usesCallbackServer === true,
+        loggedIn: this.authStorage.get(provider.id)?.type === "oauth",
+      })),
+    };
+  }
+
+  startOAuthLogin(
+    sessionId: string,
+    providerId: string,
+  ): { started: boolean; provider: string; providerName: string } {
+    this.requireSession(sessionId, "oauth_start_login");
+
+    const normalizedProvider = providerId.trim();
+    if (!normalizedProvider) {
+      throw new Error("provider must be a non-empty string");
+    }
+
+    const provider = this.authStorage
+      .getOAuthProviders()
+      .find((candidate) => candidate.id === normalizedProvider);
+
+    if (!provider) {
+      throw new Error(`Unknown OAuth provider: ${normalizedProvider}`);
+    }
+
+    const existingFlow = this.oauthLoginFlows.get(sessionId);
+    if (
+      existingFlow &&
+      existingFlow.status !== "completed" &&
+      existingFlow.status !== "failed" &&
+      existingFlow.status !== "cancelled"
+    ) {
+      throw new Error(
+        `An OAuth login flow is already active for session ${sessionId}`,
+      );
+    }
+
+    const flow: OAuthLoginFlow = {
+      sessionId,
+      providerId: provider.id,
+      status: "running",
+      updates: [],
+      abortController: new AbortController(),
+    };
+
+    this.oauthLoginFlows.set(sessionId, flow);
+    this.runOAuthLoginFlow(flow);
+
+    return {
+      started: true,
+      provider: provider.id,
+      providerName: provider.name,
+    };
+  }
+
+  pollOAuthLogin(sessionId: string): {
+    status: OAuthLoginStatus;
+    provider?: string;
+    updates: OAuthLoginUpdate[];
+  } {
+    this.requireSession(sessionId, "oauth_poll_login");
+
+    const flow = this.oauthLoginFlows.get(sessionId);
+    if (!flow) {
+      return { status: "idle", updates: [] };
+    }
+
+    const updates = flow.updates.splice(0, flow.updates.length);
+    const status: OAuthLoginStatus = flow.pendingInput
+      ? "awaiting_input"
+      : flow.status;
+
+    if (
+      flow.status !== "running" &&
+      !flow.pendingInput &&
+      flow.updates.length === 0
+    ) {
+      this.oauthLoginFlows.delete(sessionId);
+    }
+
+    return {
+      status,
+      provider: flow.providerId,
+      updates,
+    };
+  }
+
+  submitOAuthLoginInput(
+    sessionId: string,
+    input: string,
+  ): { accepted: boolean } {
+    this.requireSession(sessionId, "oauth_submit_login_input");
+
+    const flow = this.oauthLoginFlows.get(sessionId);
+    if (!flow) {
+      throw new Error("No OAuth login flow is active");
+    }
+
+    const pending = flow.pendingInput;
+    if (!pending) {
+      throw new Error("OAuth login is not waiting for input");
+    }
+
+    if (!pending.allowEmpty && input.trim().length === 0) {
+      throw new Error("Input cannot be empty for this OAuth step");
+    }
+
+    flow.pendingInput = undefined;
+    pending.resolve(input);
+    return { accepted: true };
+  }
+
+  cancelOAuthLogin(sessionId: string): { cancelled: boolean } {
+    this.requireSession(sessionId, "oauth_cancel_login");
+
+    const flow = this.oauthLoginFlows.get(sessionId);
+    if (!flow) {
+      return { cancelled: false };
+    }
+
+    flow.abortController.abort();
+
+    if (flow.pendingInput) {
+      const pending = flow.pendingInput;
+      flow.pendingInput = undefined;
+      pending.reject(new Error("Login cancelled"));
+    }
+
+    return { cancelled: true };
+  }
+
+  logoutOAuthProvider(
+    sessionId: string,
+    providerId: string,
+  ): { provider: string; providerName: string; loggedOut: boolean } {
+    this.requireSession(sessionId, "oauth_logout");
+
+    const normalizedProvider = providerId.trim();
+    if (!normalizedProvider) {
+      throw new Error("provider must be a non-empty string");
+    }
+
+    const provider = this.authStorage
+      .getOAuthProviders()
+      .find((candidate) => candidate.id === normalizedProvider);
+
+    if (!provider) {
+      throw new Error(`Unknown OAuth provider: ${normalizedProvider}`);
+    }
+
+    const wasLoggedIn =
+      this.authStorage.get(normalizedProvider)?.type === "oauth";
+
+    if (wasLoggedIn) {
+      this.authStorage.logout(normalizedProvider);
+      this.modelRegistry.refresh();
+    }
+
+    return {
+      provider: normalizedProvider,
+      providerName: provider.name,
+      loggedOut: wasLoggedIn,
+    };
+  }
+
   async shutdown(): Promise<void> {
     const sessionIds = Array.from(this.sessions.keys());
     for (const sessionId of sessionIds) {
       await this.closeSession(sessionId);
     }
+
+    for (const flow of this.oauthLoginFlows.values()) {
+      flow.abortController.abort();
+      flow.pendingInput?.reject(new Error("Login cancelled"));
+    }
+    this.oauthLoginFlows.clear();
+  }
+
+  private runOAuthLoginFlow(flow: OAuthLoginFlow): void {
+    void (async () => {
+      try {
+        await this.authStorage.login(flow.providerId, {
+          onAuth: (info) => {
+            flow.updates.push({
+              type: "auth",
+              url: info.url,
+              instructions:
+                typeof info.instructions === "string"
+                  ? info.instructions
+                  : undefined,
+            });
+          },
+          onPrompt: async (prompt) =>
+            this.requestOAuthInput(flow, prompt, "prompt"),
+          onProgress: (message) => {
+            if (message.trim().length === 0) {
+              return;
+            }
+            flow.updates.push({ type: "progress", message });
+          },
+          onManualCodeInput: async () =>
+            this.requestOAuthInput(
+              flow,
+              {
+                message: "Paste redirect URL below:",
+                allowEmpty: false,
+              },
+              "manual_code",
+            ),
+          signal: flow.abortController.signal,
+        });
+
+        this.modelRegistry.refresh();
+        this.clearPendingOAuthInput(flow);
+        flow.status = "completed";
+        flow.updates.push({ type: "complete", success: true });
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        const cancelled =
+          flow.abortController.signal.aborted || message === "Login cancelled";
+
+        this.clearPendingOAuthInput(flow);
+        flow.status = cancelled ? "cancelled" : "failed";
+        flow.updates.push({
+          type: "complete",
+          success: false,
+          error: cancelled ? "Login cancelled" : message,
+        });
+      }
+    })();
+  }
+
+  private clearPendingOAuthInput(flow: OAuthLoginFlow): void {
+    const pending = flow.pendingInput;
+    if (!pending) {
+      return;
+    }
+
+    flow.pendingInput = undefined;
+    pending.resolve("");
+  }
+
+  private requestOAuthInput(
+    flow: OAuthLoginFlow,
+    prompt: { message: string; placeholder?: string; allowEmpty?: boolean },
+    inputType: "prompt" | "manual_code",
+  ): Promise<string> {
+    if (flow.abortController.signal.aborted) {
+      throw new Error("Login cancelled");
+    }
+
+    if (flow.pendingInput) {
+      throw new Error("OAuth login is already waiting for input");
+    }
+
+    const allowEmpty = prompt.allowEmpty === true;
+
+    flow.updates.push({
+      type: "prompt",
+      message: prompt.message,
+      placeholder:
+        typeof prompt.placeholder === "string" ? prompt.placeholder : undefined,
+      allowEmpty,
+      inputType,
+    });
+
+    return new Promise<string>((resolve, reject) => {
+      const onAbort = () => {
+        if (!flow.pendingInput) {
+          return;
+        }
+
+        flow.pendingInput = undefined;
+        reject(new Error("Login cancelled"));
+      };
+
+      flow.abortController.signal.addEventListener("abort", onAbort, {
+        once: true,
+      });
+
+      flow.pendingInput = {
+        allowEmpty,
+        resolve: (value) => {
+          flow.abortController.signal.removeEventListener("abort", onAbort);
+          resolve(value);
+        },
+        reject: (error) => {
+          flow.abortController.signal.removeEventListener("abort", onAbort);
+          reject(error);
+        },
+      };
+    });
   }
 
   private buildUsageIndicator(session: AgentSession): UsageIndicatorSnapshot {

@@ -2,7 +2,7 @@ use std::collections::{BTreeMap, HashMap, HashSet};
 use std::io::{BufRead, BufReader};
 use std::path::{Path, PathBuf};
 #[cfg(target_os = "linux")]
-use std::process::Command;
+use std::process::{Command, Stdio};
 use std::sync::Arc;
 use std::time::UNIX_EPOCH;
 
@@ -12,6 +12,7 @@ use base64::engine::general_purpose::STANDARD as BASE64_STANDARD;
 use base64::Engine;
 use serde::Serialize;
 use tauri::{AppHandle, State};
+use tauri_plugin_opener::OpenerExt;
 use tokio::sync::Mutex;
 use tokio::time::{sleep, Duration};
 
@@ -756,6 +757,124 @@ pub fn get_working_directory() -> Result<String, String> {
     std::env::current_dir()
         .map(|p| p.to_string_lossy().to_string())
         .map_err(|e| format!("Failed to determine current working directory: {e}"))
+}
+
+#[cfg(target_os = "linux")]
+fn is_wsl_environment() -> bool {
+    if std::env::var_os("WSL_DISTRO_NAME").is_some() || std::env::var_os("WSL_INTEROP").is_some() {
+        return true;
+    }
+
+    std::fs::read_to_string("/proc/version")
+        .map(|version| version.to_lowercase().contains("microsoft"))
+        .unwrap_or(false)
+}
+
+#[cfg(target_os = "linux")]
+fn open_external_url_linux(url: &str) -> Result<(), String> {
+    let mut candidates: Vec<(String, Vec<String>)> = Vec::new();
+
+    if is_wsl_environment() {
+        candidates.push((
+            "cmd.exe".to_string(),
+            vec![
+                "/C".to_string(),
+                "start".to_string(),
+                "".to_string(),
+                format!("\"{}\"", url.replace('"', "%22")),
+            ],
+        ));
+
+        candidates.push((
+            "powershell.exe".to_string(),
+            vec![
+                "-NoProfile".to_string(),
+                "-NonInteractive".to_string(),
+                "-Command".to_string(),
+                format!("Start-Process '{}'", url.replace('\'', "''")),
+            ],
+        ));
+
+        candidates.push(("explorer.exe".to_string(), vec![url.to_string()]));
+        candidates.push(("wslview".to_string(), vec![url.to_string()]));
+    }
+
+    candidates.push(("xdg-open".to_string(), vec![url.to_string()]));
+    candidates.push(("gio".to_string(), vec!["open".to_string(), url.to_string()]));
+
+    let mut failures: Vec<String> = Vec::new();
+
+    for (program, args) in candidates {
+        match Command::new(&program)
+            .args(args.iter())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .status()
+        {
+            Ok(status) if status.success() => {
+                logger::log(format!("Opened OAuth URL with {}", program));
+                return Ok(());
+            }
+            Ok(status) => {
+                failures.push(format!("{} exited with status {}", program, status));
+            }
+            Err(error) => {
+                failures.push(format!("{} failed: {}", program, error));
+            }
+        }
+    }
+
+    Err(format!(
+        "Failed to open external URL on Linux. Attempts: {}",
+        failures.join(" | ")
+    ))
+}
+
+/// Open an external URL in the system browser.
+///
+/// - Windows/macOS: use Tauri's opener plugin.
+/// - Linux native: try opener first, then fall back to command-based open.
+/// - Linux/WSL: prefer command-based open first (cmd.exe/powershell/explorer/wslview)
+///   to reliably target the host browser.
+#[tauri::command]
+pub fn open_external_url(app: AppHandle, url: String) -> Result<(), String> {
+    let trimmed = url.trim();
+    if trimmed.is_empty() {
+        return Err("URL cannot be empty".to_string());
+    }
+
+    if !(trimmed.starts_with("http://") || trimmed.starts_with("https://")) {
+        return Err("Only http:// and https:// URLs are supported".to_string());
+    }
+
+    #[cfg(target_os = "linux")]
+    {
+        if is_wsl_environment() {
+            logger::log("WSL detected: using WSL-aware URL opener path".to_string());
+            return open_external_url_linux(trimmed);
+        }
+
+        match app.opener().open_url(trimmed, None::<&str>) {
+            Ok(()) => {
+                logger::log("Opened OAuth URL with tauri opener plugin".to_string());
+                Ok(())
+            }
+            Err(opener_error) => {
+                logger::log(format!(
+                    "tauri opener failed on Linux ({}), trying command fallback",
+                    opener_error
+                ));
+                open_external_url_linux(trimmed)
+            }
+        }
+    }
+
+    #[cfg(not(target_os = "linux"))]
+    {
+        app.opener()
+            .open_url(trimmed, None::<&str>)
+            .map_err(|error| format!("Failed to open external URL via tauri opener: {}", error))
+    }
 }
 
 fn read_enabled_models_from_settings(path: &Path) -> (bool, Vec<String>) {
@@ -1586,6 +1705,159 @@ pub async fn get_available_models(
     }
 
     Ok(response)
+}
+
+/// Get OAuth providers and current login status.
+#[tauri::command]
+pub async fn get_oauth_providers(
+    state: State<'_, Arc<Mutex<SidecarState>>>,
+    session_id: String,
+) -> Result<RpcResponse, String> {
+    let session_id = require_session_id(session_id, "get_oauth_providers")?;
+
+    let cmd = RpcCommand {
+        id: Some(crypto_random_uuid()),
+        r#type: "oauth_list_providers".to_string(),
+        session_id: Some(session_id),
+        cwd: None,
+        message: None,
+        provider: None,
+        model_id: None,
+        streaming_behavior: None,
+        session_file: None,
+        level: None,
+        images: None,
+    };
+
+    send_command_with_response(state.inner(), cmd, 5).await
+}
+
+/// Start OAuth login flow for a provider.
+#[tauri::command]
+pub async fn start_oauth_login(
+    state: State<'_, Arc<Mutex<SidecarState>>>,
+    provider: String,
+    session_id: String,
+) -> Result<RpcResponse, String> {
+    let session_id = require_session_id(session_id, "start_oauth_login")?;
+
+    let cmd = RpcCommand {
+        id: Some(crypto_random_uuid()),
+        r#type: "oauth_start_login".to_string(),
+        session_id: Some(session_id),
+        cwd: None,
+        message: None,
+        provider: Some(provider),
+        model_id: None,
+        streaming_behavior: None,
+        session_file: None,
+        level: None,
+        images: None,
+    };
+
+    send_command_with_response(state.inner(), cmd, 5).await
+}
+
+/// Poll current OAuth login flow state and updates.
+#[tauri::command]
+pub async fn poll_oauth_login(
+    state: State<'_, Arc<Mutex<SidecarState>>>,
+    session_id: String,
+) -> Result<RpcResponse, String> {
+    let session_id = require_session_id(session_id, "poll_oauth_login")?;
+
+    let cmd = RpcCommand {
+        id: Some(crypto_random_uuid()),
+        r#type: "oauth_poll_login".to_string(),
+        session_id: Some(session_id),
+        cwd: None,
+        message: None,
+        provider: None,
+        model_id: None,
+        streaming_behavior: None,
+        session_file: None,
+        level: None,
+        images: None,
+    };
+
+    send_command_with_response(state.inner(), cmd, 5).await
+}
+
+/// Submit user input for the active OAuth login step.
+#[tauri::command]
+pub async fn submit_oauth_login_input(
+    state: State<'_, Arc<Mutex<SidecarState>>>,
+    session_id: String,
+    input: String,
+) -> Result<RpcResponse, String> {
+    let session_id = require_session_id(session_id, "submit_oauth_login_input")?;
+
+    let cmd = RpcCommand {
+        id: Some(crypto_random_uuid()),
+        r#type: "oauth_submit_login_input".to_string(),
+        session_id: Some(session_id),
+        cwd: None,
+        message: Some(input),
+        provider: None,
+        model_id: None,
+        streaming_behavior: None,
+        session_file: None,
+        level: None,
+        images: None,
+    };
+
+    send_command_with_response(state.inner(), cmd, 5).await
+}
+
+/// Cancel the active OAuth login flow (if any).
+#[tauri::command]
+pub async fn cancel_oauth_login(
+    state: State<'_, Arc<Mutex<SidecarState>>>,
+    session_id: String,
+) -> Result<RpcResponse, String> {
+    let session_id = require_session_id(session_id, "cancel_oauth_login")?;
+
+    let cmd = RpcCommand {
+        id: Some(crypto_random_uuid()),
+        r#type: "oauth_cancel_login".to_string(),
+        session_id: Some(session_id),
+        cwd: None,
+        message: None,
+        provider: None,
+        model_id: None,
+        streaming_behavior: None,
+        session_file: None,
+        level: None,
+        images: None,
+    };
+
+    send_command_with_response(state.inner(), cmd, 5).await
+}
+
+/// Logout from an OAuth provider.
+#[tauri::command]
+pub async fn logout_oauth_provider(
+    state: State<'_, Arc<Mutex<SidecarState>>>,
+    provider: String,
+    session_id: String,
+) -> Result<RpcResponse, String> {
+    let session_id = require_session_id(session_id, "logout_oauth_provider")?;
+
+    let cmd = RpcCommand {
+        id: Some(crypto_random_uuid()),
+        r#type: "oauth_logout".to_string(),
+        session_id: Some(session_id),
+        cwd: None,
+        message: None,
+        provider: Some(provider),
+        model_id: None,
+        streaming_behavior: None,
+        session_file: None,
+        level: None,
+        images: None,
+    };
+
+    send_command_with_response(state.inner(), cmd, 5).await
 }
 
 /// Set active model by provider and model id

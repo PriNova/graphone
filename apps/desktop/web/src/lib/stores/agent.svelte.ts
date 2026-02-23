@@ -34,6 +34,39 @@ export interface UsageIndicatorSnapshot {
   contextSeverity: UsageContextSeverity;
 }
 
+export interface OAuthProviderStatus {
+  id: string;
+  name: string;
+  usesCallbackServer: boolean;
+  loggedIn: boolean;
+}
+
+export type OAuthLoginStatus =
+  | "idle"
+  | "running"
+  | "awaiting_input"
+  | "completed"
+  | "failed"
+  | "cancelled";
+
+export type OAuthLoginUpdate =
+  | { type: "auth"; url: string; instructions?: string }
+  | {
+      type: "prompt";
+      message: string;
+      placeholder?: string;
+      allowEmpty: boolean;
+      inputType: "prompt" | "manual_code";
+    }
+  | { type: "progress"; message: string }
+  | { type: "complete"; success: boolean; error?: string };
+
+export interface OAuthLoginPollResult {
+  status: OAuthLoginStatus;
+  provider?: string;
+  updates: OAuthLoginUpdate[];
+}
+
 // Agent session state (session-scoped)
 export class AgentStore {
   readonly sessionId: string;
@@ -164,6 +197,216 @@ export class AgentStore {
     } finally {
       this.isModelsLoading = false;
     }
+  }
+
+  async getOAuthProviders(): Promise<OAuthProviderStatus[]> {
+    if (!this.sessionStarted) {
+      throw new Error("Agent session not started");
+    }
+
+    const response = await invoke<
+      | {
+          success: true;
+          data: {
+            providers: Array<{
+              id?: unknown;
+              name?: unknown;
+              usesCallbackServer?: unknown;
+              loggedIn?: unknown;
+            }>;
+          };
+        }
+      | { success: false; error: string }
+    >("get_oauth_providers", { sessionId: this.sessionId });
+
+    if (
+      !(
+        response &&
+        typeof response === "object" &&
+        "success" in response &&
+        response.success
+      )
+    ) {
+      const error =
+        response && typeof response === "object" && "error" in response
+          ? response.error
+          : "Failed to list OAuth providers";
+      throw new Error(error);
+    }
+
+    const providers = response.data?.providers;
+    if (!Array.isArray(providers)) {
+      return [];
+    }
+
+    return providers
+      .map((provider) => {
+        if (typeof provider.id !== "string" || provider.id.length === 0) {
+          return null;
+        }
+
+        return {
+          id: provider.id,
+          name:
+            typeof provider.name === "string" && provider.name.length > 0
+              ? provider.name
+              : provider.id,
+          usesCallbackServer: provider.usesCallbackServer === true,
+          loggedIn: provider.loggedIn === true,
+        } satisfies OAuthProviderStatus;
+      })
+      .filter((provider): provider is OAuthProviderStatus => provider !== null);
+  }
+
+  async startOAuthLogin(provider: string): Promise<void> {
+    if (!this.sessionStarted) {
+      throw new Error("Agent session not started");
+    }
+
+    const response = await invoke<
+      { success: true; data?: unknown } | { success: false; error: string }
+    >("start_oauth_login", { provider, sessionId: this.sessionId });
+
+    if (
+      !(
+        response &&
+        typeof response === "object" &&
+        "success" in response &&
+        response.success
+      )
+    ) {
+      const error =
+        response && typeof response === "object" && "error" in response
+          ? response.error
+          : "Failed to start OAuth login";
+      throw new Error(error);
+    }
+  }
+
+  async pollOAuthLogin(): Promise<OAuthLoginPollResult> {
+    if (!this.sessionStarted) {
+      throw new Error("Agent session not started");
+    }
+
+    const response = await invoke<
+      | {
+          success: true;
+          data: {
+            status?: unknown;
+            provider?: unknown;
+            updates?: unknown;
+          };
+        }
+      | { success: false; error: string }
+    >("poll_oauth_login", { sessionId: this.sessionId });
+
+    if (
+      !(
+        response &&
+        typeof response === "object" &&
+        "success" in response &&
+        response.success
+      )
+    ) {
+      const error =
+        response && typeof response === "object" && "error" in response
+          ? response.error
+          : "Failed to poll OAuth login";
+      throw new Error(error);
+    }
+
+    const status = this.parseOAuthLoginStatus(response.data?.status);
+    const provider =
+      typeof response.data?.provider === "string"
+        ? response.data.provider
+        : undefined;
+    const updates = this.parseOAuthLoginUpdates(response.data?.updates);
+
+    return { status, provider, updates };
+  }
+
+  async submitOAuthLoginInput(input: string): Promise<void> {
+    if (!this.sessionStarted) {
+      throw new Error("Agent session not started");
+    }
+
+    const response = await invoke<
+      { success: true; data?: unknown } | { success: false; error: string }
+    >("submit_oauth_login_input", {
+      sessionId: this.sessionId,
+      input,
+    });
+
+    if (
+      !(
+        response &&
+        typeof response === "object" &&
+        "success" in response &&
+        response.success
+      )
+    ) {
+      const error =
+        response && typeof response === "object" && "error" in response
+          ? response.error
+          : "Failed to submit OAuth login input";
+      throw new Error(error);
+    }
+  }
+
+  async cancelOAuthLogin(): Promise<void> {
+    if (!this.sessionStarted) {
+      throw new Error("Agent session not started");
+    }
+
+    const response = await invoke<
+      { success: true; data?: unknown } | { success: false; error: string }
+    >("cancel_oauth_login", { sessionId: this.sessionId });
+
+    if (
+      !(
+        response &&
+        typeof response === "object" &&
+        "success" in response &&
+        response.success
+      )
+    ) {
+      const error =
+        response && typeof response === "object" && "error" in response
+          ? response.error
+          : "Failed to cancel OAuth login";
+      throw new Error(error);
+    }
+  }
+
+  async logoutOAuthProvider(provider: string): Promise<boolean> {
+    if (!this.sessionStarted) {
+      throw new Error("Agent session not started");
+    }
+
+    const response = await invoke<
+      | { success: true; data?: { loggedOut?: unknown } }
+      | { success: false; error: string }
+    >("logout_oauth_provider", {
+      provider,
+      sessionId: this.sessionId,
+    });
+
+    if (
+      !(
+        response &&
+        typeof response === "object" &&
+        "success" in response &&
+        response.success
+      )
+    ) {
+      const error =
+        response && typeof response === "object" && "error" in response
+          ? response.error
+          : "Failed to logout provider";
+      throw new Error(error);
+    }
+
+    return response.data?.loggedOut === true;
   }
 
   async setModel(provider: string, modelId: string): Promise<void> {
@@ -355,6 +598,89 @@ export class AgentStore {
         } satisfies AvailableModel;
       })
       .filter((model): model is AvailableModel => model !== null);
+  }
+
+  private parseOAuthLoginStatus(status: unknown): OAuthLoginStatus {
+    if (
+      status === "idle" ||
+      status === "running" ||
+      status === "awaiting_input" ||
+      status === "completed" ||
+      status === "failed" ||
+      status === "cancelled"
+    ) {
+      return status;
+    }
+
+    return "idle";
+  }
+
+  private parseOAuthLoginUpdates(value: unknown): OAuthLoginUpdate[] {
+    if (!Array.isArray(value)) {
+      return [];
+    }
+
+    const updates: OAuthLoginUpdate[] = [];
+
+    for (const candidate of value) {
+      if (!candidate || typeof candidate !== "object") {
+        continue;
+      }
+
+      const update = candidate as {
+        type?: unknown;
+        url?: unknown;
+        instructions?: unknown;
+        message?: unknown;
+        placeholder?: unknown;
+        allowEmpty?: unknown;
+        inputType?: unknown;
+        success?: unknown;
+        error?: unknown;
+      };
+
+      if (update.type === "auth" && typeof update.url === "string") {
+        updates.push({
+          type: "auth",
+          url: update.url,
+          instructions:
+            typeof update.instructions === "string"
+              ? update.instructions
+              : undefined,
+        });
+        continue;
+      }
+
+      if (update.type === "progress" && typeof update.message === "string") {
+        updates.push({ type: "progress", message: update.message });
+        continue;
+      }
+
+      if (update.type === "prompt" && typeof update.message === "string") {
+        updates.push({
+          type: "prompt",
+          message: update.message,
+          placeholder:
+            typeof update.placeholder === "string"
+              ? update.placeholder
+              : undefined,
+          allowEmpty: update.allowEmpty === true,
+          inputType:
+            update.inputType === "manual_code" ? "manual_code" : "prompt",
+        });
+        continue;
+      }
+
+      if (update.type === "complete") {
+        updates.push({
+          type: "complete",
+          success: update.success === true,
+          error: typeof update.error === "string" ? update.error : undefined,
+        });
+      }
+    }
+
+    return updates;
   }
 
   private parseThinkingLevel(level: unknown): ThinkingLevel {

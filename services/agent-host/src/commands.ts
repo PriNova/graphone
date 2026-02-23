@@ -206,6 +206,64 @@ export async function handleHostCommand(
         );
       }
 
+      case "oauth_list_providers": {
+        const sessionId = requireSessionId(command);
+        return success(
+          requestId,
+          "oauth_list_providers",
+          runtime.listOAuthProviders(sessionId),
+        );
+      }
+
+      case "oauth_start_login": {
+        const sessionId = requireSessionId(command);
+        const provider = requireNonEmptyString(command.provider, "provider");
+        return success(
+          requestId,
+          "oauth_start_login",
+          runtime.startOAuthLogin(sessionId, provider),
+        );
+      }
+
+      case "oauth_poll_login": {
+        const sessionId = requireSessionId(command);
+        return success(
+          requestId,
+          "oauth_poll_login",
+          runtime.pollOAuthLogin(sessionId),
+        );
+      }
+
+      case "oauth_submit_login_input": {
+        const sessionId = requireSessionId(command);
+        const message =
+          typeof command.message === "string" ? command.message : "";
+        return success(
+          requestId,
+          "oauth_submit_login_input",
+          runtime.submitOAuthLoginInput(sessionId, message),
+        );
+      }
+
+      case "oauth_cancel_login": {
+        const sessionId = requireSessionId(command);
+        return success(
+          requestId,
+          "oauth_cancel_login",
+          runtime.cancelOAuthLogin(sessionId),
+        );
+      }
+
+      case "oauth_logout": {
+        const sessionId = requireSessionId(command);
+        const provider = requireNonEmptyString(command.provider, "provider");
+        return success(
+          requestId,
+          "oauth_logout",
+          runtime.logoutOAuthProvider(sessionId, provider),
+        );
+      }
+
       case "shutdown": {
         await runtime.shutdown();
         return success(requestId, "shutdown");
