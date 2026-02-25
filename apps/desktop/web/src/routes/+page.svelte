@@ -307,11 +307,19 @@
       return [];
     }
 
+    let startIdx = lastUserIndex;
+    if (
+      lastUserIndex > 0 &&
+      messages[lastUserIndex - 1]?.type === "assistant"
+    ) {
+      startIdx = lastUserIndex - 1;
+    }
+
     const assistantMarkdownByMessageId = new Map<string, string>();
     let latestAssistantMessageIdWithText: string | null = null;
 
     for (
-      let messageIndex = lastUserIndex;
+      let messageIndex = startIdx;
       messageIndex < messages.length;
       messageIndex += 1
     ) {
@@ -332,7 +340,7 @@
     const items: CompactActivityItem[] = [];
 
     for (
-      let messageIndex = lastUserIndex;
+      let messageIndex = startIdx;
       messageIndex < messages.length;
       messageIndex += 1
     ) {
