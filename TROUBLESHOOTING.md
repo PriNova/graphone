@@ -94,6 +94,49 @@ npm run build:windows
 
 ---
 
+## Windows build fails with `NotAttempted("llvm-rc")` / `tauri-winres` panic
+
+If the build log shows a panic from `tauri-winres` with `NotAttempted("llvm-rc")`, the Windows resource compiler alias is missing from `PATH`.
+
+Typical symptom:
+
+- `thread 'main' panicked ... called Result::unwrap() on an Err value: NotAttempted("llvm-rc")`
+
+On Ubuntu, `llvm-rc` is often installed as a versioned binary like `llvm-rc-18`.
+
+```bash
+# Check available binaries
+command -v llvm-rc || true
+ls /usr/bin/llvm-rc* 2>/dev/null
+
+# Create stable alias used by tauri/embed-resource
+mkdir -p ~/.local/bin
+ln -sf /usr/bin/llvm-rc-18 ~/.local/bin/llvm-rc
+
+# Ensure ~/.local/bin is on PATH
+export PATH="$HOME/.local/bin:$PATH"
+```
+
+Then retry:
+
+```bash
+npm run build:windows:portable
+```
+
+Alternative (one-off override without symlink):
+
+```bash
+RC_x86_64_pc_windows_msvc=llvm-rc-18 npm run build:windows:portable
+```
+
+Temporary fallback (not recommended for release):
+
+```bash
+GRAPHONE_SKIP_WINDOWS_MANIFEST=1 npm run build:windows:portable
+```
+
+---
+
 ## Windows build fails with "makensis.exe: No such file or directory"
 
 **This error is expected if NSIS is not installed.** The good news is that the `.exe` file is still built successfully! Only the installer creation fails.
@@ -158,7 +201,7 @@ The error occurred because the Windows executable needs an [application manifest
 - **Missing sidecar**: Ensure `pi-agent-x86_64-pc-windows-msvc.exe` is in the same folder as `graphone.exe`
 - **Run from CMD**: Open Command Prompt and run the exe to see detailed error messages
 
-**Launch issues from WSL2:**
+**Launch issues from Linux host interop:**
 
 If you get "Windows cannot find..." errors when running `npm run run:windows`:
 

@@ -67,7 +67,7 @@ Runtime SDK assets are copied from the pinned npm dependency (`node_modules/@mar
 
 ### System Requirements
 
-- **OS**: Linux (development), Windows 11 + WSL2, macOS
+- **OS**: Linux (native or VM), Windows 11, macOS
 - **Node.js**: 20+ (LTS recommended)
 - **bun**: 1.0+ (Required for sidecar compilation)
 - **Rust**: Latest stable (1.84+)
@@ -77,7 +77,7 @@ Runtime SDK assets are copied from the pinned npm dependency (`node_modules/@mar
 | Target        | Requirements                                                                    |
 | ------------- | ------------------------------------------------------------------------------- |
 | Linux Desktop | `libgtk-3-dev`, `libwebkit2gtk-4.1-dev`, `libappindicator3-dev`, `clang`, `lld` |
-| Windows       | `cargo-xwin`, `nsis`, `lld`, `llvm` for cross-compilation (from WSL2)           |
+| Windows       | `cargo-xwin`, `nsis`, `lld`, `llvm` for cross-compilation from Linux            |
 
 ### Build Configuration
 
@@ -161,7 +161,7 @@ The sidecar is built automatically when you run Tauri commands. The build script
 # Desktop (Linux) - recommended shorthand
 npm run dev:linux
 
-# Desktop (Windows cross-compile from WSL2)
+# Desktop (Windows cross-compile from Linux)
 npm run dev:windows
 
 # Legacy command
@@ -176,7 +176,7 @@ npm run tauri dev
 # Linux only
 npm run build:linux
 
-# Windows only (cross-compile from WSL2)
+# Windows only (cross-compile from Linux)
 npm run build:windows
 
 # Both platforms
@@ -189,7 +189,7 @@ npm run build:all
 # Linux
 npm run tauri build
 
-# Windows (from WSL2)
+# Windows (from Linux)
 npm run tauri build -- --target x86_64-pc-windows-msvc
 ```
 
@@ -239,11 +239,11 @@ Canonical repo map (quick):
 
 ## Development
 
-### WSL2 Development
+### Linux Development (Native or VM)
 
-This project is developed in **WSL2 on Windows 11**.
+This project is developed and tested in **Linux environments** (native installs and VMs).
 
-**Critical:** Keep the project in the **Linux filesystem** (e.g., `/home/username/projects/`), NOT in `/mnt/c/` (Windows filesystem) - performance difference is 10-100x.
+**Critical:** Keep the project on a fast local Linux filesystem (e.g., `/home/username/projects/`) rather than shared/network-mounted folders to avoid major I/O slowdowns.
 
 ### Sidecar Build Process
 
@@ -285,7 +285,7 @@ Convenience npm scripts for cross-platform builds:
 | `npm run build:windows:exe`      | Windows  | Build only .exe (no installer)                                                                          |
 | `npm run build:windows:portable` | Windows  | Build .exe + stage portable runtime folder (`src-tauri/target/x86_64-pc-windows-msvc/release/portable`) |
 | `npm run build:all`              | Both     | Build Linux + Windows packages                                                                          |
-| `npm run run:windows`            | Windows  | Build (if needed), stage portable runtime, & launch Windows app from WSL2                               |
+| `npm run run:windows`            | Windows  | Build (if needed), stage portable runtime, and launch the Windows app via host interop (if available)   |
 
 **Examples:**
 
@@ -293,10 +293,10 @@ Convenience npm scripts for cross-platform builds:
 # Quick development - Linux
 npm run dev:linux
 
-# Build for both platforms from WSL2
+# Build for both platforms from Linux
 npm run build:all
 
-# Build and run Windows app directly from WSL2
+# Build and run the Windows app directly from Linux host interop
 npm run run:windows
 
 # Build only the Windows executable (fastest, no NSIS needed)

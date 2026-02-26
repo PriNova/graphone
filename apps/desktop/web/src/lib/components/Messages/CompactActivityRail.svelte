@@ -1,5 +1,4 @@
 <script lang="ts">
-  import { flip } from "svelte/animate";
   import MessageMarkdown from "$lib/components/Messages/MessageMarkdown.svelte";
   import { cn } from "$lib/utils/cn";
   import { computeToolCallSummary } from "$lib/utils/tool-call-summary";
@@ -75,7 +74,7 @@
 
 <div class="flex w-full flex-col gap-1">
   {#each items as item (item.key)}
-    <div class="w-full" animate:flip={{ duration: 160 }}>
+    <div class="w-full">
       {#if item.type === "user"}
         <div
           class="animate-fade-in flex h-7 w-full items-center gap-2 rounded-full border border-primary bg-primary px-3 text-[0.6875rem] text-primary-foreground"

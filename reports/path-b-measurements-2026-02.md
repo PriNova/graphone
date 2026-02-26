@@ -3,7 +3,7 @@
 ## Summary
 
 Measured on:
-- WSL2 Linux (`x64`), Node `v22.22.0`
+- Ubuntu Linux VM (`x64`), Node `v22.22.0`
 - Graphone host sidecar: `services/agent-host`
 - Legacy baseline: one `@mariozechner/pi-coding-agent` RPC process per session
 

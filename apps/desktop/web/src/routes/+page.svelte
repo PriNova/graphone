@@ -41,15 +41,10 @@
     UserContentBlock,
   } from "$lib/types/agent";
   import type { SessionRuntime } from "$lib/types/session";
-  import {
-    applyWindowMode,
-    syncCompactWindowHeight,
-    type DisplayMode,
-  } from "$lib/utils/window-mode";
+  import { applyWindowMode, type DisplayMode } from "$lib/utils/window-mode";
 
   // DOM refs
   let messagesContainerRef = $state<HTMLDivElement | null>(null);
-  let compactLayoutRef = $state<HTMLDivElement | null>(null);
 
   // Event unlisteners
   let unlistenEvent: UnlistenFn | null = null;
@@ -431,7 +426,7 @@
   );
 
   const compactRailViewportClass = $derived.by(() => {
-    if (!showCompactActivityRailShell) {
+    if (!showCompactActivityRail) {
       return "";
     }
 
@@ -441,28 +436,6 @@
 
     return hasAssistantCard ? "h-[18rem]" : "h-[5.75rem]";
   });
-
-  let compactHeightRaf: number | null = null;
-  let compactLayoutResizeObserver: ResizeObserver | null = null;
-
-  function scheduleCompactHeightSync(): void {
-    if (!isCompactMode || compactHeightRaf !== null) {
-      return;
-    }
-
-    compactHeightRaf = requestAnimationFrame(() => {
-      compactHeightRaf = null;
-
-      if (!isCompactMode || !compactLayoutRef) {
-        return;
-      }
-
-      // offsetHeight tracks layout height only (ignores transform animations),
-      // which keeps compact window sizing stable while chips animate in.
-      const targetHeight = Math.max(1, compactLayoutRef.offsetHeight);
-      void syncCompactWindowHeight(targetHeight).catch(() => undefined);
-    });
-  }
 
   function handleScroll(): void {
     if (messagesContainerRef && activeRuntime) {
@@ -1145,38 +1118,6 @@
     }
   });
 
-  $effect(() => {
-    const layout = compactLayoutRef;
-
-    compactLayoutResizeObserver?.disconnect();
-    compactLayoutResizeObserver = null;
-
-    if (!isCompactMode || !layout) {
-      return;
-    }
-
-    if (typeof ResizeObserver !== "undefined") {
-      compactLayoutResizeObserver = new ResizeObserver(() => {
-        scheduleCompactHeightSync();
-      });
-      compactLayoutResizeObserver.observe(layout);
-    }
-
-    showCompactActivityRail;
-    showCompactActivityRailShell;
-    compactRailViewportClass;
-    compactActivityItems.length;
-    compactScopesSidebarOpen;
-    isLoading;
-
-    scheduleCompactHeightSync();
-
-    return () => {
-      compactLayoutResizeObserver?.disconnect();
-      compactLayoutResizeObserver = null;
-    };
-  });
-
   onMount(async () => {
     // Never block startup on settings/plugin-store load.
     // If store access stalls, keep bootstrapping sessions with defaults.
@@ -1305,14 +1246,6 @@
       scrollRaf = null;
     }
 
-    if (compactHeightRaf !== null) {
-      cancelAnimationFrame(compactHeightRaf);
-      compactHeightRaf = null;
-    }
-
-    compactLayoutResizeObserver?.disconnect();
-    compactLayoutResizeObserver = null;
-
     pendingSessionSidebarSync.clear();
     optimisticFirstPromptBySession = {};
     promptDraftBySession = {};
@@ -1321,12 +1254,11 @@
 </script>
 
 {#if isCompactMode}
-  <main class="flex w-full h-screen overflow-hidden bg-transparent">
-    <section class="flex items-end w-full h-full">
-      <div
-        bind:this={compactLayoutRef}
-        class="flex w-full flex-col gap-1 px-1 py-1"
-      >
+  <main class="h-screen w-full overflow-hidden bg-transparent">
+    <section
+      class="grid h-full w-full grid-rows-[minmax(0,1fr)_auto] gap-1 px-1 py-1"
+    >
+      <div class="relative flex min-h-0 flex-col justify-end overflow-hidden">
         {#if showCompactActivityRailShell}
           <div
             class={`flex w-full flex-col justify-end overflow-hidden ${compactRailViewportClass}`}
@@ -1343,18 +1275,18 @@
 
         <div
           id="compact-session-sidebar"
-          class={`w-full overflow-hidden ${
+          class={`absolute inset-0 z-20 flex items-end transition-[opacity,transform] duration-200 ${
             compactScopesSidebarOpen
-              ? "max-h-[440px] pb-1"
-              : "max-h-0 pointer-events-none"
+              ? "pointer-events-auto opacity-100 translate-y-0"
+              : "pointer-events-none opacity-0 translate-y-2"
           }`}
           aria-hidden={!compactScopesSidebarOpen}
         >
           <div
-            class={`h-[440px] overflow-hidden rounded-2xl border-[2px] border-[rgba(255,255,255,0.92)] bg-background shadow-2xl transition-[opacity,transform] duration-200 ${
+            class={`h-full max-h-[440px] min-h-0 w-full overflow-hidden rounded-2xl border-[2px] border-[rgba(255,255,255,0.92)] bg-background shadow-2xl ${
               compactScopesSidebarOpen
-                ? "opacity-100 translate-y-0"
-                : "opacity-0 -translate-y-2"
+                ? "pointer-events-auto"
+                : "pointer-events-none"
             }`}
           >
             <SessionSidebar
@@ -1380,121 +1312,117 @@
             />
           </div>
         </div>
+      </div>
 
-        <div class="relative w-full">
+      <div class="relative w-full">
+        <button
+          type="button"
+          class="absolute left-0 top-1/2 z-10 h-10 w-2 -translate-x-1/2 -translate-y-1/2 rounded-full bg-white/45 opacity-70 transition-opacity hover:opacity-100 active:opacity-100 cursor-ew-resize"
+          onmousedown={(event) => onCompactResizeHandleMouseDown(event, "West")}
+          aria-label="Resize compact width from left edge"
+          title="Resize width"
+        ></button>
+
+        <div
+          class="flex items-center gap-2 w-full rounded-[999px] border-[3px] border-[rgba(255,255,255,0.92)] bg-background px-2 py-0.5 shadow-2xl"
+        >
           <button
             type="button"
-            class="absolute left-0 top-1/2 z-10 h-10 w-2 -translate-x-1/2 -translate-y-1/2 rounded-full bg-white/45 opacity-70 transition-opacity hover:opacity-100 active:opacity-100 cursor-ew-resize"
-            onmousedown={(event) =>
-              onCompactResizeHandleMouseDown(event, "West")}
-            aria-label="Resize compact width from left edge"
-            title="Resize width"
-          ></button>
-
-          <div
-            class="flex items-center gap-2 w-full rounded-[999px] border-[3px] border-[rgba(255,255,255,0.92)] bg-background px-2 py-0.5 shadow-2xl"
+            class="shrink-0 h-9 w-9 rounded-full border border-border text-muted-foreground hover:text-foreground hover:border-foreground hover:bg-secondary cursor-move select-none"
+            data-tauri-drag-region
+            onmousedown={onCompactDragHandleMouseDown}
+            aria-label="Move window"
+            title="Move window"
           >
-            <button
-              type="button"
-              class="shrink-0 h-9 w-9 rounded-full border border-border text-muted-foreground hover:text-foreground hover:border-foreground hover:bg-secondary cursor-move select-none"
-              data-tauri-drag-region
-              onmousedown={onCompactDragHandleMouseDown}
-              aria-label="Move window"
-              title="Move window"
-            >
-              <span data-tauri-drag-region class="text-base leading-none"
-                >⋮</span
-              >
-            </button>
+            <span data-tauri-drag-region class="text-base leading-none">⋮</span>
+          </button>
 
-            <button
-              type="button"
-              class={`shrink-0 flex items-center justify-center h-9 w-9 rounded-full border text-sm font-semibold transition-colors ${
-                compactScopesSidebarOpen
-                  ? "border-foreground bg-secondary text-foreground"
-                  : "border-border text-muted-foreground hover:text-foreground hover:border-foreground hover:bg-secondary"
-              }`}
-              onclick={toggleCompactScopesSidebar}
-              aria-label={compactScopesSidebarOpen
-                ? "Hide project scopes"
-                : "Show project scopes"}
-              aria-expanded={compactScopesSidebarOpen}
-              aria-controls="compact-session-sidebar"
-              title={compactScopeTooltip}
-            >
-              P
-            </button>
+          <button
+            type="button"
+            class={`shrink-0 flex items-center justify-center h-9 w-9 rounded-full border text-sm font-semibold transition-colors ${
+              compactScopesSidebarOpen
+                ? "border-foreground bg-secondary text-foreground"
+                : "border-border text-muted-foreground hover:text-foreground hover:border-foreground hover:bg-secondary"
+            }`}
+            onclick={toggleCompactScopesSidebar}
+            aria-label={compactScopesSidebarOpen
+              ? "Hide project scopes"
+              : "Show project scopes"}
+            aria-expanded={compactScopesSidebarOpen}
+            aria-controls="compact-session-sidebar"
+            title={compactScopeTooltip}
+          >
+            P
+          </button>
 
-            <div class="flex-1 min-w-0">
-              <PromptInput
-                value={activePromptDraft}
-                attachments={activePromptAttachmentDraft}
-                oninput={onPromptInput}
-                onattachmentschange={onPromptAttachmentsChange}
-                onsubmit={onSubmit}
-                oncancel={onCancel}
-                onslashcommand={onSlashCommand}
-                onnewchat={onNewChat}
-                onmodelchange={onModelChange}
-                onthinkingchange={onThinkingChange}
-                onmodelfilterchange={onModelFilterChange}
-                {isLoading}
-                disabled={!activeRuntime || !sessionStarted}
-                placeholder={activeRuntime && sessionStarted
-                  ? "What would you like to get done today?"
-                  : "Create a session to begin..."}
-                model={currentModel}
-                provider={currentProvider}
-                thinkingLevel={currentThinkingLevel}
-                supportsImageInput={currentModelSupportsImageInput}
-                {supportsThinking}
-                {availableThinkingLevels}
-                models={availableModels}
-                modelsLoading={isModelsLoading}
-                modelChanging={isSettingModel}
-                thinkingChanging={isSettingThinking}
-                enabledModels={activeRuntime?.enabledModels}
-                modelFilter={settingsStore.modelFilter}
-                autofocus={true}
-                {chatHasMessages}
-                compact={true}
-              />
-            </div>
-
-            <button
-              type="button"
-              class="shrink-0 flex items-center justify-center h-9 w-9 rounded-full border border-border text-muted-foreground hover:text-foreground hover:border-foreground hover:bg-secondary transition-colors"
-              onclick={enterFullMode}
-              aria-label="Switch to full mode"
-              title="Full mode"
-            >
-              <svg
-                aria-hidden="true"
-                class="h-4 w-4"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                stroke-width="2.2"
-                stroke-linecap="round"
-                stroke-linejoin="round"
-              >
-                <path d="M10 10L5 5" />
-                <path d="M5 8V5H8" />
-                <path d="M14 14L19 19" />
-                <path d="M16 19H19V16" />
-              </svg>
-            </button>
+          <div class="flex-1 min-w-0">
+            <PromptInput
+              value={activePromptDraft}
+              attachments={activePromptAttachmentDraft}
+              oninput={onPromptInput}
+              onattachmentschange={onPromptAttachmentsChange}
+              onsubmit={onSubmit}
+              oncancel={onCancel}
+              onslashcommand={onSlashCommand}
+              onnewchat={onNewChat}
+              onmodelchange={onModelChange}
+              onthinkingchange={onThinkingChange}
+              onmodelfilterchange={onModelFilterChange}
+              {isLoading}
+              disabled={!activeRuntime || !sessionStarted}
+              placeholder={activeRuntime && sessionStarted
+                ? "What would you like to get done today?"
+                : "Create a session to begin..."}
+              model={currentModel}
+              provider={currentProvider}
+              thinkingLevel={currentThinkingLevel}
+              supportsImageInput={currentModelSupportsImageInput}
+              {supportsThinking}
+              {availableThinkingLevels}
+              models={availableModels}
+              modelsLoading={isModelsLoading}
+              modelChanging={isSettingModel}
+              thinkingChanging={isSettingThinking}
+              enabledModels={activeRuntime?.enabledModels}
+              modelFilter={settingsStore.modelFilter}
+              autofocus={true}
+              {chatHasMessages}
+              compact={true}
+            />
           </div>
 
           <button
             type="button"
-            class="absolute right-0 top-1/2 z-10 h-10 w-2 translate-x-1/2 -translate-y-1/2 rounded-full bg-white/45 opacity-70 transition-opacity hover:opacity-100 active:opacity-100 cursor-ew-resize"
-            onmousedown={(event) =>
-              onCompactResizeHandleMouseDown(event, "East")}
-            aria-label="Resize compact width from right edge"
-            title="Resize width"
-          ></button>
+            class="shrink-0 flex items-center justify-center h-9 w-9 rounded-full border border-border text-muted-foreground hover:text-foreground hover:border-foreground hover:bg-secondary transition-colors"
+            onclick={enterFullMode}
+            aria-label="Switch to full mode"
+            title="Full mode"
+          >
+            <svg
+              aria-hidden="true"
+              class="h-4 w-4"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2.2"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+            >
+              <path d="M10 10L5 5" />
+              <path d="M5 8V5H8" />
+              <path d="M14 14L19 19" />
+              <path d="M16 19H19V16" />
+            </svg>
+          </button>
         </div>
+
+        <button
+          type="button"
+          class="absolute right-0 top-1/2 z-10 h-10 w-2 translate-x-1/2 -translate-y-1/2 rounded-full bg-white/45 opacity-70 transition-opacity hover:opacity-100 active:opacity-100 cursor-ew-resize"
+          onmousedown={(event) => onCompactResizeHandleMouseDown(event, "East")}
+          aria-label="Resize compact width from right edge"
+          title="Resize width"
+        ></button>
       </div>
     </section>
   </main>

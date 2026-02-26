@@ -1,5 +1,5 @@
 #!/bin/bash
-# Run Windows build from WSL2
+# Run Windows build from Linux host interop
 # This script builds (if needed), stages a portable runtime folder, and launches graphone.exe on Windows.
 
 set -euo pipefail
@@ -15,6 +15,7 @@ EXE_PATH="${BUILD_DIR}/${EXE_NAME}"
 PORTABLE_DIR="${BUILD_DIR}/portable"
 WIN_TEMP_DIR="/mnt/c/Windows/Temp"
 WIN_APP_DIR="${WIN_TEMP_DIR}/graphone"
+WIN_APP_DIR_WIN='C:\\Windows\\Temp\\graphone'
 
 # Colors for output
 RED='\033[0;31m'
@@ -23,7 +24,7 @@ YELLOW='\033[1;33m'
 NC='\033[0m' # No Color
 
 echo "=========================================="
-echo "  Graphone Windows Launcher (WSL2)"
+echo "  Graphone Windows Launcher"
 echo "=========================================="
 echo ""
 
@@ -83,7 +84,6 @@ echo "  2. Windows Defender/antivirus isn't blocking it"
 echo "  3. Run directly: C:\\Windows\\Temp\\graphone\\graphone.exe"
 echo ""
 
-WIN_PATH=$(wslpath -w "$WIN_APP_DIR")
-powershell.exe -Command "Start-Process -FilePath '$WIN_PATH\\graphone.exe' -WorkingDirectory '$WIN_PATH'"
+powershell.exe -Command "Start-Process -FilePath '${WIN_APP_DIR_WIN}\\graphone.exe' -WorkingDirectory '${WIN_APP_DIR_WIN}'"
 
 echo -e "${GREEN}App launched!${NC}"

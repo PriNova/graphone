@@ -690,23 +690,6 @@
     {/if}
   </div>
 
-  {#if !collapsed && activeProjectDir}
-    <div class="shrink-0 border-t border-border p-2">
-      <p class="text-[11px] uppercase tracking-wide text-muted-foreground">
-        Active Scope
-      </p>
-      <p class="text-xs font-medium truncate">
-        {toScopeTitle(activeProjectDir)}
-      </p>
-      <p
-        class="text-xs text-muted-foreground truncate"
-        title={activeProjectDir}
-      >
-        {activeProjectDir}
-      </p>
-    </div>
-  {/if}
-
   {#if historyTooltip.visible}
     <div
       class="fixed z-50 pointer-events-none px-2 py-1 rounded border border-border bg-input-background text-foreground text-[11px] shadow-xl whitespace-pre-wrap wrap-break-word"

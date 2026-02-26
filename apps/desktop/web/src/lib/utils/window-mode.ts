@@ -11,6 +11,7 @@ import {
 export type DisplayMode = "full" | "compact";
 
 const COMPACT_BASE_HEIGHT = 58;
+const COMPACT_DEFAULT_HEIGHT = 360;
 const COMPACT_HARD_MAX_HEIGHT = 1400;
 const COMPACT_WORKAREA_VERTICAL_MARGIN = 24;
 const COMPACT_MIN_WIDTH = 560;
@@ -26,8 +27,8 @@ let lastKnownFullOuterSize: { width: number; height: number } | null = null;
 let lastKnownCompactPosition: { x: number; y: number } | null = null;
 let disableProgrammaticPositioning = false;
 let currentAppliedMode: DisplayMode | null = null;
-let requestedCompactHeight = COMPACT_BASE_HEIGHT;
-let currentCompactHeight = COMPACT_BASE_HEIGHT;
+let requestedCompactHeight = COMPACT_DEFAULT_HEIGHT;
+let currentCompactHeight = COMPACT_DEFAULT_HEIGHT;
 let requestedCompactWidth: number | null = null;
 let currentCompactWidth: number | null = null;
 let compactHeightApplyQueue: Promise<void> = Promise.resolve();
@@ -191,8 +192,8 @@ async function setPositionBestEffort(x: number, y: number): Promise<boolean> {
     observedMoveX <= POSITION_APPLY_TOLERANCE_PX &&
     observedMoveY <= POSITION_APPLY_TOLERANCE_PX;
 
-  // Wayland/WSLg may ignore absolute positioning. Detect this once and
-  // gracefully disable future forced-position attempts for this runtime.
+  // Some Wayland compositors may ignore absolute positioning. Detect this once
+  // and gracefully disable future forced-position attempts for this runtime.
   if (wasMeaningfulMoveRequest && didNotMove) {
     disableProgrammaticPositioning = true;
   }

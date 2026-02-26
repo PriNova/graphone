@@ -25,7 +25,7 @@
 - `npm run build:windows:exe` - Build Windows .exe only (no installer needed)
 - `npm run build:windows:portable` - Build Windows .exe + stage portable runtime folder with sidecar assets
 - `npm run build:all` - Build Linux + Windows
-- `npm run run:windows` - Build (if needed), stage portable runtime, and launch Windows app from WSL2
+- `npm run run:windows` - Build (if needed), stage portable runtime, and launch the Windows app via host interop (if available)
 
 ## Stack & Architecture
 
@@ -75,28 +75,28 @@ Canonical repo map (quick):
 
 ### Host System
 
-- **Platform**: WSL2 on Windows 11
+- **Platform**: Linux VM (3D acceleration enabled)
 - **OS**: Ubuntu 24.04.3 LTS
 - **Arch**: x86_64
 
 ### Installed Components
 
-| Component             | Version   | Status                                  |
-| --------------------- | --------- | --------------------------------------- |
-| Node.js               | v22.21.0  | ✅                                      |
-| npm                   | 10.9.4    | ✅                                      |
-| bun                   | 1.x       | ✅ **Required for sidecar compilation** |
-| Rust                  | 1.93.0    | ✅                                      |
-| Tauri CLI             | 2.10.0    | ✅                                      |
-| cargo-xwin            | Latest    | ✅ Windows cross-compile                |
-| lld                   | Latest    | ✅ Fast linking                         |
-| nsis                  | Latest    | ✅ Windows installers                   |
-| libwebkit2gtk-4.1-dev | Latest    | ✅                                      |
-| libappindicator3-dev  | Latest    | ✅                                      |
-| librsvg2-dev          | 2.58.0    | ✅                                      |
-| DISPLAY               | :0        | ✅ WSLg                                 |
-| WAYLAND_DISPLAY       | wayland-0 | ✅ WSLg                                 |
-| Python3               | 3.13      | ✅ python3                              |
+| Component             | Version  | Status                                  |
+| --------------------- | -------- | --------------------------------------- |
+| Node.js               | v22.21.0 | ✅                                      |
+| npm                   | 10.9.4   | ✅                                      |
+| bun                   | 1.x      | ✅ **Required for sidecar compilation** |
+| Rust                  | 1.93.0   | ✅                                      |
+| Tauri CLI             | 2.10.0   | ✅                                      |
+| cargo-xwin            | Latest   | ✅ Windows cross-compile                |
+| lld                   | Latest   | ✅ Fast linking                         |
+| nsis                  | Latest   | ✅ Windows installers                   |
+| libwebkit2gtk-4.1-dev | Latest   | ✅                                      |
+| libappindicator3-dev  | Latest   | ✅                                      |
+| librsvg2-dev          | 2.58.0   | ✅                                      |
+| DISPLAY               | Varies   | ✅ Linux GUI session dependent          |
+| WAYLAND_DISPLAY       | Varies   | ✅ Linux GUI session dependent          |
+| Python3               | 3.13     | ✅ python3                              |
 
 ### Rust Targets
 
@@ -109,9 +109,9 @@ Canonical repo map (quick):
 
 ## Critical Development Notes
 
-### WSL2 Filesystem (Critical)
+### Linux Filesystem (Critical)
 
-- **Store project in Linux filesystem** (`/home/<username>/projects/`), NOT `/mnt/c/` - performance difference is 10-100x
+- **Store project on a local Linux filesystem** (`/home/<username>/projects/`) and avoid shared/network mounts for best build performance
 
 ### Windows Cross-Compilation
 
@@ -136,15 +136,15 @@ Canonical repo map (quick):
 
 ## Common Issues & Solutions
 
-| Issue                                       | Solution                                             |
-| ------------------------------------------- | ---------------------------------------------------- |
-| `bun: command not found`                    | `export PATH="$HOME/.bun/bin:$PATH"`                 |
-| `pi-coding-agent` missing in `node_modules` | Run `npm install` in project root                    |
-| `makensis.exe: No such file`                | `sudo apt install nsis` or use `build:windows:exe`   |
-| `shell32.lib` / `kernel32.lib` not found    | Use `npm run build:windows` (handles cargo-xwin)     |
-| Windows app won't open                      | Install WebView2 Runtime on Windows                  |
-| Slow builds                                 | Verify project is in Linux filesystem, not `/mnt/c/` |
-| "TaskDialogIndirect could not be located"   | Fixed - rebuild with `npm run build:windows`         |
+| Issue                                       | Solution                                                                   |
+| ------------------------------------------- | -------------------------------------------------------------------------- |
+| `bun: command not found`                    | `export PATH="$HOME/.bun/bin:$PATH"`                                       |
+| `pi-coding-agent` missing in `node_modules` | Run `npm install` in project root                                          |
+| `makensis.exe: No such file`                | `sudo apt install nsis` or use `build:windows:exe`                         |
+| `shell32.lib` / `kernel32.lib` not found    | Use `npm run build:windows` (handles cargo-xwin)                           |
+| Windows app won't open                      | Install WebView2 Runtime on Windows                                        |
+| Slow builds                                 | Verify project is on a local Linux filesystem (not a shared/network mount) |
+| "TaskDialogIndirect could not be located"   | Fixed - rebuild with `npm run build:windows`                               |
 
 ## Frontend Development Rules
 

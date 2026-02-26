@@ -760,21 +760,18 @@ pub fn get_working_directory() -> Result<String, String> {
 }
 
 #[cfg(target_os = "linux")]
-fn is_wsl_environment() -> bool {
-    if std::env::var_os("WSL_DISTRO_NAME").is_some() || std::env::var_os("WSL_INTEROP").is_some() {
-        return true;
-    }
-
+fn has_windows_host_interop() -> bool {
     std::fs::read_to_string("/proc/version")
         .map(|version| version.to_lowercase().contains("microsoft"))
         .unwrap_or(false)
+        || Path::new("/mnt/c/Windows").exists()
 }
 
 #[cfg(target_os = "linux")]
 fn open_external_url_linux(url: &str) -> Result<(), String> {
     let mut candidates: Vec<(String, Vec<String>)> = Vec::new();
 
-    if is_wsl_environment() {
+    if has_windows_host_interop() {
         candidates.push((
             "cmd.exe".to_string(),
             vec![
@@ -796,7 +793,6 @@ fn open_external_url_linux(url: &str) -> Result<(), String> {
         ));
 
         candidates.push(("explorer.exe".to_string(), vec![url.to_string()]));
-        candidates.push(("wslview".to_string(), vec![url.to_string()]));
     }
 
     candidates.push(("xdg-open".to_string(), vec![url.to_string()]));
@@ -834,8 +830,8 @@ fn open_external_url_linux(url: &str) -> Result<(), String> {
 ///
 /// - Windows/macOS: use Tauri's opener plugin.
 /// - Linux native: try opener first, then fall back to command-based open.
-/// - Linux/WSL: prefer command-based open first (cmd.exe/powershell/explorer/wslview)
-///   to reliably target the host browser.
+/// - Linux with Windows host interop: prefer command-based open first
+///   (cmd.exe/powershell/explorer) to reliably target the host browser.
 #[tauri::command]
 pub fn open_external_url(app: AppHandle, url: String) -> Result<(), String> {
     let trimmed = url.trim();
@@ -849,8 +845,10 @@ pub fn open_external_url(app: AppHandle, url: String) -> Result<(), String> {
 
     #[cfg(target_os = "linux")]
     {
-        if is_wsl_environment() {
-            logger::log("WSL detected: using WSL-aware URL opener path".to_string());
+        if has_windows_host_interop() {
+            logger::log(
+                "Windows host interop detected: using command-based URL opener path".to_string(),
+            );
             return open_external_url_linux(trimmed);
         }
 
@@ -1491,7 +1489,7 @@ fn read_clipboard_image_linux() -> Option<RpcImageAttachment> {
 }
 
 /// Best-effort native clipboard image read.
-/// Primarily used as a fallback on Linux/WSLg when WebView clipboard events
+/// Primarily used as a fallback on Linux/Wayland when WebView clipboard events
 /// do not expose image items reliably.
 #[tauri::command]
 pub async fn read_clipboard_image() -> Result<Option<RpcImageAttachment>, String> {
