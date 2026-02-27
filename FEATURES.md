@@ -1,6 +1,6 @@
 # Graphone Feature Availability (User Guide)
 
-_Last updated: 2026-02-23_
+_Last updated: 2026-02-27_
 
 This page helps you quickly understand what to expect from **Graphone** today, especially if you already know the pi terminal app (TUI).
 
@@ -15,7 +15,9 @@ This page helps you quickly understand what to expect from **Graphone** today, e
 ## ✅ Available now
 
 - Multi-session chat experience
+- Start a new chat while another session is still generating (parallel session creation)
 - Project-scope sidebar with session history
+- Session activity indicators in the sidebar/history list (idle vs active)
 - Full-mode and compact-mode UI toggle
 - Compact mode activity rail + collapsible project-scope drawer
 - Resizable compact window width (left/right drag handles)
@@ -33,6 +35,7 @@ This page helps you quickly understand what to expect from **Graphone** today, e
 - Session persistence and reopening from sidebar history
 - Usage/context indicator in the status area
 - Stop/cancel current generation
+- Active generations are aborted during app shutdown to avoid orphaned runs
 - Image attachments in the prompt composer (paste, drag/drop, file picker)
 
 ---

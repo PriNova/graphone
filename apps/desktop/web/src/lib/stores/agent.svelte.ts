@@ -80,6 +80,7 @@ export class AgentStore {
   currentProvider = $state("");
   currentThinkingLevel = $state<ThinkingLevel>("off");
   supportsThinking = $state(false);
+  persistedSessionId = $state<string | null>(null);
   supportsImageInput = $state(false);
   availableThinkingLevels = $state<ThinkingLevel[]>(["off"]);
   availableModels = $state<AvailableModel[]>([]);
@@ -109,6 +110,7 @@ export class AgentStore {
             supportsThinking?: unknown;
             availableThinkingLevels?: unknown;
             usageIndicator?: unknown;
+            sessionId?: unknown;
           };
         }
       | { success: false; error: string }
@@ -130,6 +132,11 @@ export class AgentStore {
         response.data?.thinkingLevel,
       );
       this.supportsThinking = Boolean(response.data?.supportsThinking);
+      this.persistedSessionId =
+        typeof response.data?.sessionId === "string" &&
+        response.data.sessionId.trim().length > 0
+          ? response.data.sessionId.trim()
+          : null;
 
       const availableThinkingLevels = response.data?.availableThinkingLevels;
       if (Array.isArray(availableThinkingLevels)) {

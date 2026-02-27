@@ -5,7 +5,12 @@ mod state;
 mod types;
 mod utils;
 
-use std::sync::Arc;
+use std::sync::{
+    atomic::{AtomicBool, Ordering},
+    Arc,
+};
+
+use tauri::Manager;
 use tokio::sync::Mutex;
 
 use state::SidecarState;
@@ -21,7 +26,7 @@ pub fn run() {
 
     let sidecar_state = Arc::new(Mutex::new(SidecarState::new()));
 
-    tauri::Builder::default()
+    let app = tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_store::Builder::new().build())
@@ -54,6 +59,37 @@ pub fn run() {
             commands::get_enabled_models,
             commands::set_enabled_models,
         ])
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+        .build(tauri::generate_context!())
+        .expect("error while building tauri application");
+
+    let shutdown_started = Arc::new(AtomicBool::new(false));
+    let shutdown_complete = Arc::new(AtomicBool::new(false));
+
+    app.run(move |app_handle, event| {
+        if let tauri::RunEvent::ExitRequested { api, code, .. } = event {
+            if shutdown_complete.load(Ordering::SeqCst) {
+                return;
+            }
+
+            api.prevent_exit();
+
+            if shutdown_started.swap(true, Ordering::SeqCst) {
+                return;
+            }
+
+            let app_handle = app_handle.clone();
+            let sidecar_state = app_handle
+                .state::<Arc<Mutex<SidecarState>>>()
+                .inner()
+                .clone();
+            let shutdown_complete = shutdown_complete.clone();
+            let exit_code = code.unwrap_or(0);
+
+            tauri::async_runtime::spawn(async move {
+                let _ = commands::shutdown_sidecar_gracefully(&sidecar_state).await;
+                shutdown_complete.store(true, Ordering::SeqCst);
+                app_handle.exit(exit_code);
+            });
+        }
+    });
 }

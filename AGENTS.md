@@ -33,6 +33,8 @@
 - **Backend**: Rust + Tauri 2.0
 - **Sidecar**: Graphone-local SDK host sidecar (`services/agent-host`, compiled with bun)
 - **Pattern**: Desktop uses one host sidecar process that multiplexes multiple in-process agent sessions
+- **Strategic direction**: Design new features for **multi-agent orchestration** first (parallel sessions, concurrent windows/views, and coordination-friendly state flows)
+- **Platform strategy**: Keep core behavior **platform-agnostic**; isolate OS-specific behavior behind small adapters and maintain parity across Linux/Windows/macOS (and future targets)
 - **SDK source**: Host sidecar consumes `@mariozechner/pi-coding-agent` from npm
 
 ## Project Structure
@@ -96,7 +98,7 @@ Canonical repo map (quick):
 | librsvg2-dev          | 2.58.0   | ✅                                      |
 | DISPLAY               | Varies   | ✅ Linux GUI session dependent          |
 | WAYLAND_DISPLAY       | Varies   | ✅ Linux GUI session dependent          |
-| Python3               | 3.13     | ✅ python3                              |
+| Python3               | 3.12.3   | ✅ python3                              |
 
 ### Rust Targets
 

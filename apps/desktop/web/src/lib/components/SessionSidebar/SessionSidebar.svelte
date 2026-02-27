@@ -8,6 +8,8 @@
     activeProjectDir?: string | null;
     activeSessionId?: string | null;
     activeSessionFile?: string | null;
+    busySessionIds?: string[];
+    busySessionFiles?: string[];
     projectDirInput?: string;
     creating?: boolean;
     collapsed?: boolean;
@@ -34,6 +36,8 @@
     activeProjectDir = null,
     activeSessionId = null,
     activeSessionFile = null,
+    busySessionIds = [],
+    busySessionFiles = [],
     projectDirInput = "",
     creating = false,
     collapsed = false,
@@ -65,6 +69,37 @@
     text: "",
     x: 0,
     y: 0,
+  });
+
+  const busySessionIdSet = $derived.by(() => {
+    const normalized = busySessionIds
+      .map((sessionId) => sessionId.trim())
+      .filter((sessionId) => sessionId.length > 0);
+    return new Set(normalized);
+  });
+
+  function normalizeFilePath(filePath: string): string {
+    return filePath.trim().replace(/\\/g, "/").replace(/\/+/g, "/");
+  }
+
+  function fileBaseName(filePath: string): string {
+    const normalized = normalizeFilePath(filePath);
+    const parts = normalized.split("/").filter((part) => part.length > 0);
+    return parts[parts.length - 1] ?? "";
+  }
+
+  const busySessionFileSet = $derived.by(() => {
+    const normalized = busySessionFiles
+      .map((filePath) => normalizeFilePath(filePath))
+      .filter((filePath) => filePath.length > 0);
+    return new Set(normalized);
+  });
+
+  const busySessionFileNameSet = $derived.by(() => {
+    const names = busySessionFiles
+      .map((filePath) => fileBaseName(filePath))
+      .filter((fileName) => fileName.length > 0);
+    return new Set(names);
   });
 
   function toggleScopeCollapse(projectDir: string, event: MouseEvent): void {
@@ -146,6 +181,30 @@
     return history.sessionId;
   }
 
+  function historySourceLabel(history: PersistedSessionHistoryItem): string {
+    if (history.source === "local") {
+      return "L";
+    }
+
+    if (history.source === "global") {
+      return "G";
+    }
+
+    return "?";
+  }
+
+  function historySourceName(history: PersistedSessionHistoryItem): string {
+    if (history.source === "local") {
+      return "Local";
+    }
+
+    if (history.source === "global") {
+      return "Global";
+    }
+
+    return "Unknown";
+  }
+
   function isHistoryActive(history: PersistedSessionHistoryItem): boolean {
     const normalizedActiveFile = activeSessionFile?.trim() ?? "";
     if (normalizedActiveFile.length > 0) {
@@ -157,6 +216,25 @@
       normalizedActiveSessionId.length > 0 &&
       normalizedActiveSessionId === history.sessionId.trim()
     );
+  }
+
+  function isHistoryBusy(history: PersistedSessionHistoryItem): boolean {
+    const sessionId = history.sessionId.trim();
+    if (sessionId.length > 0 && busySessionIdSet.has(sessionId)) {
+      return true;
+    }
+
+    const filePath = normalizeFilePath(history.filePath);
+    if (filePath.length > 0 && busySessionFileSet.has(filePath)) {
+      return true;
+    }
+
+    const fileName = fileBaseName(history.filePath);
+    if (fileName.length > 0 && busySessionFileNameSet.has(fileName)) {
+      return true;
+    }
+
+    return false;
   }
 
   function showHistoryTooltip(
@@ -544,12 +622,18 @@
                 class="px-2 pb-2 ml-6 pl-2 border-l border-border/70 space-y-1"
               >
                 {#each displayedHistory as history (history.filePath)}
+                  {@const historyBusy = isHistoryBusy(history)}
+                  {@const historyActive = isHistoryActive(history)}
                   <div
                     class={cn(
                       "w-full rounded border px-1.5 py-1 text-left text-[11px] transition-colors group/session",
-                      isHistoryActive(history)
-                        ? "border-foreground/70 bg-secondary text-foreground"
-                        : "border-border/70 hover:bg-secondary",
+                      historyBusy && historyActive
+                        ? "border-foreground bg-secondary text-foreground border-l-4 border-l-success"
+                        : historyBusy
+                          ? "border-border/70 hover:bg-secondary border-l-2 border-l-success"
+                          : historyActive
+                            ? "border-foreground/70 bg-secondary text-foreground"
+                            : "border-border/70 hover:bg-secondary",
                     )}
                   >
                     <div class="flex items-center gap-2">
@@ -569,21 +653,24 @@
                             historyTooltipText(history),
                           )}
                         onblur={hideHistoryTooltip}
-                        aria-current={isHistoryActive(history)
-                          ? "true"
-                          : undefined}
+                        aria-current={historyActive ? "true" : undefined}
                         aria-label={`Open project scope ${toScopeTitle(projectDir)} from session ${history.sessionId}`}
                       >
                         <div class="flex items-center justify-between gap-2">
                           <div class="min-w-0 flex items-center gap-1.5">
                             <span
-                              class="font-mono text-[10px] text-muted-foreground shrink-0"
+                              class={cn(
+                                "font-mono text-[10px] shrink-0",
+                                historyBusy
+                                  ? "text-success font-semibold"
+                                  : historyActive
+                                    ? "text-foreground font-semibold"
+                                    : "text-muted-foreground",
+                              )}
+                              title={`${historySourceName(history)} • ${historyBusy ? "Agent active" : "Agent idle"}${historyActive ? " • Current view" : ""}`}
+                              aria-label={`${historySourceName(history)} source, ${historyBusy ? "agent active" : "agent idle"}${historyActive ? ", current visible session" : ""}`}
                             >
-                              {history.source === "local"
-                                ? "L"
-                                : history.source === "global"
-                                  ? "G"
-                                  : "?"}
+                              {historySourceLabel(history)}
                             </span>
                             <span class="truncate"
                               >{historyPreviewText(history)}</span

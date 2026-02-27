@@ -226,7 +226,7 @@
       !submitBlockedByModel,
   );
   const canCancel = $derived(isLoading);
-  const canStartNewChat = $derived(!disabled && !isLoading && chatHasMessages);
+  const canStartNewChat = $derived(!disabled && chatHasMessages);
   const modelSelectorDisabled = $derived(
     disabled || isLoading || modelChanging,
   );
@@ -944,7 +944,7 @@
           aria-label="Start new chat"
           title={canStartNewChat
             ? "Start new chat"
-            : "New chat is available after responses finish and when chat has messages"}
+            : "New chat is available when the chat has messages"}
         >
           <svg
             class="w-4 h-4"

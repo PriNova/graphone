@@ -212,11 +212,76 @@
   const activeProjectDir = $derived(
     activeRuntime ? normalizeScopePath(activeRuntime.projectDir) : null,
   );
-  const compactScopeTooltip = $derived(
-    activeProjectDir
-      ? `Project scopes (${toScopeTitle(activeProjectDir)})`
-      : "Project scopes",
-  );
+  const busySessionIds = $derived.by(() => {
+    const busy = new Set<string>();
+
+    for (const session of sessionsStore.sessions) {
+      if (session.busy || sessionRuntimes[session.sessionId]?.agent.isLoading) {
+        busy.add(session.sessionId);
+      }
+    }
+
+    for (const [sessionId, runtime] of Object.entries(sessionRuntimes)) {
+      if (!runtime.agent.isLoading) {
+        continue;
+      }
+
+      busy.add(sessionId);
+
+      const persistedSessionId = runtime.agent.persistedSessionId?.trim() ?? "";
+      if (persistedSessionId.length > 0) {
+        busy.add(persistedSessionId);
+      }
+    }
+
+    return Array.from(busy);
+  });
+  const busySessionFiles = $derived.by(() => {
+    const busy = new Set<string>();
+
+    for (const session of sessionsStore.sessions) {
+      const sessionFile = session.sessionFile?.trim() ?? "";
+      if (sessionFile.length === 0) {
+        continue;
+      }
+
+      if (session.busy || sessionRuntimes[session.sessionId]?.agent.isLoading) {
+        busy.add(sessionFile);
+      }
+    }
+
+    return Array.from(busy);
+  });
+  const compactUsageTooltipLine = $derived.by(() => {
+    const contextText = usageIndicator?.contextText?.trim() ?? "";
+    if (contextText.length === 0) {
+      return "Usage: unavailable";
+    }
+
+    const usageText = contextText.split(/\s+/)[0] ?? contextText;
+    return `Usage: ${usageText}`;
+  });
+
+  const compactModelTooltipLine = $derived.by(() => {
+    const provider = currentProvider.trim();
+    const model = currentModel.trim();
+
+    if (provider && model) {
+      return `Model: ${provider}/${model}`;
+    }
+
+    return `Model: ${model || "No model selected"}`;
+  });
+
+  const compactScopeTooltip = $derived.by(() => {
+    const scopeLine = activeProjectDir
+      ? `Project Scope: ${toScopeTitle(activeProjectDir)}`
+      : "Project Scope: none";
+
+    return [compactUsageTooltipLine, compactModelTooltipLine, scopeLine].join(
+      "\n",
+    );
+  });
   const displayMode = $derived(settingsStore.displayMode);
   const isCompactMode = $derived(displayMode === "compact");
 
@@ -929,11 +994,17 @@
   }
 
   async function onNewChat(): Promise<void> {
-    if (!activeRuntime || isLoading || !chatHasMessages) {
+    if (!activeRuntime || !chatHasMessages) {
       return;
     }
 
     hideCompactRail = true;
+
+    if (activeRuntime.agent.isLoading) {
+      await createSession(activeRuntime.projectDir);
+      return;
+    }
+
     await onSlashCommand("new", "", "/new");
   }
 
@@ -977,6 +1048,12 @@
 
     if (command === "new") {
       hideCompactRail = true;
+
+      if (activeRuntime.agent.isLoading) {
+        clearOptimisticFirstPrompt(activeRuntime.sessionId);
+        await createSession(activeRuntime.projectDir);
+        return;
+      }
     }
 
     const result = await handleSlashCommand(
@@ -1295,6 +1372,8 @@
               {activeProjectDir}
               {activeSessionId}
               {activeSessionFile}
+              {busySessionIds}
+              {busySessionFiles}
               {projectDirInput}
               creating={sessionsStore.creating}
               collapsed={false}
@@ -1458,6 +1537,8 @@
       {activeProjectDir}
       {activeSessionId}
       {activeSessionFile}
+      {busySessionIds}
+      {busySessionFiles}
       {projectDirInput}
       creating={sessionsStore.creating}
       collapsed={sidebarCollapsed}

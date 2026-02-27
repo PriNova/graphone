@@ -118,6 +118,9 @@ const SIDECAR_READY_RETRY_DELAY_MS: u64 = 500;
 const CREATE_SESSION_TIMEOUT_SECS: u64 = 20;
 const CREATE_SESSION_ATTEMPTS: usize = 3;
 const CREATE_SESSION_RETRY_DELAY_MS: u64 = 600;
+const SHUTDOWN_LIST_TIMEOUT_SECS: u64 = 2;
+const SHUTDOWN_ABORT_TIMEOUT_SECS: u64 = 2;
+const SHUTDOWN_TIMEOUT_SECS: u64 = 3;
 
 fn global_settings_path() -> Option<PathBuf> {
     dirs::home_dir().map(|h| h.join(".pi").join("agent").join("settings.json"))
@@ -1220,6 +1223,206 @@ fn cache_sessions_from_list_response(state: &mut SidecarState, response: &RpcRes
     }
 
     state.session_cwds = next;
+}
+
+fn extract_session_ids_from_list_response(response: &RpcResponse) -> Vec<String> {
+    let Some(data) = response.data.as_ref() else {
+        return Vec::new();
+    };
+
+    let Some(sessions) = data.get("sessions").and_then(|value| value.as_array()) else {
+        return Vec::new();
+    };
+
+    let mut seen = HashSet::<String>::new();
+    let mut session_ids = Vec::new();
+
+    for session in sessions {
+        let Some(session_id) = session.get("sessionId").and_then(|v| v.as_str()) else {
+            continue;
+        };
+
+        if session_id.trim().is_empty() {
+            continue;
+        }
+
+        if seen.insert(session_id.to_string()) {
+            session_ids.push(session_id.to_string());
+        }
+    }
+
+    session_ids
+}
+
+fn force_kill_process_by_pid(pid: u32) -> Result<(), String> {
+    #[cfg(target_os = "windows")]
+    {
+        let status = std::process::Command::new("taskkill")
+            .args(["/PID", &pid.to_string(), "/T", "/F"])
+            .status()
+            .map_err(|error| format!("Failed to invoke taskkill for {}: {}", pid, error))?;
+
+        if status.success() {
+            return Ok(());
+        }
+
+        return Err(format!(
+            "taskkill failed for {} with status {}",
+            pid, status
+        ));
+    }
+
+    #[cfg(not(target_os = "windows"))]
+    {
+        let term_status = std::process::Command::new("kill")
+            .args(["-TERM", &pid.to_string()])
+            .status()
+            .map_err(|error| format!("Failed to invoke kill -TERM for {}: {}", pid, error))?;
+
+        if term_status.success() {
+            return Ok(());
+        }
+
+        let kill_status = std::process::Command::new("kill")
+            .args(["-KILL", &pid.to_string()])
+            .status()
+            .map_err(|error| format!("Failed to invoke kill -KILL for {}: {}", pid, error))?;
+
+        if kill_status.success() {
+            return Ok(());
+        }
+
+        Err(format!(
+            "kill -TERM/-KILL failed for {} (TERM={}, KILL={})",
+            pid, term_status, kill_status
+        ))
+    }
+}
+
+async fn force_kill_sidecar_child(
+    child_arc: Arc<Mutex<tauri_plugin_shell::process::CommandChild>>,
+) -> Result<(), String> {
+    let pid = {
+        let child_guard = child_arc.lock().await;
+        child_guard.pid()
+    };
+
+    match Arc::try_unwrap(child_arc) {
+        Ok(child_mutex) => {
+            let child = child_mutex.into_inner();
+            child
+                .kill()
+                .map_err(|error| format!("Failed to force-kill sidecar process {}: {}", pid, error))
+        }
+        Err(_) => force_kill_process_by_pid(pid),
+    }
+}
+
+pub async fn shutdown_sidecar_gracefully(state: &Arc<Mutex<SidecarState>>) -> Result<(), String> {
+    logger::log("shutdown requested");
+
+    let has_child = {
+        let state_guard = state.lock().await;
+        state_guard.child.is_some()
+    };
+
+    if !has_child {
+        return Ok(());
+    }
+
+    let list_command = RpcCommand {
+        id: Some(crypto_random_uuid()),
+        r#type: "list_sessions".to_string(),
+        session_id: None,
+        cwd: None,
+        message: None,
+        provider: None,
+        model_id: None,
+        streaming_behavior: None,
+        session_file: None,
+        level: None,
+        images: None,
+    };
+
+    let list_response =
+        send_command_with_response(state, list_command, SHUTDOWN_LIST_TIMEOUT_SECS).await;
+
+    let mut session_ids = match list_response {
+        Ok(response) if response.success => extract_session_ids_from_list_response(&response),
+        _ => {
+            let state_guard = state.lock().await;
+            state_guard.session_cwds.keys().cloned().collect::<Vec<_>>()
+        }
+    };
+
+    session_ids.sort();
+    session_ids.dedup();
+
+    logger::log(format!("aborting {} sessions", session_ids.len()));
+
+    for session_id in session_ids {
+        let abort_command = RpcCommand {
+            id: Some(crypto_random_uuid()),
+            r#type: "abort".to_string(),
+            session_id: Some(session_id),
+            cwd: None,
+            message: None,
+            provider: None,
+            model_id: None,
+            streaming_behavior: None,
+            session_file: None,
+            level: None,
+            images: None,
+        };
+
+        let _ = send_command_with_response(state, abort_command, SHUTDOWN_ABORT_TIMEOUT_SECS).await;
+    }
+
+    let shutdown_command = RpcCommand {
+        id: Some(crypto_random_uuid()),
+        r#type: "shutdown".to_string(),
+        session_id: None,
+        cwd: None,
+        message: None,
+        provider: None,
+        model_id: None,
+        streaming_behavior: None,
+        session_file: None,
+        level: None,
+        images: None,
+    };
+
+    let shutdown_succeeded =
+        match send_command_with_response(state, shutdown_command, SHUTDOWN_TIMEOUT_SECS).await {
+            Ok(response) => response.success,
+            Err(_) => false,
+        };
+
+    let mut child_arc = {
+        let mut state_guard = state.lock().await;
+        state_guard.child.take()
+    };
+
+    let result = if shutdown_succeeded {
+        logger::log("sidecar shutdown complete");
+        Ok(())
+    } else {
+        logger::log("forced sidecar kill");
+
+        if let Some(sidecar_child) = child_arc.take() {
+            force_kill_sidecar_child(sidecar_child).await
+        } else {
+            Err("Sidecar child handle missing during forced kill".to_string())
+        }
+    };
+
+    let mut state_guard = state.lock().await;
+    state_guard.child = None;
+    state_guard.pending_requests.clear();
+    state_guard.response_tx = None;
+    state_guard.session_cwds.clear();
+
+    result
 }
 
 async fn create_session_internal(
