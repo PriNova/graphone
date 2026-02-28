@@ -196,7 +196,7 @@
     <div
       bind:this={dropdownEl}
       class={cn(
-        "absolute z-50 bg-input-background text-foreground border border-border rounded-md shadow-lg overflow-y-auto",
+        "absolute z-50 bg-input-background text-foreground border border-border rounded-md overflow-y-auto",
         align === "left" ? "left-0" : "right-0",
         dropdownDirection === "down" ? "top-full mt-1" : "bottom-full mb-1",
         menuClass,

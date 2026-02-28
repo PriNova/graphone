@@ -42,6 +42,11 @@
   } from "$lib/types/agent";
   import type { SessionRuntime } from "$lib/types/session";
   import { applyWindowMode, type DisplayMode } from "$lib/utils/window-mode";
+  import {
+    openOrFocusCompactSessionWindow,
+    openOrFocusMainWindow,
+  } from "$lib/windowing/session-windows";
+  import { getCurrentWindowContext } from "$lib/windowing/window-context";
 
   // DOM refs
   let messagesContainerRef = $state<HTMLDivElement | null>(null);
@@ -54,6 +59,7 @@
   let sessionRuntimes = $state<Record<string, SessionRuntime>>({});
   let projectDirInput = $state("");
   let startupError = $state<string | null>(null);
+  let sessionsBootstrapped = $state(false);
   let sidebarCollapsed = $state(false);
   let compactScopesSidebarOpen = $state(false);
   let sessionSidebarRefreshTimer: ReturnType<typeof setTimeout> | null = null;
@@ -65,7 +71,17 @@
   let promptAttachmentDraftBySession = $state<
     Record<string, PromptImageAttachment[]>
   >({});
+  let compactSessionMissing = $state(false);
+  const windowContext = getCurrentWindowContext();
+  const isCompactSessionWindow = windowContext.role === "compact-session";
+  const boundSessionId = windowContext.sessionId;
   const EMPTY_PROMPT_ATTACHMENTS: PromptImageAttachment[] = [];
+
+  // Ensure compact transparency CSS applies as early as possible on compact
+  // pop-out windows to avoid first-paint background flashes.
+  if (typeof document !== "undefined" && isCompactSessionWindow) {
+    document.documentElement.setAttribute("data-display-mode", "compact");
+  }
 
   function mergeScopeHistory(
     persistedHistoryByScope: Record<string, PersistedSessionHistoryItem[]>,
@@ -282,7 +298,13 @@
       "\n",
     );
   });
-  const displayMode = $derived(settingsStore.displayMode);
+  const displayMode = $derived.by((): DisplayMode => {
+    if (isCompactSessionWindow) {
+      return "compact";
+    }
+
+    return settingsStore.displayMode;
+  });
   const isCompactMode = $derived(displayMode === "compact");
 
   type CompactActivityItem =
@@ -721,6 +743,73 @@
     await createSession(projectDir);
   }
 
+  async function popOutSession(descriptor: SessionDescriptor): Promise<void> {
+    await openOrFocusCompactSessionWindow({
+      sessionId: descriptor.sessionId,
+      projectDir: descriptor.projectDir,
+      sessionFile: descriptor.sessionFile,
+    });
+  }
+
+  async function onOpenHistoryInCompactWindow(
+    projectDir: string,
+    history: PersistedSessionHistoryItem,
+  ): Promise<void> {
+    const previousActiveSessionId = sessionsStore.activeSessionId;
+
+    const existing = sessionsStore.sessions.find(
+      (session) => session.sessionFile === history.filePath,
+    );
+
+    const descriptor =
+      existing ??
+      (await sessionsStore.createSession(
+        projectDir,
+        undefined,
+        undefined,
+        history.filePath,
+      ));
+
+    if (!existing && previousActiveSessionId) {
+      sessionsStore.setActiveSession(previousActiveSessionId);
+    }
+
+    if (!existing) {
+      scheduleSessionSidebarRefresh(250);
+    }
+
+    await popOutSession(descriptor);
+  }
+
+  async function onPopOutActiveSession(): Promise<void> {
+    const descriptor = sessionsStore.activeSession;
+    if (!descriptor) {
+      return;
+    }
+
+    await popOutSession(descriptor);
+  }
+
+  async function createSiblingCompactSessionWindow(
+    projectDir: string,
+  ): Promise<void> {
+    const previousActiveSessionId = activeRuntime?.sessionId ?? null;
+    const descriptor = await sessionsStore.createSession(projectDir);
+
+    scheduleSessionSidebarRefresh(250);
+    await popOutSession(descriptor);
+
+    if (previousActiveSessionId) {
+      sessionsStore.setActiveSession(previousActiveSessionId);
+    }
+  }
+
+  async function closeCurrentWindow(): Promise<void> {
+    await getCurrentWindow()
+      .close()
+      .catch(() => undefined);
+  }
+
   function toggleSidebar(): void {
     sidebarCollapsed = !sidebarCollapsed;
   }
@@ -730,6 +819,11 @@
   }
 
   async function setDisplayMode(mode: DisplayMode): Promise<void> {
+    if (isCompactSessionWindow) {
+      await applyWindowMode("compact").catch(() => undefined);
+      return;
+    }
+
     if (settingsStore.displayMode === mode) {
       return;
     }
@@ -756,6 +850,11 @@
   }
 
   async function enterFullMode(): Promise<void> {
+    if (isCompactSessionWindow) {
+      await openOrFocusMainWindow();
+      return;
+    }
+
     compactScopesSidebarOpen = false;
     await setDisplayMode("full");
 
@@ -1001,6 +1100,11 @@
     hideCompactRail = true;
 
     if (activeRuntime.agent.isLoading) {
+      if (isCompactSessionWindow) {
+        await createSiblingCompactSessionWindow(activeRuntime.projectDir);
+        return;
+      }
+
       await createSession(activeRuntime.projectDir);
       return;
     }
@@ -1051,6 +1155,12 @@
 
       if (activeRuntime.agent.isLoading) {
         clearOptimisticFirstPrompt(activeRuntime.sessionId);
+
+        if (isCompactSessionWindow) {
+          await createSiblingCompactSessionWindow(activeRuntime.projectDir);
+          return;
+        }
+
         await createSession(activeRuntime.projectDir);
         return;
       }
@@ -1081,7 +1191,7 @@
     }
   }
 
-  async function bootstrapSessions(): Promise<void> {
+  async function bootstrapMainWindowSessions(): Promise<void> {
     await cwdStore.load();
 
     await projectScopesStore.refresh().catch(() => undefined);
@@ -1152,6 +1262,51 @@
     }
   }
 
+  async function bootstrapCompactSessionWindow(
+    sessionId: string,
+  ): Promise<void> {
+    compactSessionMissing = false;
+
+    await cwdStore.load();
+    await sessionsStore.refreshFromBackend().catch(() => undefined);
+
+    const requestedSessionFile = windowContext.sessionFile?.trim() ?? "";
+
+    const descriptor =
+      sessionsStore.sessions.find(
+        (session) => session.sessionId === sessionId,
+      ) ??
+      (requestedSessionFile.length > 0
+        ? sessionsStore.sessions.find(
+            (session) => session.sessionFile === requestedSessionFile,
+          )
+        : undefined);
+
+    if (!descriptor) {
+      compactSessionMissing = true;
+      return;
+    }
+
+    sessionsStore.setActiveSession(descriptor.sessionId);
+    await ensureRuntime(descriptor);
+    projectDirInput = descriptor.projectDir;
+    requestAnimationFrame(() => scrollToBottom(false));
+  }
+
+  async function bootstrapSessions(): Promise<void> {
+    if (isCompactSessionWindow) {
+      if (!boundSessionId) {
+        compactSessionMissing = true;
+        return;
+      }
+
+      await bootstrapCompactSessionWindow(boundSessionId);
+      return;
+    }
+
+    await bootstrapMainWindowSessions();
+  }
+
   $effect(() => {
     const active = sessionsStore.activeSession;
     if (active) {
@@ -1183,10 +1338,21 @@
   });
 
   $effect(() => {
-    document.documentElement.setAttribute(
-      "data-display-mode",
-      settingsStore.displayMode,
+    if (!sessionsBootstrapped || !isCompactSessionWindow || !boundSessionId) {
+      return;
+    }
+
+    const hasBoundSession = sessionsStore.sessions.some(
+      (session) => session.sessionId === boundSessionId,
     );
+
+    if (!hasBoundSession && !sessionsStore.creating) {
+      compactSessionMissing = true;
+    }
+  });
+
+  $effect(() => {
+    document.documentElement.setAttribute("data-display-mode", displayMode);
   });
 
   $effect(() => {
@@ -1206,7 +1372,11 @@
       .then(() => {
         // Do not block session/bootstrap initialization on window-manager APIs.
         // On some Linux setups, mode application can stall temporarily.
-        return applyWindowMode(settingsStore.displayMode).catch((error) => {
+        const initialMode: DisplayMode = isCompactSessionWindow
+          ? "compact"
+          : settingsStore.displayMode;
+
+        return applyWindowMode(initialMode).catch((error) => {
           console.warn("Failed to apply initial window mode:", error);
         });
       });
@@ -1224,6 +1394,8 @@
       ]);
     } catch (error) {
       startupError = error instanceof Error ? error.message : String(error);
+    } finally {
+      sessionsBootstrapped = true;
     }
 
     unlistenEvent = await listen<
@@ -1332,181 +1504,252 @@
 
 {#if isCompactMode}
   <main class="h-screen w-full overflow-hidden bg-transparent">
-    <section
-      class="grid h-full w-full grid-rows-[minmax(0,1fr)_auto] gap-1 px-1 py-1"
-    >
-      <div class="relative flex min-h-0 flex-col justify-end overflow-hidden">
-        {#if showCompactActivityRailShell}
+    {#if isCompactSessionWindow && sessionsBootstrapped && compactSessionMissing}
+      <section class="flex h-full w-full items-center justify-center p-3">
+        <div
+          class="w-full max-w-sm rounded-2xl border-[2px] border-[rgba(255,255,255,0.92)] bg-background p-4"
+        >
+          <p class="text-sm font-medium text-foreground">Session not found</p>
+          <p class="mt-1 text-xs text-muted-foreground">
+            This compact session is no longer available.
+          </p>
+          <div class="mt-4 flex items-center justify-end gap-2">
+            <button
+              type="button"
+              class="rounded border border-border px-2.5 py-1.5 text-xs text-muted-foreground hover:border-foreground hover:text-foreground hover:bg-secondary"
+              onclick={closeCurrentWindow}
+            >
+              Close window
+            </button>
+            <button
+              type="button"
+              class="rounded border border-border px-2.5 py-1.5 text-xs text-muted-foreground hover:border-foreground hover:text-foreground hover:bg-secondary"
+              onclick={openOrFocusMainWindow}
+            >
+              Open main window
+            </button>
+          </div>
+        </div>
+      </section>
+    {:else}
+      <section
+        class="grid h-full w-full grid-rows-[minmax(0,1fr)_auto] gap-1 px-1 py-1"
+      >
+        <div class="relative flex min-h-0 flex-col justify-end overflow-hidden">
+          {#if showCompactActivityRailShell}
+            <div
+              class={`flex w-full flex-col justify-end overflow-hidden ${compactRailViewportClass}`}
+              aria-hidden={!showCompactActivityRail}
+            >
+              {#if showCompactActivityRail}
+                <CompactActivityRail
+                  items={compactActivityItems}
+                  assistantStreaming={isStreaming}
+                />
+              {/if}
+            </div>
+          {/if}
+
+          {#if !isCompactSessionWindow}
+            <div
+              id="compact-session-sidebar"
+              class={`absolute inset-0 z-20 flex items-end transition-[opacity,transform] duration-200 ${
+                compactScopesSidebarOpen
+                  ? "pointer-events-auto opacity-100 translate-y-0"
+                  : "pointer-events-none opacity-0 translate-y-2"
+              }`}
+              aria-hidden={!compactScopesSidebarOpen}
+            >
+              <div
+                class={`h-full max-h-[440px] min-h-0 w-full overflow-hidden rounded-2xl border-[2px] border-[rgba(255,255,255,0.92)] bg-background ${
+                  compactScopesSidebarOpen
+                    ? "pointer-events-auto"
+                    : "pointer-events-none"
+                }`}
+              >
+                <SessionSidebar
+                  {projectScopes}
+                  {scopeHistoryByProject}
+                  {activeProjectDir}
+                  {activeSessionId}
+                  {activeSessionFile}
+                  {busySessionIds}
+                  {busySessionFiles}
+                  {projectDirInput}
+                  creating={sessionsStore.creating}
+                  collapsed={false}
+                  collapsedScopes={settingsStore.collapsedScopes}
+                  ontoggle={toggleCompactScopesSidebar}
+                  onprojectdirinput={onProjectDirInputChange}
+                  oncreatesession={createSessionFromInput}
+                  onselectscope={onSelectScope}
+                  onselecthistory={onSelectHistory}
+                  onopenhistorywindow={onOpenHistoryInCompactWindow}
+                  onremovehistory={onRemoveHistory}
+                  onremovescope={onRemoveScope}
+                  ontogglescopecollapse={async (scope) => {
+                    await settingsStore.toggleScopeCollapsed(scope);
+                  }}
+                />
+              </div>
+            </div>
+          {/if}
+        </div>
+
+        <div class="relative w-full">
+          <button
+            type="button"
+            class="absolute left-0 top-1/2 z-10 h-10 w-2 -translate-x-1/2 -translate-y-1/2 rounded-full bg-white/45 opacity-70 transition-opacity hover:opacity-100 active:opacity-100 cursor-ew-resize"
+            onmousedown={(event) =>
+              onCompactResizeHandleMouseDown(event, "West")}
+            aria-label="Resize compact width from left edge"
+            title="Resize width"
+          ></button>
+
           <div
-            class={`flex w-full flex-col justify-end overflow-hidden ${compactRailViewportClass}`}
-            aria-hidden={!showCompactActivityRail}
+            class="flex items-center gap-2 w-full rounded-[999px] border-[3px] border-[rgba(255,255,255,0.92)] bg-background px-2 py-0.5"
           >
-            {#if showCompactActivityRail}
-              <CompactActivityRail
-                items={compactActivityItems}
-                assistantStreaming={isStreaming}
+            <button
+              type="button"
+              class="shrink-0 h-9 w-9 rounded-full border border-border text-muted-foreground hover:text-foreground hover:border-foreground hover:bg-secondary cursor-move select-none"
+              data-tauri-drag-region
+              onmousedown={onCompactDragHandleMouseDown}
+              aria-label="Move window"
+              title="Move window"
+            >
+              <span data-tauri-drag-region class="text-base leading-none"
+                >⋮</span
+              >
+            </button>
+
+            {#if !isCompactSessionWindow}
+              <button
+                type="button"
+                class={`shrink-0 flex items-center justify-center h-9 w-9 rounded-full border text-sm font-semibold transition-colors ${
+                  compactScopesSidebarOpen
+                    ? "border-foreground bg-secondary text-foreground"
+                    : "border-border text-muted-foreground hover:text-foreground hover:border-foreground hover:bg-secondary"
+                }`}
+                onclick={toggleCompactScopesSidebar}
+                aria-label={compactScopesSidebarOpen
+                  ? "Hide project scopes"
+                  : "Show project scopes"}
+                aria-expanded={compactScopesSidebarOpen}
+                aria-controls="compact-session-sidebar"
+                title={compactScopeTooltip}
+              >
+                P
+              </button>
+            {/if}
+
+            <div class="flex-1 min-w-0">
+              <PromptInput
+                value={activePromptDraft}
+                attachments={activePromptAttachmentDraft}
+                oninput={onPromptInput}
+                onattachmentschange={onPromptAttachmentsChange}
+                onsubmit={onSubmit}
+                oncancel={onCancel}
+                onslashcommand={onSlashCommand}
+                onnewchat={onNewChat}
+                onmodelchange={onModelChange}
+                onthinkingchange={onThinkingChange}
+                onmodelfilterchange={onModelFilterChange}
+                {isLoading}
+                disabled={!activeRuntime || !sessionStarted}
+                placeholder={activeRuntime && sessionStarted
+                  ? "What would you like to get done today?"
+                  : "Create a session to begin..."}
+                model={currentModel}
+                provider={currentProvider}
+                thinkingLevel={currentThinkingLevel}
+                supportsImageInput={currentModelSupportsImageInput}
+                {supportsThinking}
+                {availableThinkingLevels}
+                models={availableModels}
+                modelsLoading={isModelsLoading}
+                modelChanging={isSettingModel}
+                thinkingChanging={isSettingThinking}
+                enabledModels={activeRuntime?.enabledModels}
+                modelFilter={settingsStore.modelFilter}
+                autofocus={true}
+                {chatHasMessages}
+                compact={true}
               />
+            </div>
+
+            {#if isCompactSessionWindow}
+              <button
+                type="button"
+                class="shrink-0 flex items-center justify-center h-9 rounded-full border border-border px-3 text-xs text-muted-foreground hover:text-foreground hover:border-foreground hover:bg-secondary transition-colors"
+                onclick={closeCurrentWindow}
+                aria-label="Close compact window"
+                title="Close compact window"
+              >
+                Close
+              </button>
+            {:else}
+              <button
+                type="button"
+                class="shrink-0 flex items-center justify-center h-9 w-9 rounded-full border border-border text-muted-foreground hover:text-foreground hover:border-foreground hover:bg-secondary transition-colors"
+                onclick={enterFullMode}
+                aria-label="Switch to full mode"
+                title="Full mode"
+              >
+                <svg
+                  aria-hidden="true"
+                  class="h-4 w-4"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2.2"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                >
+                  <path d="M10 10L5 5" />
+                  <path d="M5 8V5H8" />
+                  <path d="M14 14L19 19" />
+                  <path d="M16 19H19V16" />
+                </svg>
+              </button>
             {/if}
           </div>
-        {/if}
 
-        <div
-          id="compact-session-sidebar"
-          class={`absolute inset-0 z-20 flex items-end transition-[opacity,transform] duration-200 ${
-            compactScopesSidebarOpen
-              ? "pointer-events-auto opacity-100 translate-y-0"
-              : "pointer-events-none opacity-0 translate-y-2"
-          }`}
-          aria-hidden={!compactScopesSidebarOpen}
-        >
-          <div
-            class={`h-full max-h-[440px] min-h-0 w-full overflow-hidden rounded-2xl border-[2px] border-[rgba(255,255,255,0.92)] bg-background shadow-2xl ${
-              compactScopesSidebarOpen
-                ? "pointer-events-auto"
-                : "pointer-events-none"
-            }`}
-          >
-            <SessionSidebar
-              {projectScopes}
-              {scopeHistoryByProject}
-              {activeProjectDir}
-              {activeSessionId}
-              {activeSessionFile}
-              {busySessionIds}
-              {busySessionFiles}
-              {projectDirInput}
-              creating={sessionsStore.creating}
-              collapsed={false}
-              collapsedScopes={settingsStore.collapsedScopes}
-              ontoggle={toggleCompactScopesSidebar}
-              onprojectdirinput={onProjectDirInputChange}
-              oncreatesession={createSessionFromInput}
-              onselectscope={onSelectScope}
-              onselecthistory={onSelectHistory}
-              onremovehistory={onRemoveHistory}
-              onremovescope={onRemoveScope}
-              ontogglescopecollapse={async (scope) => {
-                await settingsStore.toggleScopeCollapsed(scope);
-              }}
-            />
-          </div>
+          <button
+            type="button"
+            class="absolute right-0 top-1/2 z-10 h-10 w-2 translate-x-1/2 -translate-y-1/2 rounded-full bg-white/45 opacity-70 transition-opacity hover:opacity-100 active:opacity-100 cursor-ew-resize"
+            onmousedown={(event) =>
+              onCompactResizeHandleMouseDown(event, "East")}
+            aria-label="Resize compact width from right edge"
+            title="Resize width"
+          ></button>
         </div>
-      </div>
-
-      <div class="relative w-full">
-        <button
-          type="button"
-          class="absolute left-0 top-1/2 z-10 h-10 w-2 -translate-x-1/2 -translate-y-1/2 rounded-full bg-white/45 opacity-70 transition-opacity hover:opacity-100 active:opacity-100 cursor-ew-resize"
-          onmousedown={(event) => onCompactResizeHandleMouseDown(event, "West")}
-          aria-label="Resize compact width from left edge"
-          title="Resize width"
-        ></button>
-
-        <div
-          class="flex items-center gap-2 w-full rounded-[999px] border-[3px] border-[rgba(255,255,255,0.92)] bg-background px-2 py-0.5 shadow-2xl"
-        >
-          <button
-            type="button"
-            class="shrink-0 h-9 w-9 rounded-full border border-border text-muted-foreground hover:text-foreground hover:border-foreground hover:bg-secondary cursor-move select-none"
-            data-tauri-drag-region
-            onmousedown={onCompactDragHandleMouseDown}
-            aria-label="Move window"
-            title="Move window"
-          >
-            <span data-tauri-drag-region class="text-base leading-none">⋮</span>
-          </button>
-
-          <button
-            type="button"
-            class={`shrink-0 flex items-center justify-center h-9 w-9 rounded-full border text-sm font-semibold transition-colors ${
-              compactScopesSidebarOpen
-                ? "border-foreground bg-secondary text-foreground"
-                : "border-border text-muted-foreground hover:text-foreground hover:border-foreground hover:bg-secondary"
-            }`}
-            onclick={toggleCompactScopesSidebar}
-            aria-label={compactScopesSidebarOpen
-              ? "Hide project scopes"
-              : "Show project scopes"}
-            aria-expanded={compactScopesSidebarOpen}
-            aria-controls="compact-session-sidebar"
-            title={compactScopeTooltip}
-          >
-            P
-          </button>
-
-          <div class="flex-1 min-w-0">
-            <PromptInput
-              value={activePromptDraft}
-              attachments={activePromptAttachmentDraft}
-              oninput={onPromptInput}
-              onattachmentschange={onPromptAttachmentsChange}
-              onsubmit={onSubmit}
-              oncancel={onCancel}
-              onslashcommand={onSlashCommand}
-              onnewchat={onNewChat}
-              onmodelchange={onModelChange}
-              onthinkingchange={onThinkingChange}
-              onmodelfilterchange={onModelFilterChange}
-              {isLoading}
-              disabled={!activeRuntime || !sessionStarted}
-              placeholder={activeRuntime && sessionStarted
-                ? "What would you like to get done today?"
-                : "Create a session to begin..."}
-              model={currentModel}
-              provider={currentProvider}
-              thinkingLevel={currentThinkingLevel}
-              supportsImageInput={currentModelSupportsImageInput}
-              {supportsThinking}
-              {availableThinkingLevels}
-              models={availableModels}
-              modelsLoading={isModelsLoading}
-              modelChanging={isSettingModel}
-              thinkingChanging={isSettingThinking}
-              enabledModels={activeRuntime?.enabledModels}
-              modelFilter={settingsStore.modelFilter}
-              autofocus={true}
-              {chatHasMessages}
-              compact={true}
-            />
-          </div>
-
-          <button
-            type="button"
-            class="shrink-0 flex items-center justify-center h-9 w-9 rounded-full border border-border text-muted-foreground hover:text-foreground hover:border-foreground hover:bg-secondary transition-colors"
-            onclick={enterFullMode}
-            aria-label="Switch to full mode"
-            title="Full mode"
-          >
-            <svg
-              aria-hidden="true"
-              class="h-4 w-4"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              stroke-width="2.2"
-              stroke-linecap="round"
-              stroke-linejoin="round"
-            >
-              <path d="M10 10L5 5" />
-              <path d="M5 8V5H8" />
-              <path d="M14 14L19 19" />
-              <path d="M16 19H19V16" />
-            </svg>
-          </button>
-        </div>
-
-        <button
-          type="button"
-          class="absolute right-0 top-1/2 z-10 h-10 w-2 translate-x-1/2 -translate-y-1/2 rounded-full bg-white/45 opacity-70 transition-opacity hover:opacity-100 active:opacity-100 cursor-ew-resize"
-          onmousedown={(event) => onCompactResizeHandleMouseDown(event, "East")}
-          aria-label="Resize compact width from right edge"
-          title="Resize width"
-        ></button>
-      </div>
-    </section>
+      </section>
+    {/if}
   </main>
 {:else}
   <main class="relative flex w-full h-screen overflow-hidden">
+    <button
+      type="button"
+      class="absolute top-3 right-14 z-20 flex items-center justify-center h-9 w-9 rounded border border-border text-muted-foreground hover:text-foreground hover:border-foreground hover:bg-secondary transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+      onclick={onPopOutActiveSession}
+      disabled={!activeSession}
+      aria-label="Detach Session"
+      title={activeSession ? "Detach Session" : "No active session"}
+    >
+      <svg
+        aria-hidden="true"
+        class="h-4 w-4"
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        stroke-width="2"
+      >
+        <rect x="4" y="4" width="16" height="12" rx="2"></rect>
+        <path d="M9 20h6"></path>
+      </svg>
+    </button>
+
     <button
       type="button"
       class="absolute top-3 right-4 z-20 flex items-center justify-center h-9 w-9 rounded border border-border text-muted-foreground hover:text-foreground hover:border-foreground hover:bg-secondary transition-colors"
@@ -1548,6 +1791,7 @@
       oncreatesession={createSessionFromInput}
       onselectscope={onSelectScope}
       onselecthistory={onSelectHistory}
+      onopenhistorywindow={onOpenHistoryInCompactWindow}
       onremovehistory={onRemoveHistory}
       onremovescope={onRemoveScope}
       ontogglescopecollapse={async (scope) => {

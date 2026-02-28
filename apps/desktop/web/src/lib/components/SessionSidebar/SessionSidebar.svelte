@@ -26,6 +26,10 @@
       projectDir: string,
       history: PersistedSessionHistoryItem,
     ) => void | Promise<void>;
+    onopenhistorywindow?: (
+      projectDir: string,
+      history: PersistedSessionHistoryItem,
+    ) => void | Promise<void>;
     onprojectdirinput?: (value: string) => void;
     onremovescope?: (projectDir: string) => void | Promise<void>;
     ontogglescopecollapse?: (projectDir: string) => void;
@@ -48,6 +52,7 @@
     onselectscope,
     onselecthistory,
     onremovehistory,
+    onopenhistorywindow,
     onprojectdirinput,
     onremovescope,
     ontogglescopecollapse,
@@ -288,6 +293,16 @@
     await onselectscope?.(projectDir);
   }
 
+  async function handleOpenHistoryInWindow(
+    projectDir: string,
+    history: PersistedSessionHistoryItem,
+    event: MouseEvent,
+  ): Promise<void> {
+    event.stopPropagation();
+    hideHistoryTooltip();
+    await onopenhistorywindow?.(projectDir, history);
+  }
+
   function historyDeletionKey(history: PersistedSessionHistoryItem): string {
     return history.filePath.trim();
   }
@@ -364,7 +379,7 @@
   id="session-sidebar"
   class={cn(
     "h-full shrink-0 border-r border-border bg-card/40 backdrop-blur-xs flex flex-col transition-[width] duration-200",
-    collapsed ? "w-16" : "w-80",
+    collapsed ? "w-12" : "w-80",
   )}
   aria-label="Project scopes"
 >
@@ -425,7 +440,7 @@
     {:else}
       <button
         type="button"
-        class="mt-2 inline-flex h-8 w-full items-center justify-center rounded border border-border text-sm hover:bg-secondary disabled:opacity-50"
+        class="mt-2 mx-auto inline-flex h-8 w-8 items-center justify-center rounded border border-border text-sm hover:bg-secondary disabled:opacity-50"
         onclick={() => oncreatesession?.()}
         disabled={creating}
         onmouseenter={(event) => showHistoryTooltip(event, "Create session")}
@@ -454,7 +469,7 @@
           <button
             type="button"
             class={cn(
-              "w-full h-10 rounded border text-sm font-medium border-border hover:bg-secondary",
+              "mx-auto w-8 h-8 rounded border text-sm font-medium border-border hover:bg-secondary",
               projectDir === activeProjectDir &&
                 "bg-secondary border-foreground",
             )}
@@ -684,6 +699,28 @@
                         </div>
                       </button>
 
+                      {#if onopenhistorywindow}
+                        <button
+                          type="button"
+                          class="shrink-0 inline-flex h-5 w-5 items-center justify-center rounded text-muted-foreground hover:text-foreground hover:bg-secondary opacity-0 group-hover/session:opacity-100 transition-opacity"
+                          onclick={(e) =>
+                            handleOpenHistoryInWindow(projectDir, history, e)}
+                          aria-label="Open session in compact window"
+                          title="Open in compact window"
+                        >
+                          <svg
+                            class="h-3 w-3"
+                            viewBox="0 0 24 24"
+                            fill="none"
+                            stroke="currentColor"
+                            stroke-width="2"
+                          >
+                            <rect x="3" y="4" width="18" height="14" rx="2" />
+                            <path d="M8 20h8" />
+                          </svg>
+                        </button>
+                      {/if}
+
                       {#if onremovehistory}
                         {#if isPendingHistoryDeletion(history)}
                           <div class="shrink-0 flex items-center gap-1">
@@ -779,7 +816,7 @@
 
   {#if historyTooltip.visible}
     <div
-      class="fixed z-50 pointer-events-none px-2 py-1 rounded border border-border bg-input-background text-foreground text-[11px] shadow-xl whitespace-pre-wrap wrap-break-word"
+      class="fixed z-50 pointer-events-none px-2 py-1 rounded border border-border bg-input-background text-foreground text-[11px] whitespace-pre-wrap wrap-break-word"
       style={`left: ${historyTooltip.x}px; top: ${historyTooltip.y}px; max-width: min(420px, calc(100vw - 16px));`}
       role="tooltip"
     >

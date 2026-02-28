@@ -16,7 +16,8 @@
         "width": 1024,
         "height": 768,
         "theme": "Dark",
-        "transparent": true
+        "transparent": true,
+        "shadow": false
       }
     ],
     "security": {
