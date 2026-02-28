@@ -1,6 +1,6 @@
 # Graphone Feature Availability (User Guide)
 
-_Last updated: 2026-02-27_
+_Last updated: 2026-02-28_
 
 This page helps you quickly understand what to expect from **Graphone** today, especially if you already know the pi terminal app (TUI).
 
@@ -14,53 +14,94 @@ This page helps you quickly understand what to expect from **Graphone** today, e
 
 ## ✅ Available now
 
+### Sessions & project scope
+
 - Multi-session chat experience
 - Start a new chat while another session is still generating (parallel session creation)
+- New chat creation (`/new`)
+- Session persistence and reopening from sidebar history
 - Project-scope sidebar with session history
 - Session activity indicators in the sidebar/history list (idle vs active)
+- Deleting a **single session** from a project scope
+- Deleting an entire project scope
+
+### UI modes & layout
+
 - Full-mode and compact-mode UI toggle
 - Compact mode activity rail + collapsible project-scope drawer
 - Resizable compact window width (left/right drag handles)
 - Prompt draft is preserved when switching between full and compact mode
 - Window placement/size is preserved when toggling compact mode
-- Deleting an entire project scope
-- Deleting a **single session** from a project scope
+
+### Chat generation & content display
+
 - Real-time streaming assistant responses
-- Tool activity display (calls/results) with readable formatting
 - Thinking/reasoning block display
 - Markdown rendering in assistant responses
+- Tool activity display (calls/results) with readable formatting
+- Stop/cancel current generation
+
+### Model controls & context
+
 - Model selection from available providers/models
 - Thinking level selection (when supported by model)
-- New chat creation (`/new`)
-- Session persistence and reopening from sidebar history
 - Usage/context indicator in the status area
-- Stop/cancel current generation
+
+### Authentication
+
+- OAuth login/logout command flow in the GUI (`/login`, `/logout`)
+
+### Safety & lifecycle
+
 - Active generations are aborted during app shutdown to avoid orphaned runs
+
+### Attachments
+
 - Image attachments in the prompt composer (paste, drag/drop, file picker)
 
 ---
 
 ## 🟡 Available with limitations
 
-- Image attachments are model-dependent (send is blocked on text-only models), limited to 4 images/message, 5MB/image, and PNG/JPEG/GIF/WebP payloads
+### Image support limits
+
+- Image attachments are model-dependent (send is blocked on text-only models)
+- Limited to 4 images/message and 5MB/image
+- Supported payloads: PNG/JPEG/GIF/WebP
+
+### Templates, skills, and extensions
+
 - Prompt templates and skills can work, but there is no full dedicated browser-style management UI yet
 - Extension-powered features can run, but Graphone does not yet expose all interactive extension UI capabilities available in the terminal experience
+
+### Session resume parity
+
 - Session resume works through sidebar/history flow; command-level parity is still incomplete
 
 ---
 
 ## ❌ Not available yet (compared to pi TUI)
 
-- Login/logout command flow in the GUI (`/login`, `/logout`)
+### Input command flow
+
 - `@` file reference picker in the input box
 - `!command` / `!!command` prompt behavior
+
+### Advanced command/workflow parity
+
 - Full queued message behavior parity (steer/follow-up queue UX)
 - Full command parity for advanced session/workflow commands, including:
   - `/settings`, `/scoped-models`, `/fork`, `/tree`, `/resume`
   - `/export`, `/share`, `/copy`, `/name`, `/session`
   - `/compact` command parity (compact mode is available via the GUI toggle), `/reload`, `/hotkeys`, `/changelog`, `/quit`
+
+### Keyboard and branching workflows
+
 - TUI-style keyboard shortcut parity (model cycling, thinking cycling, tree/fork shortcuts, etc.)
 - Full tree-branch navigation and branch summary workflow parity
+
+### TUI configuration parity
+
 - Full theme/settings/package management parity with TUI
 
 ---
