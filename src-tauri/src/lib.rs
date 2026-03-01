@@ -1,5 +1,6 @@
 mod commands;
 mod logger;
+mod platform;
 mod sidecar;
 mod state;
 mod types;
