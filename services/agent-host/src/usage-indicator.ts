@@ -71,7 +71,9 @@ export function buildUsageIndicator(
   if (totalCacheRead) tokenParts.push(`R${formatTokens(totalCacheRead)}`);
   if (totalCacheWrite) tokenParts.push(`W${formatTokens(totalCacheWrite)}`);
   if (totalCost || usingSubscription) {
-    tokenParts.push(`$${totalCost.toFixed(3)}${usingSubscription ? " (sub)" : ""}`);
+    tokenParts.push(
+      `$${totalCost.toFixed(3)}${usingSubscription ? " (sub)" : ""}`,
+    );
   }
 
   const autoIndicator = session.autoCompactionEnabled ? " (auto)" : "";
@@ -81,7 +83,9 @@ export function buildUsageIndicator(
       : `${contextPercentDisplay}%/${formatTokens(contextWindow)}${autoIndicator}`;
 
   const tokenStatsText = tokenParts.join(" ");
-  const fullText = tokenStatsText ? `${tokenStatsText} ${contextText}` : contextText;
+  const fullText = tokenStatsText
+    ? `${tokenStatsText} ${contextText}`
+    : contextText;
 
   const contextSeverity: ContextSeverity =
     contextPercentValue > 90

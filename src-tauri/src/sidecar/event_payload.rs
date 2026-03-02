@@ -71,6 +71,8 @@ pub(crate) fn compact_session_event_for_frontend(event: serde_json::Value) -> se
         Some("tool_execution_start") => compact_tool_execution_start_event(&event),
         Some("tool_execution_update") => compact_tool_execution_update_event(&event),
         Some("tool_execution_end") => compact_tool_execution_end_event(&event),
+        Some("auto_compaction_start") => compact_auto_compaction_start_event(&event),
+        Some("auto_compaction_end") => compact_auto_compaction_end_event(&event),
         Some("message_end") => {
             let message = event.get("message");
 
@@ -104,6 +106,65 @@ pub(crate) fn compact_session_event_for_frontend(event: serde_json::Value) -> se
         }
         _ => event,
     }
+}
+
+fn compact_auto_compaction_start_event(event: &serde_json::Value) -> serde_json::Value {
+    let reason = event
+        .get("reason")
+        .and_then(|value| value.as_str())
+        .unwrap_or("threshold");
+
+    serde_json::json!({
+        "type": "auto_compaction_start",
+        "reason": reason,
+    })
+}
+
+fn compact_auto_compaction_end_event(event: &serde_json::Value) -> serde_json::Value {
+    const MAX_SUMMARY_CHARS: usize = 12_000;
+
+    let aborted = event
+        .get("aborted")
+        .and_then(|value| value.as_bool())
+        .unwrap_or(false);
+
+    let will_retry = event
+        .get("willRetry")
+        .and_then(|value| value.as_bool())
+        .unwrap_or(false);
+
+    let error_message = event
+        .get("errorMessage")
+        .and_then(|value| value.as_str())
+        .map(|value| truncate_string(value, 2000));
+
+    let summary = event
+        .get("result")
+        .and_then(|result| result.get("summary"))
+        .and_then(|value| value.as_str())
+        .map(|value| truncate_string(value, MAX_SUMMARY_CHARS));
+
+    let tokens_before = event
+        .get("result")
+        .and_then(|result| result.get("tokensBefore"))
+        .and_then(|value| value.as_u64());
+
+    let result = if summary.is_some() || tokens_before.is_some() {
+        serde_json::json!({
+            "summary": summary,
+            "tokensBefore": tokens_before,
+        })
+    } else {
+        serde_json::Value::Null
+    };
+
+    serde_json::json!({
+        "type": "auto_compaction_end",
+        "aborted": aborted,
+        "willRetry": will_retry,
+        "errorMessage": error_message,
+        "result": result,
+    })
 }
 
 fn truncate_string(value: &str, max_chars: usize) -> String {

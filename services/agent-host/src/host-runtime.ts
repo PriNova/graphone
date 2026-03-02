@@ -403,9 +403,56 @@ export class HostRuntime {
       return event;
     }
 
-    const eventType = (event as { type?: unknown }).type;
-    if (eventType === "agent_end") {
+    const source = event as {
+      type?: unknown;
+      reason?: unknown;
+      aborted?: unknown;
+      willRetry?: unknown;
+      errorMessage?: unknown;
+      result?: { summary?: unknown; tokensBefore?: unknown } | unknown;
+    };
+
+    if (source.type === "agent_end") {
       return { type: "agent_end" };
+    }
+
+    if (source.type === "auto_compaction_start") {
+      return {
+        type: "auto_compaction_start",
+        reason: source.reason === "overflow" ? "overflow" : "threshold",
+      };
+    }
+
+    if (source.type === "auto_compaction_end") {
+      const resultSource =
+        source.result && typeof source.result === "object"
+          ? (source.result as { summary?: unknown; tokensBefore?: unknown })
+          : null;
+
+      return {
+        type: "auto_compaction_end",
+        aborted: source.aborted === true,
+        willRetry: source.willRetry === true,
+        errorMessage:
+          typeof source.errorMessage === "string"
+            ? source.errorMessage
+            : undefined,
+        result:
+          resultSource &&
+          (typeof resultSource.summary === "string" ||
+            typeof resultSource.tokensBefore === "number")
+            ? {
+                summary:
+                  typeof resultSource.summary === "string"
+                    ? resultSource.summary
+                    : undefined,
+                tokensBefore:
+                  typeof resultSource.tokensBefore === "number"
+                    ? resultSource.tokensBefore
+                    : undefined,
+              }
+            : null,
+      };
     }
 
     return event;

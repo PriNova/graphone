@@ -412,7 +412,8 @@
       refreshSessions: () => sessionsStore.refreshFromBackend(),
       getSessions: () => sessionsStore.sessions,
       getActiveSession: () => sessionsStore.activeSession,
-      setActiveSession: (sessionId) => sessionsStore.setActiveSession(sessionId),
+      setActiveSession: (sessionId) =>
+        sessionsStore.setActiveSession(sessionId),
       ensureRuntime: async (descriptor) => {
         await ensureRuntime(descriptor);
       },
@@ -662,7 +663,10 @@
         // Ignore close errors - session may already be closed in backend
       }
 
-      sessionRuntimes = removeRuntimeForSession(sessionRuntimes, openSession.sessionId);
+      sessionRuntimes = removeRuntimeForSession(
+        sessionRuntimes,
+        openSession.sessionId,
+      );
       pendingSessionSidebarSync.delete(openSession.sessionId);
       clearOptimisticFirstPrompt(openSession.sessionId);
     }
@@ -692,7 +696,10 @@
         // Ignore close errors - session may not exist in backend
       }
       // Clean up runtime state
-      sessionRuntimes = removeRuntimeForSession(sessionRuntimes, session.sessionId);
+      sessionRuntimes = removeRuntimeForSession(
+        sessionRuntimes,
+        session.sessionId,
+      );
       pendingSessionSidebarSync.delete(session.sessionId);
       clearOptimisticFirstPrompt(session.sessionId);
     }
@@ -947,7 +954,8 @@
           refreshSessions: async () => sessionsStore.refreshFromBackend(),
           getSessions: () => sessionsStore.sessions,
           getActiveSession: () => sessionsStore.activeSession,
-          setActiveSession: (sessionId) => sessionsStore.setActiveSession(sessionId),
+          setActiveSession: (sessionId) =>
+            sessionsStore.setActiveSession(sessionId),
           ensureRuntime: async (descriptor) => {
             await ensureRuntime(descriptor);
           },
@@ -1038,7 +1046,7 @@
     {showCompactActivityRailShell}
     {showCompactActivityRail}
     {compactRailViewportClass}
-    compactActivityItems={compactActivityItems}
+    {compactActivityItems}
     {isStreaming}
     {activeRuntime}
     {sessionStarted}

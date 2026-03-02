@@ -259,14 +259,14 @@
                 collapsed={false}
                 {collapsedScopes}
                 ontoggle={ontogglecompactscopes}
-                onprojectdirinput={onprojectdirinput}
-                oncreatesession={oncreatesession}
-                onselectscope={onselectscope}
-                onselecthistory={onselecthistory}
-                onopenhistorywindow={onopenhistorywindow}
-                onremovehistory={onremovehistory}
-                onremovescope={onremovescope}
-                ontogglescopecollapse={ontogglescopecollapse}
+                {onprojectdirinput}
+                {oncreatesession}
+                {onselectscope}
+                {onselecthistory}
+                {onopenhistorywindow}
+                {onremovehistory}
+                {onremovescope}
+                {ontogglescopecollapse}
               />
             </div>
           </div>
@@ -277,7 +277,8 @@
         <button
           type="button"
           class="absolute left-0 top-1/2 z-10 h-10 w-2 -translate-x-1/2 -translate-y-1/2 rounded-full bg-white/45 opacity-70 transition-opacity hover:opacity-100 active:opacity-100 cursor-ew-resize"
-          onmousedown={(event) => oncompactresizehandlemousedown?.(event, "West")}
+          onmousedown={(event) =>
+            oncompactresizehandlemousedown?.(event, "West")}
           aria-label="Resize compact width from left edge"
           title="Resize width"
         ></button>
@@ -322,13 +323,13 @@
               attachments={activePromptAttachmentDraft}
               oninput={onpromptinput}
               onattachmentschange={onpromptattachmentschange}
-              onsubmit={onsubmit}
-              oncancel={oncancel}
-              onslashcommand={onslashcommand}
-              onnewchat={onnewchat}
-              onmodelchange={onmodelchange}
-              onthinkingchange={onthinkingchange}
-              onmodelfilterchange={onmodelfilterchange}
+              {onsubmit}
+              {oncancel}
+              {onslashcommand}
+              {onnewchat}
+              {onmodelchange}
+              {onthinkingchange}
+              {onmodelfilterchange}
               {isLoading}
               disabled={!activeRuntime || !sessionStarted}
               placeholder={activeRuntime && sessionStarted
@@ -392,7 +393,8 @@
         <button
           type="button"
           class="absolute right-0 top-1/2 z-10 h-10 w-2 translate-x-1/2 -translate-y-1/2 rounded-full bg-white/45 opacity-70 transition-opacity hover:opacity-100 active:opacity-100 cursor-ew-resize"
-          onmousedown={(event) => oncompactresizehandlemousedown?.(event, "East")}
+          onmousedown={(event) =>
+            oncompactresizehandlemousedown?.(event, "East")}
           aria-label="Resize compact width from right edge"
           title="Resize width"
         ></button>

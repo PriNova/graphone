@@ -160,6 +160,10 @@ export interface AutoCompactionEndEvent {
   aborted: boolean;
   willRetry: boolean;
   errorMessage?: string;
+  result?: {
+    summary?: string;
+    tokensBefore?: number;
+  } | null;
 }
 
 export interface AutoRetryStartEvent {

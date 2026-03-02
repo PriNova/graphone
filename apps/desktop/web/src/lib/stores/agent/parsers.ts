@@ -141,7 +141,8 @@ export function parseOAuthLoginUpdates(value: unknown): OAuthLoginUpdate[] {
             ? update.placeholder
             : undefined,
         allowEmpty: update.allowEmpty === true,
-        inputType: update.inputType === "manual_code" ? "manual_code" : "prompt",
+        inputType:
+          update.inputType === "manual_code" ? "manual_code" : "prompt",
       });
       continue;
     }
@@ -158,7 +159,9 @@ export function parseOAuthLoginUpdates(value: unknown): OAuthLoginUpdate[] {
   return updates;
 }
 
-export function parseUsageIndicator(value: unknown): UsageIndicatorSnapshot | null {
+export function parseUsageIndicator(
+  value: unknown,
+): UsageIndicatorSnapshot | null {
   if (!value || typeof value !== "object") {
     return null;
   }
@@ -183,7 +186,8 @@ export function parseUsageIndicator(value: unknown): UsageIndicatorSnapshot | nu
   return {
     tokenStatsText,
     contextText,
-    fullText: fullText || [tokenStatsText, contextText].filter(Boolean).join(" "),
+    fullText:
+      fullText || [tokenStatsText, contextText].filter(Boolean).join(" "),
     contextSeverity: parseUsageContextSeverity(source.contextSeverity),
   };
 }
@@ -238,10 +242,8 @@ export function sortAvailableModels(
   currentModel: string,
 ): AvailableModel[] {
   return [...models].sort((a, b) => {
-    const aIsCurrent =
-      a.provider === currentProvider && a.id === currentModel;
-    const bIsCurrent =
-      b.provider === currentProvider && b.id === currentModel;
+    const aIsCurrent = a.provider === currentProvider && a.id === currentModel;
+    const bIsCurrent = b.provider === currentProvider && b.id === currentModel;
 
     if (aIsCurrent && !bIsCurrent) return -1;
     if (!aIsCurrent && bIsCurrent) return 1;

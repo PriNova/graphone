@@ -67,7 +67,9 @@ export function hasPersistedSessionHistory(
   descriptors: SessionDescriptor[],
   historyByScope: Record<string, PersistedSessionHistoryItem[]>,
 ): boolean {
-  const descriptor = descriptors.find((session) => session.sessionId === sessionId);
+  const descriptor = descriptors.find(
+    (session) => session.sessionId === sessionId,
+  );
 
   if (!descriptor) {
     return true;

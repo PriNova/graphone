@@ -556,11 +556,19 @@ export function handleAgentEvent(
     case "auto_compaction_start":
       break;
 
-    case "auto_compaction_end":
+    case "auto_compaction_end": {
+      const summary = event.result?.summary?.trim();
+      if (summary) {
+        runtime.messages.addSystemMessage(
+          `Auto-compaction summary:\n${summary}`,
+        );
+      }
+
       runtime.agent.refreshState().catch((error) => {
         console.warn("Failed to refresh agent state after compaction:", error);
       });
       break;
+    }
 
     case "auto_retry_start":
       break;

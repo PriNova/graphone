@@ -1,8 +1,5 @@
 <script lang="ts">
-  import {
-    AssistantMessage,
-    UserMessage,
-  } from "$lib/components/Messages";
+  import { AssistantMessage, UserMessage } from "$lib/components/Messages";
   import { PromptInput } from "$lib/components/PromptInput";
   import { SessionSidebar } from "$lib/components/SessionSidebar";
   import { StatusBar } from "$lib/components/StatusBar";
@@ -212,14 +209,14 @@
     collapsed={sidebarCollapsed}
     {collapsedScopes}
     ontoggle={ontogglesidebar}
-    onprojectdirinput={onprojectdirinput}
-    oncreatesession={oncreatesession}
-    onselectscope={onselectscope}
-    onselecthistory={onselecthistory}
-    onopenhistorywindow={onopenhistorywindow}
-    onremovehistory={onremovehistory}
-    onremovescope={onremovescope}
-    ontogglescopecollapse={ontogglescopecollapse}
+    {onprojectdirinput}
+    {oncreatesession}
+    {onselectscope}
+    {onselecthistory}
+    {onopenhistorywindow}
+    {onremovehistory}
+    {onremovescope}
+    {ontogglescopecollapse}
   />
 
   <section
@@ -263,7 +260,10 @@
         {:else}
           {#each messages as message (message.id)}
             {#if message.type === "user"}
-              <UserMessage content={message.content} timestamp={message.timestamp} />
+              <UserMessage
+                content={message.content}
+                timestamp={message.timestamp}
+              />
             {:else}
               <AssistantMessage
                 content={message.content}
@@ -281,13 +281,13 @@
           attachments={activePromptAttachmentDraft}
           oninput={onpromptinput}
           onattachmentschange={onpromptattachmentschange}
-          onsubmit={onsubmit}
-          oncancel={oncancel}
-          onslashcommand={onslashcommand}
-          onnewchat={onnewchat}
-          onmodelchange={onmodelchange}
-          onthinkingchange={onthinkingchange}
-          onmodelfilterchange={onmodelfilterchange}
+          {onsubmit}
+          {oncancel}
+          {onslashcommand}
+          {onnewchat}
+          {onmodelchange}
+          {onthinkingchange}
+          {onmodelfilterchange}
           {isLoading}
           disabled={!activeRuntime || !sessionStarted}
           placeholder={activeRuntime && sessionStarted

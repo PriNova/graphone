@@ -13,14 +13,8 @@ export type ThinkingLevel =
   | "high"
   | "xhigh";
 
-export const VALID_THINKING_LEVELS: ReadonlySet<ThinkingLevel> = new Set<ThinkingLevel>([
-  "off",
-  "minimal",
-  "low",
-  "medium",
-  "high",
-  "xhigh",
-]);
+export const VALID_THINKING_LEVELS: ReadonlySet<ThinkingLevel> =
+  new Set<ThinkingLevel>(["off", "minimal", "low", "medium", "high", "xhigh"]);
 
 export type UsageContextSeverity = "normal" | "warning" | "error";
 

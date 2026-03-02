@@ -1,8 +1,4 @@
-import type {
-  ContentBlock,
-  Message,
-  UserContentBlock,
-} from "$lib/types/agent";
+import type { ContentBlock, Message, UserContentBlock } from "$lib/types/agent";
 
 export type CompactActivityItem =
   | {
@@ -33,7 +29,9 @@ export type CompactActivityItem =
       };
     };
 
-export function buildCompactActivityItems(messages: Message[]): CompactActivityItem[] {
+export function buildCompactActivityItems(
+  messages: Message[],
+): CompactActivityItem[] {
   if (messages.length === 0) {
     return [];
   }
@@ -58,7 +56,11 @@ export function buildCompactActivityItems(messages: Message[]): CompactActivityI
   const assistantMarkdownByMessageId = new Map<string, string>();
   let latestAssistantMessageIdWithText: string | null = null;
 
-  for (let messageIndex = startIdx; messageIndex < messages.length; messageIndex += 1) {
+  for (
+    let messageIndex = startIdx;
+    messageIndex < messages.length;
+    messageIndex += 1
+  ) {
     const message = messages[messageIndex];
     if (!message || message.type !== "assistant") {
       continue;
@@ -75,7 +77,11 @@ export function buildCompactActivityItems(messages: Message[]): CompactActivityI
 
   const items: CompactActivityItem[] = [];
 
-  for (let messageIndex = startIdx; messageIndex < messages.length; messageIndex += 1) {
+  for (
+    let messageIndex = startIdx;
+    messageIndex < messages.length;
+    messageIndex += 1
+  ) {
     const message = messages[messageIndex];
     if (!message) {
       continue;
@@ -90,7 +96,11 @@ export function buildCompactActivityItems(messages: Message[]): CompactActivityI
       continue;
     }
 
-    for (let blockIndex = 0; blockIndex < message.content.length; blockIndex += 1) {
+    for (
+      let blockIndex = 0;
+      blockIndex < message.content.length;
+      blockIndex += 1
+    ) {
       const block = message.content[blockIndex];
       if (!block) {
         continue;

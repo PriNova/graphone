@@ -18,9 +18,7 @@ export interface SessionBootstrapDependencies {
   createSession: (projectDir: string, sessionFile?: string) => Promise<void>;
   getWorkingDirectory: () => Promise<string>;
   getLastSelectedScope: () => string;
-  getScopeHistory: (
-    scope: string,
-  ) => PersistedSessionHistoryItem[] | undefined;
+  getScopeHistory: (scope: string) => PersistedSessionHistoryItem[] | undefined;
   setProjectDirInput: (value: string) => void;
   requestScrollToBottom: () => void;
   setCompactSessionMissing: (value: boolean) => void;
@@ -74,7 +72,10 @@ export async function bootstrapMainWindowSessions(
       const normalizedLast = normalizeScopePath(lastScope);
       const matchingSession = dependencies
         .getSessions()
-        .find((session) => normalizeScopePath(session.projectDir) === normalizedLast);
+        .find(
+          (session) =>
+            normalizeScopePath(session.projectDir) === normalizedLast,
+        );
 
       if (matchingSession) {
         dependencies.setActiveSession(matchingSession.sessionId);
@@ -140,7 +141,10 @@ export async function bootstrapSessions(
       return;
     }
 
-    await bootstrapCompactSessionWindow(dependencies.boundSessionId, dependencies);
+    await bootstrapCompactSessionWindow(
+      dependencies.boundSessionId,
+      dependencies,
+    );
     return;
   }
 
