@@ -2,7 +2,7 @@ use flate2::write::GzEncoder;
 use flate2::Compression;
 use std::env;
 use std::fs;
-use std::io;
+use std::io::{self, Write};
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
@@ -484,6 +484,142 @@ fn copy_external_koffi_runtime(
     );
 }
 
+fn copy_override_directory_contents(source: &Path, destination: &Path, label: &str) {
+    if !source.exists() {
+        return;
+    }
+
+    fs::create_dir_all(destination).unwrap_or_else(|error| {
+        panic!(
+            "Failed to create override destination directory {} for {}: {}",
+            destination.display(),
+            label,
+            error
+        )
+    });
+
+    for entry in fs::read_dir(source).unwrap_or_else(|error| {
+        panic!(
+            "Failed to read override directory {} for {}: {}",
+            source.display(),
+            label,
+            error
+        )
+    }) {
+        let entry = entry.unwrap_or_else(|error| {
+            panic!(
+                "Failed to iterate override directory {} for {}: {}",
+                source.display(),
+                label,
+                error
+            )
+        });
+
+        let source_path = entry.path();
+        let destination_path = destination.join(entry.file_name());
+        copy_path(&source_path, &destination_path).unwrap_or_else(|error| {
+            panic!(
+                "Failed to copy override asset for {} from {} to {}: {}",
+                label,
+                source_path.display(),
+                destination_path.display(),
+                error
+            )
+        });
+    }
+
+    println!(
+        "cargo:warning=Applied Graphone runtime override {} from {}",
+        label,
+        source.display()
+    );
+}
+
+fn append_markdown_if_missing(path: &Path, marker: &str, markdown: &str) {
+    if !path.exists() {
+        return;
+    }
+
+    let existing = fs::read_to_string(path).unwrap_or_else(|error| {
+        panic!(
+            "Failed to read markdown file {} for Graphone docs injection: {}",
+            path.display(),
+            error
+        )
+    });
+
+    if existing.contains(marker) {
+        return;
+    }
+
+    let mut file = fs::OpenOptions::new()
+        .append(true)
+        .open(path)
+        .unwrap_or_else(|error| {
+            panic!(
+                "Failed to open markdown file {} for Graphone docs injection: {}",
+                path.display(),
+                error
+            )
+        });
+
+    if !existing.ends_with('\n') {
+        file.write_all(b"\n").unwrap_or_else(|error| {
+            panic!(
+                "Failed to append newline to markdown file {}: {}",
+                path.display(),
+                error
+            )
+        });
+    }
+
+    file.write_all(markdown.as_bytes()).unwrap_or_else(|error| {
+        panic!(
+            "Failed to append Graphone docs section to {}: {}",
+            path.display(),
+            error
+        )
+    });
+}
+
+fn apply_graphone_runtime_overrides(project_root: &Path, destination: &Path) {
+    let overrides_root = project_root
+        .join("services")
+        .join("agent-host")
+        .join("runtime-overrides");
+
+    if !overrides_root.exists() {
+        return;
+    }
+
+    copy_override_directory_contents(
+        &overrides_root.join("docs"),
+        &destination.join("docs"),
+        "docs",
+    );
+
+    copy_override_directory_contents(
+        &overrides_root.join("examples"),
+        &destination.join("examples"),
+        "examples",
+    );
+
+    append_markdown_if_missing(
+        &destination.join("docs").join("extensions.md"),
+        "<!-- graphone-tool-result-html-doc -->",
+        "\n## Graphone additions\n\n### Tool result HTML rendering (`details._html`)\n\n<!-- graphone-tool-result-html-doc -->\n\nGraphone can render sanitized HTML from `ToolResultMessage.details._html` when present.\nUse this for custom extension tools that need presentational output.\n\nSee [graphone-tool-result-html.md](./graphone-tool-result-html.md) for contract, sanitizer policy, and extension examples.\n",
+    );
+
+    append_markdown_if_missing(
+        &destination
+            .join("examples")
+            .join("extensions")
+            .join("README.md"),
+        "<!-- graphone-tool-result-html-example -->",
+        "\n## Graphone additions\n\n<!-- graphone-tool-result-html-example -->\n\n- `tool-result-html.ts` — Minimal extension showing how to return styled HTML in `details._html` for Graphone.\n",
+    );
+}
+
 fn copy_runtime_assets(
     source: &SidecarSource,
     project_root: &Path,
@@ -589,6 +725,8 @@ fn copy_runtime_assets(
         &destination.join("photon_rs_bg.wasm"),
         "photon_rs_bg.wasm",
     );
+
+    apply_graphone_runtime_overrides(project_root, destination);
 
     if external_koffi {
         copy_external_koffi_runtime(project_root, destination, target_os, target_triple);
@@ -852,6 +990,10 @@ fn build_sidecar() {
     println!(
         "cargo:rerun-if-changed={}",
         graphone_host_path.join("src").display()
+    );
+    println!(
+        "cargo:rerun-if-changed={}",
+        graphone_host_path.join("runtime-overrides").display()
     );
 
     println!(

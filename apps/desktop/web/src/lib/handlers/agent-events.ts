@@ -1,6 +1,10 @@
-import type { AgentEvent, ContentBlock } from "$lib/types/agent";
+import type {
+  AgentEvent,
+  ContentBlock,
+  ToolResultMessage,
+} from "$lib/types/agent";
 import type { AgentStore } from "$lib/stores/agent.svelte";
-import type { MessagesStore } from "$lib/stores/messages.svelte";
+import { MessagesStore } from "$lib/stores/messages.svelte";
 
 export interface SessionRuntimeForEvents {
   agent: AgentStore;
@@ -117,6 +121,36 @@ function extractAssistantErrorMessage(message: {
   return null;
 }
 
+function buildToolResultMessage(payload: {
+  toolCallId?: unknown;
+  toolName?: unknown;
+  result?: unknown;
+  content?: unknown;
+  details?: unknown;
+  isError?: unknown;
+  timestamp?: unknown;
+}): ToolResultMessage | null {
+  const normalizedPayload =
+    payload.result !== undefined
+      ? {
+          toolCallId: payload.toolCallId,
+          toolName: payload.toolName,
+          isError: payload.isError,
+          timestamp: payload.timestamp,
+          ...MessagesStore.extractToolResultPayload(payload.result),
+        }
+      : {
+          toolCallId: payload.toolCallId,
+          toolName: payload.toolName,
+          content: payload.content,
+          details: payload.details,
+          isError: payload.isError,
+          timestamp: payload.timestamp,
+        };
+
+  return MessagesStore.coerceToolResultMessage(normalizedPayload);
+}
+
 // Event handlers for agent events
 export function handleAgentStart(runtime: SessionRuntimeForEvents): void {
   runtime.agent.setLoading(true);
@@ -151,17 +185,18 @@ export function handleMessageStart(
   // Fallback path: toolResult messages contain the same payload as tool_execution_end
   // and can be used to attach results if a tool_execution event was dropped.
   if (event.message.role === "toolResult") {
-    const toolCallId =
-      typeof event.message.toolCallId === "string"
-        ? event.message.toolCallId
-        : null;
-    if (!toolCallId) return;
+    const toolResult = buildToolResultMessage({
+      toolCallId: event.message.toolCallId,
+      toolName: event.message.toolName,
+      content: event.message.content,
+      details: event.message.details,
+      isError: event.message.isError,
+      timestamp: event.message.timestamp,
+    });
 
-    runtime.messages.updateToolCallResult(
-      toolCallId,
-      formatToolResult(event.message.content),
-      event.message.isError === true,
-    );
+    if (toolResult) {
+      runtime.messages.upsertToolResult(toolResult);
+    }
   }
 }
 
@@ -417,74 +452,6 @@ export function handleTurnEnd(runtime: SessionRuntimeForEvents): void {
   runtime.messages.finalizeStreamingMessage();
 }
 
-/**
- * Convert tool result to a displayable string.
- * Handles various result types (string, object, array, etc.)
- */
-function formatToolResult(result: unknown): string {
-  if (result === null || result === undefined) {
-    return "";
-  }
-
-  if (typeof result === "string") {
-    return result;
-  }
-
-  if (typeof result === "object") {
-    // Handle content array format from pi-mono AgentToolResult
-    if (Array.isArray(result)) {
-      const textParts: string[] = [];
-      for (const block of result) {
-        if (typeof block === "string") {
-          textParts.push(block);
-        } else if (block && typeof block === "object") {
-          const typedBlock = block as { type?: string; text?: string };
-          if (
-            typedBlock.type === "text" &&
-            typeof typedBlock.text === "string"
-          ) {
-            textParts.push(typedBlock.text);
-          }
-        }
-      }
-      if (textParts.length > 0) {
-        return textParts.join("\n");
-      }
-    }
-
-    // Handle { content: [...] } format
-    const obj = result as { content?: unknown; details?: unknown };
-    if (obj.content && Array.isArray(obj.content)) {
-      const textParts: string[] = [];
-      for (const block of obj.content) {
-        if (typeof block === "string") {
-          textParts.push(block);
-        } else if (block && typeof block === "object") {
-          const typedBlock = block as { type?: string; text?: string };
-          if (
-            typedBlock.type === "text" &&
-            typeof typedBlock.text === "string"
-          ) {
-            textParts.push(typedBlock.text);
-          }
-        }
-      }
-      if (textParts.length > 0) {
-        return textParts.join("\n");
-      }
-    }
-
-    // Fallback to JSON
-    try {
-      return JSON.stringify(result, null, 2);
-    } catch {
-      return "[Unable to display result]";
-    }
-  }
-
-  return String(result);
-}
-
 export function handleToolExecutionStart(
   runtime: SessionRuntimeForEvents,
   event: Extract<AgentEvent, { type: "tool_execution_start" }>,
@@ -500,11 +467,17 @@ export function handleToolExecutionEnd(
   runtime: SessionRuntimeForEvents,
   event: Extract<AgentEvent, { type: "tool_execution_end" }>,
 ): void {
-  runtime.messages.updateToolCallResult(
-    event.toolCallId,
-    formatToolResult(event.result),
-    event.isError,
-  );
+  const toolResult = buildToolResultMessage({
+    toolCallId: event.toolCallId,
+    toolName: event.toolName,
+    result: event.result,
+    isError: event.isError,
+    timestamp: Date.now(),
+  });
+
+  if (toolResult) {
+    runtime.messages.upsertToolResult(toolResult);
+  }
 }
 
 // Main event router

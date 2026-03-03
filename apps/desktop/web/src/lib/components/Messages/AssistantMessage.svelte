@@ -1,11 +1,16 @@
 <script lang="ts">
+  /* eslint-disable svelte/no-at-html-tags */
+  import DOMPurify from "dompurify";
+
   import MessageMarkdown from "$lib/components/Messages/MessageMarkdown.svelte";
+  import { MessagesStore } from "$lib/stores/messages.svelte";
   import { cn } from "$lib/utils/cn";
   import { computeToolCallSummary } from "$lib/utils/tool-call-summary";
   import type {
     ContentBlock,
     ThinkingBlock,
     ToolCall,
+    ToolResultMessage,
     TextBlock,
   } from "$lib/types/agent";
 
@@ -13,9 +18,10 @@
     content: ContentBlock[];
     timestamp?: Date;
     isStreaming?: boolean;
+    getToolResult?: (toolCallId: string) => ToolResultMessage | undefined;
   }
 
-  let { content, timestamp, isStreaming }: Props = $props();
+  let { content, timestamp, isStreaming, getToolResult }: Props = $props();
 
   // State for collapsible thinking blocks (default collapsed)
   let thinkingCollapsed = $state<Record<number, boolean>>({});
@@ -199,6 +205,121 @@
     return block.type === "text";
   }
 
+  function resolveToolResult(block: ToolCall): ToolResultMessage | undefined {
+    return getToolResult?.(block.id);
+  }
+
+  function resolveToolResultText(block: ToolCall): string | undefined {
+    const toolResult = resolveToolResult(block);
+    if (toolResult) {
+      return MessagesStore.formatToolResultContent(toolResult.content);
+    }
+
+    return block.result;
+  }
+
+  function resolveToolResultError(block: ToolCall): boolean {
+    const toolResult = resolveToolResult(block);
+    if (toolResult) {
+      return toolResult.isError;
+    }
+
+    return block.isError === true;
+  }
+
+  function isObjectRecord(value: unknown): value is Record<string, unknown> {
+    return typeof value === "object" && value !== null && !Array.isArray(value);
+  }
+
+  function resolveSanitizedToolResultHtml(block: ToolCall): string | null {
+    const toolResult = resolveToolResult(block);
+    if (!toolResult || !isObjectRecord(toolResult.details)) {
+      return null;
+    }
+
+    const rawHtml = toolResult.details._html;
+    if (typeof rawHtml !== "string") {
+      return null;
+    }
+
+    const trimmedHtml = rawHtml.trim();
+    if (trimmedHtml.length === 0) {
+      return null;
+    }
+
+    const sanitized = String(
+      DOMPurify.sanitize(trimmedHtml, {
+        ALLOWED_URI_REGEXP: /^(?:https?|mailto|tel):/,
+        FORBID_TAGS: ["script", "object", "embed", "form", "button"],
+        ALLOWED_ATTR: [
+          "src",
+          "href",
+          "class",
+          "style",
+          "srcset",
+          "alt",
+          "title",
+          "width",
+          "height",
+          "loading",
+          "name",
+          "id",
+          "xmlns",
+          "viewBox",
+          "preserveAspectRatio",
+          "fill",
+          "fill-rule",
+          "fill-opacity",
+          "stroke",
+          "stroke-width",
+          "stroke-linecap",
+          "stroke-linejoin",
+          "stroke-dasharray",
+          "stroke-dashoffset",
+          "stroke-opacity",
+          "opacity",
+          "transform",
+          "d",
+          "points",
+          "x",
+          "y",
+          "x1",
+          "y1",
+          "x2",
+          "y2",
+          "cx",
+          "cy",
+          "r",
+          "rx",
+          "ry",
+          "dx",
+          "dy",
+          "pathLength",
+          "marker-start",
+          "marker-mid",
+          "marker-end",
+          "font-family",
+          "font-size",
+          "font-weight",
+          "text-anchor",
+          "dominant-baseline",
+          "alignment-baseline",
+          "baseline-shift",
+          "role",
+          "aria-label",
+          "aria-labelledby",
+          "aria-hidden",
+          "focusable",
+          "tabindex",
+          "xlink:href",
+          "xmlns:xlink",
+        ],
+      }),
+    ).trim();
+
+    return sanitized.length > 0 ? sanitized : null;
+  }
+
   // Performance: Memoize computed values to avoid recalculating on every render.
   // These $derived values only recalculate when the content array changes,
   // not when parent components re-render or unrelated state changes.
@@ -208,8 +329,29 @@
   const truncatedResults = $derived.by(() => {
     const cache = new Map<string, TruncatedResult>();
     for (const block of content) {
-      if (block.type === "toolCall" && block.result !== undefined) {
-        cache.set(block.id, truncateResult(block.result));
+      if (block.type !== "toolCall") {
+        continue;
+      }
+
+      const result = resolveToolResultText(block);
+      if (result !== undefined) {
+        cache.set(block.id, truncateResult(result));
+      }
+    }
+    return cache;
+  });
+
+  // Cache sanitized tool-result HTML by toolCallId
+  const toolResultHtmlByCallId = $derived.by(() => {
+    const cache = new Map<string, string>();
+    for (const block of content) {
+      if (block.type !== "toolCall") {
+        continue;
+      }
+
+      const sanitizedHtml = resolveSanitizedToolResultHtml(block);
+      if (sanitizedHtml) {
+        cache.set(block.id, sanitizedHtml);
       }
     }
     return cache;
@@ -228,8 +370,11 @@
 
   // Helper functions to access cached values
   function getTruncatedResult(block: ToolCall): TruncatedResult | null {
-    if (block.result === undefined) return null;
     return truncatedResults.get(block.id) ?? null;
+  }
+
+  function getToolResultHtml(block: ToolCall): string | null {
+    return toolResultHtmlByCallId.get(block.id) ?? null;
   }
 
   function getToolCallSummary(block: ToolCall): string | null {
@@ -294,26 +439,30 @@
           {/if}
         </div>
       {:else if isToolCall(block)}
-        {@const hasResult = block.result !== undefined}
+        {@const resultText = resolveToolResultText(block)}
+        {@const isError = resolveToolResultError(block)}
+        {@const hasResult = resultText !== undefined}
         {@const truncated = getTruncatedResult(block)}
+        {@const toolResultHtml = getToolResultHtml(block)}
+        {@const hasToolResultHtml = toolResultHtml !== null}
         {@const callSummary = getToolCallSummary(block)}
         {@const collapsed = isToolCollapsed(block.id)}
-        {@const isReadResult = block.name === "read" && !block.isError}
+        {@const isReadResult = block.name === "read" && !isError}
         {@const isReadTruncated = isReadResult && !!truncated?.truncated}
         {@const showFullReadResult =
           isReadTruncated && isReadResultExpanded(block.id)}
         {@const readResultText = showFullReadResult
-          ? (block.result ?? truncated?.text ?? "")
+          ? (resultText ?? truncated?.text ?? "")
           : (truncated?.text ?? "")}
         <div
           class={cn(
             "mb-2 last:mb-0 border rounded overflow-hidden",
             !hasResult && "bg-foreground/3 dark:bg-f6fff5/[0.03] border-border",
             hasResult &&
-              !block.isError &&
+              !isError &&
               "bg-emerald-500/[0.03] dark:bg-emerald-500/[0.03] border-emerald-500/20",
             hasResult &&
-              block.isError &&
+              isError &&
               "bg-destructive/3 dark:bg-destructive/3 border-destructive/20",
           )}
         >
@@ -325,10 +474,10 @@
               !hasResult &&
                 "bg-foreground/5 dark:bg-f6fff5/[0.05] border-border text-muted-foreground hover:bg-foreground/8 dark:hover:bg-f6fff5/[0.08]",
               hasResult &&
-                !block.isError &&
+                !isError &&
                 "bg-emerald-500/10 border-emerald-500/20 text-emerald-600 dark:text-emerald-400 hover:bg-emerald-500/15",
               hasResult &&
-                block.isError &&
+                isError &&
                 "bg-destructive/10 border-destructive/20 text-destructive hover:bg-destructive/15",
             )}
             onclick={() => toggleTool(block.id)}
@@ -365,7 +514,7 @@
               <span class="ml-auto text-muted-foreground normal-case shrink-0"
                 >Running...</span
               >
-            {:else if block.isError}
+            {:else if isError}
               <span class="ml-auto normal-case shrink-0">Error</span>
             {:else}
               <span class="ml-auto normal-case opacity-60 shrink-0">Done</span>
@@ -386,7 +535,13 @@
             </svg>
           </button>
           {#if hasResult && truncated && !collapsed}
-            {#if isReadResult}
+            {#if hasToolResultHtml}
+              <div
+                class="p-3 text-[0.8125rem] leading-normal text-foreground wrap-break-word m-0 max-h-75 overflow-y-auto"
+              >
+                {@html toolResultHtml ?? ""}
+              </div>
+            {:else if isReadResult}
               <div class="p-3 m-0 max-h-75 overflow-y-auto">
                 <MessageMarkdown
                   content={formatReadResultMarkdown(block, readResultText)}
@@ -397,11 +552,11 @@
               <pre
                 class="p-3 font-mono text-[0.8125rem] leading-normal text-foreground whitespace-pre-wrap wrap-break-word m-0 max-h-75 overflow-y-auto">{truncated.text}</pre>
             {/if}
-            {#if truncated.truncated}
+            {#if truncated.truncated && !hasToolResultHtml}
               <div
                 class={cn(
                   "px-3 py-1.5 text-xs border-t",
-                  block.isError
+                  isError
                     ? "bg-destructive/5 border-destructive/10 text-destructive/80"
                     : "bg-emerald-500/5 border-emerald-500/10 text-emerald-600/70 dark:text-emerald-400/70",
                 )}

@@ -6,12 +6,16 @@ export interface PromptImageAttachment {
   mimeType: string;
 }
 
+// Canonical pi-ai-aligned tool-call shape.
+// `result` / `isError` are Graphone UI preview fields (transitional, non-canonical).
 export interface ToolCall {
   type: "toolCall";
   id: string;
   name: string;
   arguments: Record<string, unknown>;
-  // Result populated when tool execution completes
+  thoughtSignature?: string;
+
+  // UI-only convenience fields (derived from ToolResultMessage)
   result?: string;
   isError?: boolean;
 }
@@ -24,6 +28,19 @@ export interface ThinkingBlock {
 export interface TextBlock {
   type: "text";
   text: string;
+}
+
+export type ToolResultContentBlock = TextBlock | PromptImageAttachment;
+
+// Canonical pi-ai-aligned tool-result message.
+export interface ToolResultMessage<TDetails = unknown> {
+  role: "toolResult";
+  toolCallId: string;
+  toolName: string;
+  content: ToolResultContentBlock[];
+  details?: TDetails;
+  isError: boolean;
+  timestamp: number;
 }
 
 export type ContentBlock = TextBlock | ThinkingBlock | ToolCall;
@@ -59,15 +76,21 @@ export function isToolCall(block: ContentBlock): block is ToolCall {
   return block.type === "toolCall";
 }
 
+interface AgentEventMessagePayload {
+  role: "user" | "assistant" | "toolResult";
+  content?: string | unknown[];
+  timestamp?: number;
+  toolCallId?: string;
+  toolName?: string;
+  details?: unknown;
+  isError?: boolean;
+  [key: string]: unknown;
+}
+
 // RPC Event types - aligned with pi-mono AgentEvent
 export interface AgentMessageStartEvent {
   type: "message_start";
-  message: {
-    role: "user" | "assistant" | "toolResult";
-    content?: string | unknown[];
-    timestamp?: number;
-    [key: string]: unknown;
-  };
+  message: AgentEventMessagePayload;
 }
 
 export interface AgentMessageUpdateEvent {
@@ -98,12 +121,7 @@ export interface AgentMessageUpdateEvent {
 
 export interface AgentMessageEndEvent {
   type: "message_end";
-  message: {
-    role: "user" | "assistant" | "toolResult";
-    content?: string | unknown[];
-    timestamp?: number;
-    [key: string]: unknown;
-  };
+  message: AgentEventMessagePayload;
 }
 
 export interface AgentStartEvent {
@@ -124,7 +142,7 @@ export interface TurnEndEvent {
   type: "turn_end";
   turnIndex: number;
   message: AssistantMessage;
-  toolResults: unknown[];
+  toolResults: ToolResultMessage[];
 }
 
 export interface ToolExecutionStartEvent {

@@ -13,4 +13,5 @@ vite.config.ts.timestamp-*
 apps/desktop/web/vite.config.js.timestamp-*
 apps/desktop/web/vite.config.ts.timestamp-*
 docs/**
+.pi/
 .vscode/settings.json

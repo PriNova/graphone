@@ -1,6 +1,6 @@
 # Graphone Feature Availability (User Guide)
 
-_Last updated: 2026-02-28_
+_Last updated: 2026-03-03_
 
 This page helps you quickly understand what to expect from **Graphone** today, especially if you already know the pi terminal app (TUI).
 
@@ -39,6 +39,7 @@ This page helps you quickly understand what to expect from **Graphone** today, e
 - Thinking/reasoning block display
 - Markdown rendering in assistant responses
 - Tool activity display (calls/results) with readable formatting
+- Tool result rich HTML rendering via `ToolResultMessage.details._html` (Graphone-specific, sanitized)
 - Stop/cancel current generation
 
 ### Model controls & context
@@ -73,6 +74,11 @@ This page helps you quickly understand what to expect from **Graphone** today, e
 
 - Prompt templates and skills can work, but there is no full dedicated browser-style management UI yet
 - Extension-powered features can run, but Graphone does not yet expose all interactive extension UI capabilities available in the terminal experience
+
+### Tool result HTML rendering limits
+
+- Rich tool-result HTML is sanitized before rendering
+- Script execution in tool-result HTML is blocked
 
 ### Session resume parity
 

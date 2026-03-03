@@ -2,6 +2,7 @@ import type {
   ContentBlock,
   Message,
   PromptImageAttachment,
+  ToolResultMessage,
   UserContentBlock,
 } from "$lib/types/agent";
 
@@ -20,12 +21,13 @@ export class MessagesStore {
   private isProgrammaticScroll = false;
   private static readonly SCROLL_EPSILON_PX = 24;
 
+  // Canonical tool results keyed by toolCallId.
+  // Source of truth for tool execution outcome (pi-ai ToolResultMessage shape).
+  toolResultsByCallId = $state<Record<string, ToolResultMessage>>({});
+
   // Out-of-order safety: tool results can arrive before we have rendered the
   // corresponding toolCall block (e.g. dropped/delayed toolcall_end event).
-  private pendingToolResultsById = new Map<
-    string,
-    { result: string; isError: boolean }
-  >();
+  private pendingToolResultsById = new Map<string, ToolResultMessage>();
 
   // Scroll tracking
   updateScrollPosition(container: HTMLDivElement): void {
@@ -65,6 +67,7 @@ export class MessagesStore {
 
   clearMessages(): void {
     this.messages = [];
+    this.toolResultsByCallId = {};
     this.pendingToolResultsById.clear();
   }
 
@@ -73,8 +76,8 @@ export class MessagesStore {
   }
 
   // Convert agent messages from backend to our Message format.
-  // Tool results are stored as separate messages in pi; we merge them back into
-  // assistant toolCall blocks by toolCallId so the UI can render inline results.
+  // Tool results are stored as separate messages in pi; we keep canonical
+  // ToolResultMessage objects and attach a derived preview to toolCall blocks.
   loadFromAgentMessages(
     agentMessages: Array<{
       role: string;
@@ -84,23 +87,24 @@ export class MessagesStore {
     }>,
   ): void {
     this.pendingToolResultsById.clear();
-    const loadedMessages: Message[] = [];
 
-    const toolResultsByCallId = new Map<
-      string,
-      { result: string; isError: boolean }
-    >();
+    const loadedMessages: Message[] = [];
+    const toolResultsByCallId = new Map<string, ToolResultMessage>();
+
     for (const msg of agentMessages) {
       if (msg.role !== "toolResult") continue;
 
-      const toolCallId =
-        typeof msg.toolCallId === "string" ? msg.toolCallId : null;
-      if (!toolCallId) continue;
-
-      toolResultsByCallId.set(toolCallId, {
-        result: MessagesStore.formatToolResultContent(msg.content),
-        isError: msg.isError === true,
+      const toolResult = MessagesStore.coerceToolResultMessage({
+        toolCallId: msg.toolCallId,
+        toolName: msg.toolName,
+        content: msg.content,
+        details: msg.details,
+        isError: msg.isError,
+        timestamp: msg.timestamp,
       });
+
+      if (!toolResult) continue;
+      toolResultsByCallId.set(toolResult.toolCallId, toolResult);
     }
 
     for (const msg of agentMessages) {
@@ -126,7 +130,7 @@ export class MessagesStore {
 
             return {
               ...block,
-              result: toolResult.result,
+              result: MessagesStore.formatToolResultContent(toolResult.content),
               isError: toolResult.isError,
             };
           },
@@ -139,9 +143,65 @@ export class MessagesStore {
           timestamp,
           isStreaming: false,
         });
+        continue;
+      }
+
+      if (msg.role === "compactionSummary") {
+        const summary =
+          typeof msg.summary === "string" ? msg.summary.trim() : "";
+
+        if (summary.length > 0) {
+          const tokensBefore =
+            typeof msg.tokensBefore === "number" &&
+            Number.isFinite(msg.tokensBefore)
+              ? msg.tokensBefore
+              : null;
+
+          const heading =
+            tokensBefore !== null
+              ? `Auto-compaction summary (${tokensBefore.toLocaleString()} tokens before):`
+              : "Auto-compaction summary:";
+
+          loadedMessages.push({
+            id: crypto.randomUUID(),
+            type: "assistant",
+            content: [{ type: "text", text: `${heading}\n${summary}` }],
+            timestamp,
+            isStreaming: false,
+          });
+        }
+        continue;
+      }
+
+      if (msg.role === "branchSummary") {
+        const summary =
+          typeof msg.summary === "string" ? msg.summary.trim() : "";
+
+        if (summary.length > 0) {
+          loadedMessages.push({
+            id: crypto.randomUUID(),
+            type: "assistant",
+            content: [{ type: "text", text: `Branch summary:\n${summary}` }],
+            timestamp,
+            isStreaming: false,
+          });
+        }
+        continue;
+      }
+
+      if (msg.role === "custom") {
+        loadedMessages.push({
+          id: crypto.randomUUID(),
+          type: "user",
+          content: this.convertUserContent(msg.content),
+          timestamp,
+        });
       }
     }
 
+    this.toolResultsByCallId = Object.fromEntries(
+      toolResultsByCallId.entries(),
+    );
     this.messages = loadedMessages;
   }
 
@@ -233,6 +293,7 @@ export class MessagesStore {
     id: string;
     name: string;
     arguments: Record<string, unknown>;
+    thoughtSignature?: string;
   }): void {
     // Check if already present in any assistant message.
     for (let i = this.messages.length - 1; i >= 0; i--) {
@@ -245,11 +306,16 @@ export class MessagesStore {
       if (existing && existing.type === "toolCall") {
         existing.name = toolCall.name;
         existing.arguments = toolCall.arguments;
+        existing.thoughtSignature = toolCall.thoughtSignature;
 
         const pending = this.pendingToolResultsById.get(toolCall.id);
-        if (pending) {
-          existing.result = pending.result;
-          existing.isError = pending.isError;
+        const stored = this.getToolResult(toolCall.id);
+        const resolved = pending ?? stored;
+        if (resolved) {
+          existing.result = MessagesStore.formatToolResultContent(
+            resolved.content,
+          );
+          existing.isError = resolved.isError;
           this.pendingToolResultsById.delete(toolCall.id);
         }
         return;
@@ -294,12 +360,17 @@ export class MessagesStore {
       id: toolCall.id,
       name: toolCall.name,
       arguments: toolCall.arguments,
+      thoughtSignature: toolCall.thoughtSignature,
     };
 
     const pending = this.pendingToolResultsById.get(toolCall.id);
-    if (pending) {
-      nextBlock.result = pending.result;
-      nextBlock.isError = pending.isError;
+    const stored = this.getToolResult(toolCall.id);
+    const resolved = pending ?? stored;
+    if (resolved) {
+      nextBlock.result = MessagesStore.formatToolResultContent(
+        resolved.content,
+      );
+      nextBlock.isError = resolved.isError;
       this.pendingToolResultsById.delete(toolCall.id);
     }
 
@@ -308,33 +379,57 @@ export class MessagesStore {
     );
   }
 
-  // Update a tool call with its result.
-  // We resolve by toolCallId (not by current streaming message) because tool_execution_end
-  // is emitted after assistant message_end in pi-agent-core.
-  // Performance: Direct property mutation instead of array recreation.
-  updateToolCallResult(
-    toolCallId: string,
-    result: string,
-    isError: boolean,
-  ): void {
+  upsertToolResult(result: ToolResultMessage): void {
+    const normalized = MessagesStore.coerceToolResultMessage(result);
+    if (!normalized) {
+      return;
+    }
+
+    this.toolResultsByCallId[normalized.toolCallId] = normalized;
+
     // Prefer most recent assistant message first.
     for (let i = this.messages.length - 1; i >= 0; i--) {
       const message = this.messages[i];
       if (!message || message.type !== "assistant") continue;
 
-      // Find the tool call block and mutate directly
       const block = message.content.find(
-        (b) => b.type === "toolCall" && b.id === toolCallId,
+        (b) => b.type === "toolCall" && b.id === normalized.toolCallId,
       );
       if (block && block.type === "toolCall") {
-        block.result = result;
-        block.isError = isError;
+        block.result = MessagesStore.formatToolResultContent(
+          normalized.content,
+        );
+        block.isError = normalized.isError;
+        this.pendingToolResultsById.delete(normalized.toolCallId);
         return;
       }
     }
 
-    this.pendingToolResultsById.set(toolCallId, { result, isError });
-    console.warn("Tool result received for unknown toolCallId:", toolCallId);
+    this.pendingToolResultsById.set(normalized.toolCallId, normalized);
+    console.warn(
+      "Tool result received for unknown toolCallId:",
+      normalized.toolCallId,
+    );
+  }
+
+  getToolResult(toolCallId: string): ToolResultMessage | undefined {
+    return this.toolResultsByCallId[toolCallId];
+  }
+
+  // Transitional compatibility wrapper.
+  updateToolCallResult(
+    toolCallId: string,
+    result: string,
+    isError: boolean,
+  ): void {
+    this.upsertToolResult({
+      role: "toolResult",
+      toolCallId,
+      toolName: "",
+      content: MessagesStore.convertToolResultContent(result),
+      isError,
+      timestamp: Date.now(),
+    });
   }
 
   // Add error message
@@ -392,6 +487,139 @@ export class MessagesStore {
     }
 
     return true;
+  }
+
+  static extractToolResultPayload(result: unknown): {
+    content: unknown;
+    details?: unknown;
+  } {
+    if (
+      result &&
+      typeof result === "object" &&
+      !Array.isArray(result) &&
+      ("content" in result || "details" in result)
+    ) {
+      const typed = result as { content?: unknown; details?: unknown };
+      return {
+        content: typed.content,
+        details: typed.details,
+      };
+    }
+
+    return { content: result };
+  }
+
+  static convertToolResultContent(
+    content: unknown,
+  ): ToolResultMessage["content"] {
+    if (content === null || content === undefined) {
+      return [];
+    }
+
+    if (typeof content === "string") {
+      return content.length > 0 ? [{ type: "text", text: content }] : [];
+    }
+
+    if (Array.isArray(content)) {
+      const converted: ToolResultMessage["content"] = [];
+
+      for (const block of content) {
+        if (typeof block === "string") {
+          if (block.length > 0) {
+            converted.push({ type: "text", text: block });
+          }
+          continue;
+        }
+
+        if (typeof block !== "object" || block === null || !("type" in block)) {
+          continue;
+        }
+
+        const typed = block as {
+          type?: unknown;
+          text?: unknown;
+          data?: unknown;
+          mimeType?: unknown;
+          source?: unknown;
+        };
+
+        if (typed.type === "text" && typeof typed.text === "string") {
+          converted.push({ type: "text", text: typed.text });
+          continue;
+        }
+
+        if (
+          typed.type === "image" &&
+          typeof typed.data === "string" &&
+          typeof typed.mimeType === "string"
+        ) {
+          converted.push({
+            type: "image",
+            data: typed.data,
+            mimeType: typed.mimeType,
+          } satisfies PromptImageAttachment);
+          continue;
+        }
+
+        // Compatibility fallback for providers that encode image source objects.
+        const source = typed.source as
+          | { type?: unknown; data?: unknown; mediaType?: unknown }
+          | undefined;
+        if (
+          typed.type === "image" &&
+          source &&
+          typeof source === "object" &&
+          source.type === "base64" &&
+          typeof source.data === "string" &&
+          typeof source.mediaType === "string"
+        ) {
+          converted.push({
+            type: "image",
+            data: source.data,
+            mimeType: source.mediaType,
+          } satisfies PromptImageAttachment);
+        }
+      }
+
+      return converted;
+    }
+
+    try {
+      return [{ type: "text", text: JSON.stringify(content, null, 2) }];
+    } catch {
+      return [{ type: "text", text: "[Unable to display result]" }];
+    }
+  }
+
+  static coerceToolResultMessage(payload: {
+    toolCallId?: unknown;
+    toolName?: unknown;
+    content?: unknown;
+    details?: unknown;
+    isError?: unknown;
+    timestamp?: unknown;
+  }): ToolResultMessage | null {
+    const toolCallId =
+      typeof payload.toolCallId === "string" ? payload.toolCallId : null;
+    if (!toolCallId) {
+      return null;
+    }
+
+    const timestamp =
+      typeof payload.timestamp === "number" &&
+      Number.isFinite(payload.timestamp)
+        ? payload.timestamp
+        : Date.now();
+
+    return {
+      role: "toolResult",
+      toolCallId,
+      toolName: typeof payload.toolName === "string" ? payload.toolName : "",
+      content: MessagesStore.convertToolResultContent(payload.content),
+      details: payload.details,
+      isError: payload.isError === true,
+      timestamp,
+    };
   }
 
   static formatToolResultContent(content: unknown): string {
@@ -454,6 +682,7 @@ export class MessagesStore {
             id?: string;
             name?: string;
             arguments?: Record<string, unknown>;
+            thoughtSignature?: string;
           } =>
             typeof block === "object" &&
             block !== null &&
@@ -552,6 +781,7 @@ export class MessagesStore {
       id?: string;
       name?: string;
       arguments?: Record<string, unknown>;
+      thoughtSignature?: string;
     }>,
   ): ContentBlock[] {
     const converted: ContentBlock[] = [];
@@ -571,6 +801,7 @@ export class MessagesStore {
           id: block.id ?? "",
           name: block.name ?? "",
           arguments: block.arguments ?? {},
+          thoughtSignature: block.thoughtSignature,
         });
       }
     }

@@ -148,6 +148,10 @@
   $effect(() => {
     onmessagescontainerchange?.(messagesContainerElement);
   });
+
+  function getToolResult(toolCallId: string) {
+    return activeRuntime?.messages.getToolResult(toolCallId);
+  }
 </script>
 
 <main class="relative flex w-full h-screen overflow-hidden">
@@ -269,6 +273,7 @@
                 content={message.content}
                 timestamp={message.timestamp}
                 isStreaming={message.isStreaming}
+                {getToolResult}
               />
             {/if}
           {/each}
