@@ -1,10 +1,12 @@
 <script lang="ts">
   import { AssistantMessage, UserMessage } from "$lib/components/Messages";
+  import SettingsOverlay from "$lib/components/layout/SettingsOverlay.svelte";
   import { PromptInput } from "$lib/components/PromptInput";
   import { SessionSidebar } from "$lib/components/SessionSidebar";
   import { StatusBar } from "$lib/components/StatusBar";
   import type {
     AvailableModel,
+    RegisteredExtensionSummary,
     ThinkingLevel,
     UsageIndicatorSnapshot,
   } from "$lib/stores/agent.svelte";
@@ -46,6 +48,14 @@
     modelFilter?: "all" | "enabled";
     chatHasMessages?: boolean;
     usageIndicator?: UsageIndicatorSnapshot | null;
+    isExtensionsLoading?: boolean;
+    extensionsLoadError?: string | null;
+    globalExtensions?: RegisteredExtensionSummary[];
+    localExtensions?: RegisteredExtensionSummary[];
+    extensionLoadDiagnostics?: Array<{ path: string; error: string }>;
+    settingsDisplayMode?: "full" | "compact";
+    toolResultsCollapsedByDefault?: boolean;
+    thinkingCollapsedByDefault?: boolean;
     onmessagescroll?: () => void;
     onmessagescontainerchange?: (element: HTMLDivElement | null) => void;
     ontogglesidebar?: () => void;
@@ -84,6 +94,9 @@
     onmodelchange?: (provider: string, modelId: string) => void | Promise<void>;
     onthinkingchange?: (level: ThinkingLevel) => void | Promise<void>;
     onmodelfilterchange?: (mode: "all" | "enabled") => void | Promise<void>;
+    ondisplaymodechange?: (mode: "full" | "compact") => void | Promise<void>;
+    ontoolresultscollapsedchange?: (collapsed: boolean) => void | Promise<void>;
+    onthinkingcollapsedchange?: (collapsed: boolean) => void | Promise<void>;
   }
 
   let {
@@ -119,6 +132,14 @@
     modelFilter = "enabled",
     chatHasMessages = false,
     usageIndicator = null,
+    isExtensionsLoading = false,
+    extensionsLoadError = null,
+    globalExtensions = [],
+    localExtensions = [],
+    extensionLoadDiagnostics = [],
+    settingsDisplayMode = "full",
+    toolResultsCollapsedByDefault = true,
+    thinkingCollapsedByDefault = true,
     onmessagescroll,
     onmessagescontainerchange,
     ontogglesidebar,
@@ -141,13 +162,21 @@
     onmodelchange,
     onthinkingchange,
     onmodelfilterchange,
+    ondisplaymodechange,
+    ontoolresultscollapsedchange,
+    onthinkingcollapsedchange,
   }: Props = $props();
 
   let messagesContainerElement = $state<HTMLDivElement | null>(null);
+  let settingsOpen = $state(false);
 
   $effect(() => {
     onmessagescontainerchange?.(messagesContainerElement);
   });
+
+  function toggleSettings(): void {
+    settingsOpen = !settingsOpen;
+  }
 
   function getToolResult(toolCallId: string) {
     return activeRuntime?.messages.getToolResult(toolCallId);
@@ -224,18 +253,46 @@
   />
 
   <section
-    class="flex-1 min-w-0 h-full flex items-stretch justify-center overflow-hidden"
+    class="relative flex-1 min-w-0 h-full flex items-stretch justify-center overflow-hidden"
   >
+    <button
+      type="button"
+      class={`absolute top-3 left-4 z-40 flex items-center justify-center h-9 w-9 rounded border transition-colors ${
+        settingsOpen
+          ? "border-foreground bg-secondary text-foreground shadow-xs"
+          : "border-border text-muted-foreground hover:text-foreground hover:border-foreground hover:bg-secondary"
+      }`}
+      onclick={toggleSettings}
+      aria-label={settingsOpen ? "Close settings" : "Open settings"}
+      title={settingsOpen ? "Close settings" : "Open settings"}
+      aria-expanded={settingsOpen}
+    >
+      <svg
+        aria-hidden="true"
+        class="h-4 w-4"
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        stroke-width="2"
+      >
+        <circle cx="12" cy="12" r="3" />
+        <path
+          d="M19.4 15a1.7 1.7 0 0 0 .34 1.87l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.7 1.7 0 0 0-1.87-.34 1.7 1.7 0 0 0-1.04 1.56V21a2 2 0 1 1-4 0v-.09a1.7 1.7 0 0 0-1.04-1.56 1.7 1.7 0 0 0-1.87.34l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.7 1.7 0 0 0 .34-1.87 1.7 1.7 0 0 0-1.56-1.04H3a2 2 0 1 1 0-4h.09a1.7 1.7 0 0 0 1.56-1.04 1.7 1.7 0 0 0-.34-1.87l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.7 1.7 0 0 0 1.87.34H9A1.7 1.7 0 0 0 10 3.09V3a2 2 0 1 1 4 0v.09A1.7 1.7 0 0 0 15.04 4h.01a1.7 1.7 0 0 0 1.87-.34l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.7 1.7 0 0 0-.34 1.87V8.4a1.7 1.7 0 0 0 1.56 1.04H21a2 2 0 1 1 0 4h-.09A1.7 1.7 0 0 0 19.4 15z"
+        />
+      </svg>
+    </button>
+
     <div
       class="flex flex-col w-full h-full max-w-[min(95vw,1200px)] lg:max-w-[min(88vw,1360px)] px-4 py-4"
     >
-      <header class="shrink-0 py-2 text-center">
+      <header
+        class="shrink-0 h-[86px] flex items-center justify-center text-center"
+      >
         <h1
-          class="text-3xl font-semibold tracking-tight mb-1 bg-linear-to-r from-foreground to-muted-foreground bg-clip-text text-transparent"
+          class="text-3xl font-semibold tracking-tight bg-linear-to-r from-foreground to-muted-foreground bg-clip-text text-transparent"
         >
           Graphone
         </h1>
-        <p class="text-sm text-muted-foreground">Parallel project sessions</p>
       </header>
 
       <div
@@ -273,6 +330,8 @@
                 content={message.content}
                 timestamp={message.timestamp}
                 isStreaming={message.isStreaming}
+                defaultThinkingCollapsed={thinkingCollapsedByDefault}
+                defaultToolCollapsed={toolResultsCollapsedByDefault}
                 {getToolResult}
               />
             {/if}
@@ -317,5 +376,21 @@
 
       <StatusBar cwd={activeProjectDir} {usageIndicator} />
     </div>
+
+    {#if settingsOpen}
+      <SettingsOverlay
+        displayMode={settingsDisplayMode}
+        {toolResultsCollapsedByDefault}
+        {thinkingCollapsedByDefault}
+        {isExtensionsLoading}
+        {extensionsLoadError}
+        {globalExtensions}
+        {localExtensions}
+        {extensionLoadDiagnostics}
+        {ondisplaymodechange}
+        {ontoolresultscollapsedchange}
+        {onthinkingcollapsedchange}
+      />
+    {/if}
   </section>
 </main>

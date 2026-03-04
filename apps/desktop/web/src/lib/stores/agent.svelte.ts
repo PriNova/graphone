@@ -7,6 +7,7 @@ import {
   parseOAuthLoginStatus,
   parseOAuthLoginUpdates,
   parseOAuthProviders,
+  parseRegisteredExtensions,
   parseThinkingLevel,
   parseUsageIndicator,
   sortAvailableModels,
@@ -15,6 +16,7 @@ import type {
   AvailableModel,
   OAuthLoginPollResult,
   OAuthProviderStatus,
+  RegisteredExtensionSummary,
   ThinkingLevel,
   UsageIndicatorSnapshot,
 } from "$lib/stores/agent/types";
@@ -25,6 +27,9 @@ export type {
   OAuthLoginStatus,
   OAuthLoginUpdate,
   OAuthProviderStatus,
+  RegisteredExtensionScope,
+  RegisteredExtensionSummary,
+  RegisteredExtensionsSnapshot,
   ThinkingLevel,
   UsageContextSeverity,
   UsageIndicatorSnapshot,
@@ -61,6 +66,12 @@ interface NewSessionResponseData {
   cancelled?: unknown;
 }
 
+interface RegisteredExtensionsResponseData {
+  global?: unknown;
+  local?: unknown;
+  errors?: unknown;
+}
+
 // Agent session state (session-scoped)
 export class AgentStore {
   readonly sessionId: string;
@@ -80,6 +91,11 @@ export class AgentStore {
   availableModels = $state<AvailableModel[]>([]);
   isSettingThinking = $state(false);
   usageIndicator = $state<UsageIndicatorSnapshot | null>(null);
+  isExtensionsLoading = $state(false);
+  extensionsLoadError = $state<string | null>(null);
+  globalExtensions = $state<RegisteredExtensionSummary[]>([]);
+  localExtensions = $state<RegisteredExtensionSummary[]>([]);
+  extensionLoadDiagnostics = $state<Array<{ path: string; error: string }>>([]);
 
   constructor(sessionId: string) {
     this.sessionId = sessionId;
@@ -91,6 +107,10 @@ export class AgentStore {
 
     await this.refreshState().catch((error) => {
       console.warn("Failed to refresh initial agent state:", error);
+    });
+
+    await this.loadRegisteredExtensions().catch((error) => {
+      console.warn("Failed to load registered extensions:", error);
     });
   }
 
@@ -172,6 +192,37 @@ export class AgentStore {
       this.availableModels = [];
     } finally {
       this.isModelsLoading = false;
+    }
+  }
+
+  async loadRegisteredExtensions(): Promise<void> {
+    if (!this.sessionStarted) {
+      throw new Error("Agent session not started");
+    }
+
+    this.isExtensionsLoading = true;
+    this.extensionsLoadError = null;
+
+    try {
+      const data = await invokeAgentRpc<RegisteredExtensionsResponseData>(
+        "get_registered_extensions",
+        { sessionId: this.sessionId },
+        "Failed to get registered extensions",
+      );
+
+      const parsed = parseRegisteredExtensions(data);
+      this.globalExtensions = parsed.global;
+      this.localExtensions = parsed.local;
+      this.extensionLoadDiagnostics = parsed.errors;
+    } catch (error) {
+      this.globalExtensions = [];
+      this.localExtensions = [];
+      this.extensionLoadDiagnostics = [];
+      this.extensionsLoadError =
+        error instanceof Error ? error.message : String(error);
+      throw error;
+    } finally {
+      this.isExtensionsLoading = false;
     }
   }
 

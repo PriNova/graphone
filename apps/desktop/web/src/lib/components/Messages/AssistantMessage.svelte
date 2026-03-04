@@ -19,9 +19,18 @@
     timestamp?: Date;
     isStreaming?: boolean;
     getToolResult?: (toolCallId: string) => ToolResultMessage | undefined;
+    defaultThinkingCollapsed?: boolean;
+    defaultToolCollapsed?: boolean;
   }
 
-  let { content, timestamp, isStreaming, getToolResult }: Props = $props();
+  let {
+    content,
+    timestamp,
+    isStreaming,
+    getToolResult,
+    defaultThinkingCollapsed = true,
+    defaultToolCollapsed = true,
+  }: Props = $props();
 
   // State for collapsible thinking blocks (default collapsed)
   let thinkingCollapsed = $state<Record<number, boolean>>({});
@@ -37,8 +46,8 @@
   const MAX_RESULT_BYTES = 10 * 1024; // 10KB
 
   function isThinkingCollapsed(index: number): boolean {
-    // Default collapsed when we haven't seen/toggled this block yet.
-    return thinkingCollapsed[index] ?? true;
+    // Default to configured global preference when we haven't toggled this block.
+    return thinkingCollapsed[index] ?? defaultThinkingCollapsed;
   }
 
   function toggleThinking(index: number) {
@@ -46,8 +55,8 @@
   }
 
   function isToolCollapsed(id: string): boolean {
-    // Default collapsed when we haven't seen/toggled this tool call yet.
-    return toolCollapsed[id] ?? true;
+    // Default to configured global preference when we haven't toggled this block.
+    return toolCollapsed[id] ?? defaultToolCollapsed;
   }
 
   function toggleTool(id: string) {

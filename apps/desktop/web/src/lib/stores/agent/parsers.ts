@@ -3,6 +3,8 @@ import type {
   OAuthLoginStatus,
   OAuthLoginUpdate,
   OAuthProviderStatus,
+  RegisteredExtensionsSnapshot,
+  RegisteredExtensionSummary,
   ThinkingLevel,
   UsageContextSeverity,
   UsageIndicatorSnapshot,
@@ -234,6 +236,118 @@ export function parseAvailableModels(value: unknown): AvailableModel[] {
       } satisfies AvailableModel;
     })
     .filter((model): model is AvailableModel => model !== null);
+}
+
+export function parseRegisteredExtensions(
+  value: unknown,
+): RegisteredExtensionsSnapshot {
+  if (!value || typeof value !== "object") {
+    return { global: [], local: [], errors: [] };
+  }
+
+  const source = value as {
+    global?: unknown;
+    local?: unknown;
+    errors?: unknown;
+  };
+
+  return {
+    global: parseRegisteredExtensionList(source.global, "global"),
+    local: parseRegisteredExtensionList(source.local, "local"),
+    errors: parseExtensionErrors(source.errors),
+  };
+}
+
+function parseRegisteredExtensionList(
+  value: unknown,
+  scope: "global" | "local",
+): RegisteredExtensionSummary[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  return value
+    .map((item) => {
+      if (!item || typeof item !== "object") {
+        return null;
+      }
+
+      const candidate = item as {
+        name?: unknown;
+        path?: unknown;
+        resolvedPath?: unknown;
+        source?: unknown;
+        origin?: unknown;
+        toolCount?: unknown;
+        commandCount?: unknown;
+      };
+
+      if (
+        typeof candidate.path !== "string" ||
+        typeof candidate.resolvedPath !== "string"
+      ) {
+        return null;
+      }
+
+      return {
+        name:
+          typeof candidate.name === "string" && candidate.name.length > 0
+            ? candidate.name
+            : candidate.path,
+        path: candidate.path,
+        resolvedPath: candidate.resolvedPath,
+        scope,
+        source:
+          typeof candidate.source === "string" && candidate.source.length > 0
+            ? candidate.source
+            : "unknown",
+        origin:
+          candidate.origin === "package" || candidate.origin === "top-level"
+            ? candidate.origin
+            : "unknown",
+        toolCount:
+          typeof candidate.toolCount === "number" && candidate.toolCount >= 0
+            ? candidate.toolCount
+            : 0,
+        commandCount:
+          typeof candidate.commandCount === "number" &&
+          candidate.commandCount >= 0
+            ? candidate.commandCount
+            : 0,
+      } satisfies RegisteredExtensionSummary;
+    })
+    .filter(
+      (extension): extension is RegisteredExtensionSummary =>
+        extension !== null,
+    );
+}
+
+function parseExtensionErrors(
+  value: unknown,
+): Array<{ path: string; error: string }> {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  return value
+    .map((entry) => {
+      if (!entry || typeof entry !== "object") {
+        return null;
+      }
+
+      const candidate = entry as { path?: unknown; error?: unknown };
+      if (
+        typeof candidate.path !== "string" ||
+        typeof candidate.error !== "string"
+      ) {
+        return null;
+      }
+
+      return { path: candidate.path, error: candidate.error };
+    })
+    .filter(
+      (entry): entry is { path: string; error: string } => entry !== null,
+    );
 }
 
 export function sortAvailableModels(

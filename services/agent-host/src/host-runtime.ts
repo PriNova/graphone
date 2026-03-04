@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { basename, dirname, extname, resolve } from "node:path";
 
 import type { ThinkingLevel } from "@mariozechner/pi-agent-core";
 import type { ImageContent } from "@mariozechner/pi-ai";
@@ -32,6 +33,26 @@ const THINKING_LEVELS = new Set<ThinkingLevel>([
   "high",
   "xhigh",
 ]);
+
+type ResourceScope = "user" | "project" | "temporary";
+type ResourceOrigin = "package" | "top-level";
+
+interface ExtensionPathMetadata {
+  source: string;
+  scope: ResourceScope;
+  origin: ResourceOrigin;
+}
+
+interface RegisteredExtensionSummary {
+  name: string;
+  path: string;
+  resolvedPath: string;
+  scope: "global" | "local";
+  source: string;
+  origin: ResourceOrigin | "unknown";
+  toolCount: number;
+  commandCount: number;
+}
 
 export class HostRuntime {
   private readonly sessions = new Map<string, HostedSession>();
@@ -304,6 +325,42 @@ export class HostRuntime {
     };
   }
 
+  getRegisteredExtensions(sessionId: string): {
+    global: RegisteredExtensionSummary[];
+    local: RegisteredExtensionSummary[];
+    errors: Array<{ path: string; error: string }>;
+  } {
+    const session = this.requireSession(sessionId, "get_registered_extensions");
+    const extensionsResult = session.resourceLoader.getExtensions();
+    const pathMetadata = session.resourceLoader.getPathMetadata();
+
+    const summaries = extensionsResult.extensions.map((extension) => {
+      const metadata = this.getExtensionMetadata(extension, pathMetadata);
+      const scope = this.mapScopeToGroup(metadata?.scope);
+
+      return {
+        name: this.getExtensionDisplayName(extension.path, metadata),
+        path: extension.path,
+        resolvedPath: extension.resolvedPath,
+        scope,
+        source: metadata?.source ?? "unknown",
+        origin: metadata?.origin ?? "unknown",
+        toolCount: extension.tools.size,
+        commandCount: extension.commands.size,
+      } satisfies RegisteredExtensionSummary;
+    });
+
+    const sorted = summaries.sort((a, b) =>
+      a.resolvedPath.localeCompare(b.resolvedPath),
+    );
+
+    return {
+      global: sorted.filter((extension) => extension.scope === "global"),
+      local: sorted.filter((extension) => extension.scope === "local"),
+      errors: extensionsResult.errors,
+    };
+  }
+
   listOAuthProviders(sessionId: string): {
     providers: Array<{
       id: string;
@@ -396,6 +453,221 @@ export class HostRuntime {
     }
 
     this.oauthLoginManager.shutdown();
+  }
+
+  private getExtensionMetadata(
+    extension: { path: string; resolvedPath: string },
+    pathMetadata: Map<string, unknown>,
+  ): ExtensionPathMetadata | undefined {
+    const candidates = new Set<string>();
+
+    if (extension.path) {
+      candidates.add(extension.path);
+      candidates.add(resolve(extension.path));
+    }
+
+    if (extension.resolvedPath) {
+      candidates.add(extension.resolvedPath);
+      candidates.add(resolve(extension.resolvedPath));
+    }
+
+    for (const candidate of candidates) {
+      const metadata = pathMetadata.get(candidate);
+      if (this.isExtensionPathMetadata(metadata)) {
+        return metadata;
+      }
+    }
+
+    return undefined;
+  }
+
+  private isExtensionPathMetadata(
+    value: unknown,
+  ): value is ExtensionPathMetadata {
+    if (!value || typeof value !== "object") {
+      return false;
+    }
+
+    const candidate = value as {
+      source?: unknown;
+      scope?: unknown;
+      origin?: unknown;
+    };
+
+    return (
+      typeof candidate.source === "string" &&
+      (candidate.scope === "user" ||
+        candidate.scope === "project" ||
+        candidate.scope === "temporary") &&
+      (candidate.origin === "package" || candidate.origin === "top-level")
+    );
+  }
+
+  private mapScopeToGroup(
+    scope: ResourceScope | undefined,
+  ): "global" | "local" {
+    if (scope === "user") {
+      return "global";
+    }
+
+    return "local";
+  }
+
+  private getExtensionDisplayName(
+    path: string,
+    metadata: ExtensionPathMetadata | undefined,
+  ): string {
+    const fromSource = metadata
+      ? this.getNameFromSource(metadata.source)
+      : undefined;
+
+    if (fromSource) {
+      return fromSource;
+    }
+
+    return this.getExtensionNameFromPath(path);
+  }
+
+  private getNameFromSource(source: string): string | undefined {
+    const trimmed = source.trim();
+    if (
+      !trimmed ||
+      trimmed === "auto" ||
+      trimmed === "local" ||
+      trimmed === "cli"
+    ) {
+      return undefined;
+    }
+
+    if (trimmed.startsWith("npm:")) {
+      const packageName = this.parseNpmPackageName(trimmed.slice(4));
+      return packageName ? this.getShortPackageName(packageName) : undefined;
+    }
+
+    if (
+      !trimmed.includes("://") &&
+      !trimmed.startsWith("git:") &&
+      !trimmed.startsWith("git@") &&
+      !trimmed.startsWith("./") &&
+      !trimmed.startsWith("../") &&
+      !trimmed.startsWith("/") &&
+      !trimmed.startsWith("~")
+    ) {
+      const packageName = this.parseNpmPackageName(trimmed);
+      return packageName ? this.getShortPackageName(packageName) : undefined;
+    }
+
+    const repositoryName = this.getRepositoryName(trimmed);
+    if (repositoryName) {
+      return repositoryName;
+    }
+
+    return undefined;
+  }
+
+  private parseNpmPackageName(spec: string): string | undefined {
+    const trimmed = spec.trim();
+    if (!trimmed) {
+      return undefined;
+    }
+
+    if (trimmed.startsWith("@")) {
+      const slashIndex = trimmed.indexOf("/");
+      if (slashIndex === -1) {
+        return undefined;
+      }
+
+      const versionIndex = trimmed.indexOf("@", slashIndex + 1);
+      return versionIndex === -1 ? trimmed : trimmed.slice(0, versionIndex);
+    }
+
+    const versionIndex = trimmed.indexOf("@");
+    return versionIndex === -1 ? trimmed : trimmed.slice(0, versionIndex);
+  }
+
+  private getShortPackageName(packageName: string): string {
+    const slashIndex = packageName.lastIndexOf("/");
+    if (slashIndex === -1) {
+      return packageName;
+    }
+
+    return packageName.slice(slashIndex + 1);
+  }
+
+  private getRepositoryName(source: string): string | undefined {
+    const withoutPrefix = source.startsWith("git:") ? source.slice(4) : source;
+
+    if (withoutPrefix.includes("://")) {
+      try {
+        const url = new URL(withoutPrefix);
+        const base = basename(url.pathname);
+        return this.stripGitSuffixAndRef(base);
+      } catch {
+        return undefined;
+      }
+    }
+
+    if (withoutPrefix.startsWith("git@")) {
+      const splitIndex = Math.max(
+        withoutPrefix.lastIndexOf("/"),
+        withoutPrefix.lastIndexOf(":"),
+      );
+      const tail =
+        splitIndex === -1 ? withoutPrefix : withoutPrefix.slice(splitIndex + 1);
+      return this.stripGitSuffixAndRef(tail);
+    }
+
+    return undefined;
+  }
+
+  private stripGitSuffixAndRef(value: string): string | undefined {
+    const trimmed = value.trim();
+    if (!trimmed) {
+      return undefined;
+    }
+
+    const noGitSuffix = trimmed.endsWith(".git")
+      ? trimmed.slice(0, -4)
+      : trimmed;
+
+    const refIndex = noGitSuffix.indexOf("@");
+    const withoutRef =
+      refIndex > 0 ? noGitSuffix.slice(0, refIndex) : noGitSuffix;
+
+    return withoutRef || undefined;
+  }
+
+  private getExtensionNameFromPath(path: string): string {
+    const trimmed = path.trim();
+    if (!trimmed) {
+      return "unnamed-extension";
+    }
+
+    if (trimmed.startsWith("<") && trimmed.endsWith(">")) {
+      return trimmed.slice(1, -1);
+    }
+
+    const fileName = basename(trimmed);
+    const extension = extname(fileName);
+    const stem = extension ? fileName.slice(0, -extension.length) : fileName;
+
+    if (stem !== "index") {
+      return stem || fileName;
+    }
+
+    const parent = basename(dirname(trimmed));
+    if (!parent || parent === "." || parent === "..") {
+      return stem;
+    }
+
+    if (["src", "dist", "build", "lib", "out"].includes(parent)) {
+      const grandparent = basename(dirname(dirname(trimmed)));
+      if (grandparent && grandparent !== "." && grandparent !== "..") {
+        return grandparent;
+      }
+    }
+
+    return parent;
   }
 
   private compactSessionEventForWire(event: unknown): unknown {

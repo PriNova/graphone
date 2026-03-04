@@ -12,6 +12,10 @@ export interface UiSettings {
   modelFilter: "all" | "enabled";
   /** Which chat surface mode to render */
   displayMode: "full" | "compact";
+  /** Whether tool result blocks should start collapsed */
+  toolResultsCollapsedByDefault: boolean;
+  /** Whether thinking blocks should start collapsed */
+  thinkingCollapsedByDefault: boolean;
 }
 
 const DEFAULT_SETTINGS: UiSettings = {
@@ -19,6 +23,8 @@ const DEFAULT_SETTINGS: UiSettings = {
   lastSelectedScope: "",
   modelFilter: "enabled",
   displayMode: "full",
+  toolResultsCollapsedByDefault: true,
+  thinkingCollapsedByDefault: true,
 };
 
 const STORE_FILE = "settings.json";
@@ -41,6 +47,12 @@ export class SettingsStore {
   lastSelectedScope = $state<string>("");
   modelFilter = $state<"all" | "enabled">("enabled");
   displayMode = $state<"full" | "compact">("full");
+  toolResultsCollapsedByDefault = $state<boolean>(
+    DEFAULT_SETTINGS.toolResultsCollapsedByDefault,
+  );
+  thinkingCollapsedByDefault = $state<boolean>(
+    DEFAULT_SETTINGS.thinkingCollapsedByDefault,
+  );
 
   /** Whether settings have been loaded from disk */
   loaded = $state(false);
@@ -57,13 +69,21 @@ export class SettingsStore {
       // Ensure store is initialized
       await this.store.init();
 
-      const [collapsedScopes, lastSelectedScope, modelFilter, displayMode] =
-        await Promise.all([
-          this.store.get<string[]>("ui.collapsedScopes"),
-          this.store.get<string>("ui.lastSelectedScope"),
-          this.store.get<"all" | "enabled">("ui.modelFilter"),
-          this.store.get<"full" | "compact">("ui.displayMode"),
-        ]);
+      const [
+        collapsedScopes,
+        lastSelectedScope,
+        modelFilter,
+        displayMode,
+        toolResultsCollapsedByDefault,
+        thinkingCollapsedByDefault,
+      ] = await Promise.all([
+        this.store.get<string[]>("ui.collapsedScopes"),
+        this.store.get<string>("ui.lastSelectedScope"),
+        this.store.get<"all" | "enabled">("ui.modelFilter"),
+        this.store.get<"full" | "compact">("ui.displayMode"),
+        this.store.get<boolean>("ui.toolResultsCollapsedByDefault"),
+        this.store.get<boolean>("ui.thinkingCollapsedByDefault"),
+      ]);
 
       this.collapsedScopes = Array.isArray(collapsedScopes)
         ? collapsedScopes.filter((s) => typeof s === "string")
@@ -84,6 +104,16 @@ export class SettingsStore {
           ? displayMode
           : DEFAULT_SETTINGS.displayMode;
 
+      this.toolResultsCollapsedByDefault =
+        typeof toolResultsCollapsedByDefault === "boolean"
+          ? toolResultsCollapsedByDefault
+          : DEFAULT_SETTINGS.toolResultsCollapsedByDefault;
+
+      this.thinkingCollapsedByDefault =
+        typeof thinkingCollapsedByDefault === "boolean"
+          ? thinkingCollapsedByDefault
+          : DEFAULT_SETTINGS.thinkingCollapsedByDefault;
+
       this.loaded = true;
       this.error = null;
     } catch (err) {
@@ -101,6 +131,14 @@ export class SettingsStore {
       await this.store.set("ui.lastSelectedScope", this.lastSelectedScope);
       await this.store.set("ui.modelFilter", this.modelFilter);
       await this.store.set("ui.displayMode", this.displayMode);
+      await this.store.set(
+        "ui.toolResultsCollapsedByDefault",
+        this.toolResultsCollapsedByDefault,
+      );
+      await this.store.set(
+        "ui.thinkingCollapsedByDefault",
+        this.thinkingCollapsedByDefault,
+      );
       await this.store.save();
       this.error = null;
     } catch (err) {
@@ -158,6 +196,18 @@ export class SettingsStore {
     await this.store.set("ui.displayMode", mode);
   }
 
+  // --- Message Block Defaults ---
+
+  async setToolResultsCollapsedByDefault(collapsed: boolean): Promise<void> {
+    this.toolResultsCollapsedByDefault = collapsed;
+    await this.store.set("ui.toolResultsCollapsedByDefault", collapsed);
+  }
+
+  async setThinkingCollapsedByDefault(collapsed: boolean): Promise<void> {
+    this.thinkingCollapsedByDefault = collapsed;
+    await this.store.set("ui.thinkingCollapsedByDefault", collapsed);
+  }
+
   // --- Reset ---
 
   /**
@@ -168,6 +218,10 @@ export class SettingsStore {
     this.lastSelectedScope = DEFAULT_SETTINGS.lastSelectedScope;
     this.modelFilter = DEFAULT_SETTINGS.modelFilter;
     this.displayMode = DEFAULT_SETTINGS.displayMode;
+    this.toolResultsCollapsedByDefault =
+      DEFAULT_SETTINGS.toolResultsCollapsedByDefault;
+    this.thinkingCollapsedByDefault =
+      DEFAULT_SETTINGS.thinkingCollapsedByDefault;
     await this.store.clear();
     await this.store.save();
   }

@@ -55,6 +55,7 @@ Transport: newline-delimited JSON over stdio.
 - `set_model`
 - `cycle_model`
 - `get_available_models`
+- `get_registered_extensions`
 - `set_thinking_level`
 - `shutdown`
 - `ping` (health/readiness check)

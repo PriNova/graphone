@@ -60,6 +60,7 @@
   let sessionsBootstrapped = $state(false);
   let sidebarCollapsed = $state(false);
   let compactScopesSidebarOpen = $state(false);
+  let runtimeDisplayMode = $state<DisplayMode>("full");
   let sessionSidebarRefreshTimer: ReturnType<typeof setTimeout> | null = null;
   const pendingSessionSidebarSync = new Set<string>();
   let optimisticFirstPromptBySession = $state<
@@ -163,6 +164,21 @@
   const usageIndicator = $derived(
     activeRuntime ? activeRuntime.agent.usageIndicator : null,
   );
+  const isExtensionsLoading = $derived(
+    activeRuntime ? activeRuntime.agent.isExtensionsLoading : false,
+  );
+  const extensionsLoadError = $derived(
+    activeRuntime ? activeRuntime.agent.extensionsLoadError : null,
+  );
+  const globalExtensions = $derived(
+    activeRuntime ? activeRuntime.agent.globalExtensions : [],
+  );
+  const localExtensions = $derived(
+    activeRuntime ? activeRuntime.agent.localExtensions : [],
+  );
+  const extensionLoadDiagnostics = $derived(
+    activeRuntime ? activeRuntime.agent.extensionLoadDiagnostics : [],
+  );
   const activeProjectDir = $derived(
     activeRuntime ? normalizeScopePath(activeRuntime.projectDir) : null,
   );
@@ -241,7 +257,7 @@
       return "compact";
     }
 
-    return settingsStore.displayMode;
+    return runtimeDisplayMode;
   });
   const isCompactMode = $derived(displayMode === "compact");
 
@@ -523,21 +539,21 @@
     compactScopesSidebarOpen = !compactScopesSidebarOpen;
   }
 
-  async function setDisplayMode(mode: DisplayMode): Promise<void> {
+  async function setRuntimeDisplayMode(mode: DisplayMode): Promise<void> {
     if (isCompactSessionWindow) {
       await applyWindowMode("compact").catch(() => undefined);
       return;
     }
 
-    if (settingsStore.displayMode === mode) {
+    if (runtimeDisplayMode === mode) {
       return;
     }
 
-    const previousMode = settingsStore.displayMode;
+    const previousMode = runtimeDisplayMode;
 
     try {
       await applyWindowMode(mode);
-      await settingsStore.setDisplayMode(mode);
+      runtimeDisplayMode = mode;
     } catch (error) {
       console.error("Failed to switch display mode:", error);
 
@@ -550,8 +566,14 @@
     }
   }
 
+  async function setStartupDisplayModePreference(
+    mode: DisplayMode,
+  ): Promise<void> {
+    await settingsStore.setDisplayMode(mode);
+  }
+
   async function enterCompactMode(): Promise<void> {
-    await setDisplayMode("compact");
+    await setRuntimeDisplayMode("compact");
   }
 
   async function enterFullMode(): Promise<void> {
@@ -561,7 +583,7 @@
     }
 
     compactScopesSidebarOpen = false;
-    await setDisplayMode("full");
+    await setRuntimeDisplayMode("full");
 
     await tick();
     requestAnimationFrame(() => scrollToBottom(false));
@@ -815,6 +837,16 @@
     await settingsStore.setModelFilter(mode);
   }
 
+  async function onToolResultsCollapsedChange(
+    collapsed: boolean,
+  ): Promise<void> {
+    await settingsStore.setToolResultsCollapsedByDefault(collapsed);
+  }
+
+  async function onThinkingCollapsedChange(collapsed: boolean): Promise<void> {
+    await settingsStore.setThinkingCollapsedByDefault(collapsed);
+  }
+
   async function onSlashCommand(
     command: string,
     args: string,
@@ -935,6 +967,10 @@
         const initialMode: DisplayMode = isCompactSessionWindow
           ? "compact"
           : settingsStore.displayMode;
+
+        if (!isCompactSessionWindow) {
+          runtimeDisplayMode = initialMode;
+        }
 
         return applyWindowMode(initialMode).catch((error) => {
           console.warn("Failed to apply initial window mode:", error);
@@ -1121,8 +1157,16 @@
     {isSettingModel}
     {isSettingThinking}
     modelFilter={settingsStore.modelFilter}
+    settingsDisplayMode={settingsStore.displayMode}
+    toolResultsCollapsedByDefault={settingsStore.toolResultsCollapsedByDefault}
+    thinkingCollapsedByDefault={settingsStore.thinkingCollapsedByDefault}
     {chatHasMessages}
     {usageIndicator}
+    {isExtensionsLoading}
+    {extensionsLoadError}
+    {globalExtensions}
+    {localExtensions}
+    {extensionLoadDiagnostics}
     onmessagescroll={handleScroll}
     onmessagescontainerchange={(element) => {
       messagesContainerRef = element;
@@ -1147,5 +1191,8 @@
     onmodelchange={onModelChange}
     onthinkingchange={onThinkingChange}
     onmodelfilterchange={onModelFilterChange}
+    ondisplaymodechange={setStartupDisplayModePreference}
+    ontoolresultscollapsedchange={onToolResultsCollapsedChange}
+    onthinkingcollapsedchange={onThinkingCollapsedChange}
   />
 {/if}

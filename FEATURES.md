@@ -1,6 +1,6 @@
 # Graphone Feature Availability (User Guide)
 
-_Last updated: 2026-03-03_
+_Last updated: 2026-03-04_
 
 This page helps you quickly understand what to expect from **Graphone** today, especially if you already know the pi terminal app (TUI).
 
@@ -32,6 +32,12 @@ This page helps you quickly understand what to expect from **Graphone** today, e
 - Resizable compact window width (left/right drag handles)
 - Prompt draft is preserved when switching between full and compact mode
 - Window placement/size is preserved when toggling compact mode
+
+### Settings & extension visibility
+
+- Settings overlay for startup view and message block defaults
+- Registered extensions list in Settings, grouped by **Global** (`~/.pi/agent`) and **Local** (`.pi`) scope
+- Extension load diagnostics visible in Settings (when extension loading reports errors)
 
 ### Chat generation & content display
 
@@ -73,6 +79,7 @@ This page helps you quickly understand what to expect from **Graphone** today, e
 ### Templates, skills, and extensions
 
 - Prompt templates and skills can work, but there is no full dedicated browser-style management UI yet
+- Extensions are visible in Settings (grouped Global/Local), but enable/disable/package management UX is still limited
 - Extension-powered features can run, but Graphone does not yet expose all interactive extension UI capabilities available in the terminal experience
 
 ### Tool result HTML rendering limits

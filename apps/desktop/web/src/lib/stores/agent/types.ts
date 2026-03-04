@@ -57,3 +57,22 @@ export interface OAuthLoginPollResult {
   provider?: string;
   updates: OAuthLoginUpdate[];
 }
+
+export type RegisteredExtensionScope = "global" | "local";
+
+export interface RegisteredExtensionSummary {
+  name: string;
+  path: string;
+  resolvedPath: string;
+  scope: RegisteredExtensionScope;
+  source: string;
+  origin: "package" | "top-level" | "unknown";
+  toolCount: number;
+  commandCount: number;
+}
+
+export interface RegisteredExtensionsSnapshot {
+  global: RegisteredExtensionSummary[];
+  local: RegisteredExtensionSummary[];
+  errors: Array<{ path: string; error: string }>;
+}
