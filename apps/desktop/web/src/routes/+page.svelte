@@ -206,6 +206,7 @@
   });
   const showSidebarInLayout = $derived(isMainWindow);
   const showPopOutActiveSessionButton = $derived(isMainWindow);
+  const showHeaderInLayout = $derived(!isFloatingSessionWindow);
   const layoutWindowTitleHint = $derived(
     isFloatingSessionWindow ? "Floating isolated session" : null,
   );
@@ -898,6 +899,7 @@
   {extensionLoadDiagnostics}
   showSidebar={showSidebarInLayout}
   showSettingsButton={true}
+  showHeader={showHeaderInLayout}
   windowTitleHint={layoutWindowTitleHint}
   onmessagescroll={handleScroll}
   onmessagescontainerchange={(element) => {

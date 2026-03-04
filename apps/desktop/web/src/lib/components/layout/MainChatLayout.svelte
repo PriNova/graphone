@@ -58,6 +58,7 @@
     thinkingCollapsedByDefault?: boolean;
     showSidebar?: boolean;
     showSettingsButton?: boolean;
+    showHeader?: boolean;
     windowTitleHint?: string | null;
     onmessagescroll?: () => void;
     onmessagescontainerchange?: (element: HTMLDivElement | null) => void;
@@ -143,6 +144,7 @@
     thinkingCollapsedByDefault = true,
     showSidebar = true,
     showSettingsButton = true,
+    showHeader = true,
     windowTitleHint = null,
     onmessagescroll,
     onmessagescontainerchange,
@@ -269,23 +271,33 @@
     {/if}
 
     <div
-      class="flex flex-col w-full h-full max-w-[min(95vw,1200px)] lg:max-w-[min(88vw,1360px)] px-4 py-4"
+      class="flex flex-col w-full h-full max-w-[min(95vw,1200px)] lg:max-w-[min(88vw,1360px)] px-4"
+      class:py-4={showHeader}
+      class:pt-3={!showHeader}
+      class:pb-4={!showHeader}
     >
-      <header
-        class="shrink-0 h-[86px] flex flex-col items-center justify-center text-center gap-1"
-      >
-        <h1
-          class="text-3xl font-semibold tracking-tight bg-linear-to-r from-foreground to-muted-foreground bg-clip-text text-transparent"
+      {#if showHeader}
+        <header
+          class="shrink-0 h-[86px] flex flex-col items-center justify-center text-center gap-1"
         >
-          Graphone
-        </h1>
-        {#if windowTitleHint}
-          <p class="text-xs text-muted-foreground">{windowTitleHint}</p>
-        {/if}
-      </header>
+          <h1
+            class="text-3xl font-semibold tracking-tight bg-linear-to-r from-foreground to-muted-foreground bg-clip-text text-transparent"
+          >
+            Graphone
+          </h1>
+          {#if windowTitleHint}
+            <p class="text-xs text-muted-foreground">{windowTitleHint}</p>
+          {/if}
+        </header>
+      {/if}
 
       <div
-        class="flex-1 min-h-0 overflow-y-auto py-4 pl-2 pr-4 flex flex-col gap-2 scroll-smooth [scrollbar-gutter:stable]"
+        class="flex-1 min-h-0 overflow-y-auto pr-4 flex flex-col gap-2 scroll-smooth [scrollbar-gutter:stable]"
+        class:py-4={showHeader}
+        class:pt-0={!showHeader}
+        class:pb-4={!showHeader}
+        class:pl-2={showHeader || !showSettingsButton}
+        class:pl-10={showSettingsButton && !showHeader}
         bind:this={messagesContainerElement}
         onscroll={onmessagescroll}
       >
