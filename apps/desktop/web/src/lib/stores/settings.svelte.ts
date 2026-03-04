@@ -10,8 +10,6 @@ export interface UiSettings {
   lastSelectedScope: string;
   /** Which models to show: "all" or only "enabled" */
   modelFilter: "all" | "enabled";
-  /** Which chat surface mode to render */
-  displayMode: "full" | "compact";
   /** Whether tool result blocks should start collapsed */
   toolResultsCollapsedByDefault: boolean;
   /** Whether thinking blocks should start collapsed */
@@ -22,7 +20,6 @@ const DEFAULT_SETTINGS: UiSettings = {
   collapsedScopes: [],
   lastSelectedScope: "",
   modelFilter: "enabled",
-  displayMode: "full",
   toolResultsCollapsedByDefault: true,
   thinkingCollapsedByDefault: true,
 };
@@ -46,7 +43,6 @@ export class SettingsStore {
   collapsedScopes = $state<string[]>([]);
   lastSelectedScope = $state<string>("");
   modelFilter = $state<"all" | "enabled">("enabled");
-  displayMode = $state<"full" | "compact">("full");
   toolResultsCollapsedByDefault = $state<boolean>(
     DEFAULT_SETTINGS.toolResultsCollapsedByDefault,
   );
@@ -73,14 +69,12 @@ export class SettingsStore {
         collapsedScopes,
         lastSelectedScope,
         modelFilter,
-        displayMode,
         toolResultsCollapsedByDefault,
         thinkingCollapsedByDefault,
       ] = await Promise.all([
         this.store.get<string[]>("ui.collapsedScopes"),
         this.store.get<string>("ui.lastSelectedScope"),
         this.store.get<"all" | "enabled">("ui.modelFilter"),
-        this.store.get<"full" | "compact">("ui.displayMode"),
         this.store.get<boolean>("ui.toolResultsCollapsedByDefault"),
         this.store.get<boolean>("ui.thinkingCollapsedByDefault"),
       ]);
@@ -98,11 +92,6 @@ export class SettingsStore {
         modelFilter === "all" || modelFilter === "enabled"
           ? modelFilter
           : DEFAULT_SETTINGS.modelFilter;
-
-      this.displayMode =
-        displayMode === "compact" || displayMode === "full"
-          ? displayMode
-          : DEFAULT_SETTINGS.displayMode;
 
       this.toolResultsCollapsedByDefault =
         typeof toolResultsCollapsedByDefault === "boolean"
@@ -130,7 +119,6 @@ export class SettingsStore {
       await this.store.set("ui.collapsedScopes", this.collapsedScopes);
       await this.store.set("ui.lastSelectedScope", this.lastSelectedScope);
       await this.store.set("ui.modelFilter", this.modelFilter);
-      await this.store.set("ui.displayMode", this.displayMode);
       await this.store.set(
         "ui.toolResultsCollapsedByDefault",
         this.toolResultsCollapsedByDefault,
@@ -189,13 +177,6 @@ export class SettingsStore {
     await this.store.set("ui.modelFilter", this.modelFilter);
   }
 
-  // --- Display Mode ---
-
-  async setDisplayMode(mode: "full" | "compact"): Promise<void> {
-    this.displayMode = mode;
-    await this.store.set("ui.displayMode", mode);
-  }
-
   // --- Message Block Defaults ---
 
   async setToolResultsCollapsedByDefault(collapsed: boolean): Promise<void> {
@@ -217,7 +198,6 @@ export class SettingsStore {
     this.collapsedScopes = DEFAULT_SETTINGS.collapsedScopes;
     this.lastSelectedScope = DEFAULT_SETTINGS.lastSelectedScope;
     this.modelFilter = DEFAULT_SETTINGS.modelFilter;
-    this.displayMode = DEFAULT_SETTINGS.displayMode;
     this.toolResultsCollapsedByDefault =
       DEFAULT_SETTINGS.toolResultsCollapsedByDefault;
     this.thinkingCollapsedByDefault =

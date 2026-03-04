@@ -5,8 +5,9 @@ import {
 import type { SessionDescriptor } from "$lib/stores/sessions.svelte";
 
 export interface SessionBootstrapDependencies {
-  isCompactSessionWindow: boolean;
+  isFloatingSessionWindow: boolean;
   boundSessionId: string | null;
+  requestedSessionId: string | null;
   requestedSessionFile: string | null;
   loadCwd: () => Promise<void>;
   refreshProjectScopes: () => Promise<void>;
@@ -21,7 +22,7 @@ export interface SessionBootstrapDependencies {
   getScopeHistory: (scope: string) => PersistedSessionHistoryItem[] | undefined;
   setProjectDirInput: (value: string) => void;
   requestScrollToBottom: () => void;
-  setCompactSessionMissing: (value: boolean) => void;
+  setFloatingSessionMissing: (value: boolean) => void;
 }
 
 export async function bootstrapMainWindowSessions(
@@ -66,6 +67,21 @@ export async function bootstrapMainWindowSessions(
 
     await dependencies.createSession(projectDir);
   } else {
+    const requestedSessionId = dependencies.requestedSessionId?.trim() ?? "";
+    if (requestedSessionId.length > 0) {
+      const requestedSession = dependencies
+        .getSessions()
+        .find((session) => session.sessionId === requestedSessionId);
+
+      if (requestedSession) {
+        dependencies.setActiveSession(requestedSession.sessionId);
+        await dependencies.ensureRuntime(requestedSession);
+        dependencies.setProjectDirInput(requestedSession.projectDir);
+        dependencies.requestScrollToBottom();
+        return;
+      }
+    }
+
     // Sessions exist - try to activate the last selected scope if it matches
     const lastScope = dependencies.getLastSelectedScope();
     if (lastScope && lastScope.trim().length > 0) {
@@ -100,11 +116,11 @@ export async function bootstrapMainWindowSessions(
   }
 }
 
-export async function bootstrapCompactSessionWindow(
+export async function bootstrapFloatingSessionWindow(
   sessionId: string,
   dependencies: SessionBootstrapDependencies,
 ): Promise<void> {
-  dependencies.setCompactSessionMissing(false);
+  dependencies.setFloatingSessionMissing(false);
 
   await dependencies.loadCwd();
   await dependencies.refreshSessions().catch(() => undefined);
@@ -122,7 +138,7 @@ export async function bootstrapCompactSessionWindow(
       : undefined);
 
   if (!descriptor) {
-    dependencies.setCompactSessionMissing(true);
+    dependencies.setFloatingSessionMissing(true);
     return;
   }
 
@@ -135,13 +151,13 @@ export async function bootstrapCompactSessionWindow(
 export async function bootstrapSessions(
   dependencies: SessionBootstrapDependencies,
 ): Promise<void> {
-  if (dependencies.isCompactSessionWindow) {
+  if (dependencies.isFloatingSessionWindow) {
     if (!dependencies.boundSessionId) {
-      dependencies.setCompactSessionMissing(true);
+      dependencies.setFloatingSessionMissing(true);
       return;
     }
 
-    await bootstrapCompactSessionWindow(
+    await bootstrapFloatingSessionWindow(
       dependencies.boundSessionId,
       dependencies,
     );

@@ -25,17 +25,17 @@ This page helps you quickly understand what to expect from **Graphone** today, e
 - Deleting a **single session** from a project scope
 - Deleting an entire project scope
 
-### UI modes & layout
+### Windowing & layout
 
-- Full-mode and compact-mode UI toggle
-- Compact mode activity rail + collapsible project-scope drawer
-- Resizable compact window width (left/right drag handles)
-- Prompt draft is preserved when switching between full and compact mode
-- Window placement/size is preserved when toggling compact mode
+- Main workspace layout with sidebar + chat surface
+- Open the active session in a floating session window from the main workspace
+- Open session history items in floating session windows from the sidebar
+- Floating session windows are native decorated/resizable windows
+- Floating session windows and the main workspace use the same chat/message rendering surface
 
 ### Settings & extension visibility
 
-- Settings overlay for startup view and message block defaults
+- Settings overlay for message block defaults
 - Registered extensions list in Settings, grouped by **Global** (`~/.pi/agent`) and **Local** (`.pi`) scope
 - Extension load diagnostics visible in Settings (when extension loading reports errors)
 
@@ -91,6 +91,11 @@ This page helps you quickly understand what to expect from **Graphone** today, e
 
 - Session resume works through sidebar/history flow; command-level parity is still incomplete
 
+### Floating session window limits
+
+- Floating windows are opened for specific sessions (active session or selected history session)
+- If the bound session is no longer available, the floating window shows an unavailable-state message
+
 ---
 
 ## ❌ Not available yet (compared to pi TUI)
@@ -106,7 +111,7 @@ This page helps you quickly understand what to expect from **Graphone** today, e
 - Full command parity for advanced session/workflow commands, including:
   - `/settings`, `/scoped-models`, `/fork`, `/tree`, `/resume`
   - `/export`, `/share`, `/copy`, `/name`, `/session`
-  - `/compact` command parity (compact mode is available via the GUI toggle), `/reload`, `/hotkeys`, `/changelog`, `/quit`
+  - `/compact`, `/reload`, `/hotkeys`, `/changelog`, `/quit`
 
 ### Keyboard and branching workflows
 
@@ -121,6 +126,6 @@ This page helps you quickly understand what to expect from **Graphone** today, e
 
 ## What this means for you
 
-Graphone already covers the core day-to-day chat workflow well (sessions, model selection, streaming, tools, history management, and compact/full display mode). Advanced terminal workflows are still being brought over.
+Graphone already covers the core day-to-day chat workflow well (sessions, model selection, streaming, tools, history management, and floating session windows from the desktop workspace). Advanced terminal workflows are still being brought over.
 
 If you depend on specific TUI commands, check this page first before expecting full parity in the GUI.

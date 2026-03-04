@@ -28,6 +28,10 @@ interface CreateSessionData {
   sessionFile?: string;
 }
 
+interface CreateSessionOptions {
+  activate?: boolean;
+}
+
 interface ListSessionsData {
   sessions: Array<{
     sessionId?: unknown;
@@ -73,6 +77,7 @@ export class SessionsStore {
     provider?: string,
     model?: string,
     sessionFile?: string,
+    options?: CreateSessionOptions,
   ): Promise<SessionDescriptor> {
     this.creating = true;
     this.error = null;
@@ -124,7 +129,11 @@ export class SessionsStore {
       };
 
       this.sessions = [...this.sessions, descriptor];
-      this.activeSessionId = descriptor.sessionId;
+
+      const shouldActivate = options?.activate ?? true;
+      if (shouldActivate) {
+        this.activeSessionId = descriptor.sessionId;
+      }
 
       return descriptor;
     } catch (error) {

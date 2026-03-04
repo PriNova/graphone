@@ -187,30 +187,6 @@
     width: 100%;
   }
 
-  /* Compact mode: let desktop wallpaper/background show through the window. */
-  html[data-display-mode="compact"],
-  html[data-display-mode="compact"] body,
-  html[data-display-mode="compact"] #app,
-  html[data-display-mode="compact"] #svelte {
-    background: transparent !important;
-    background-color: transparent !important;
-    background-image: none !important;
-  }
-
-  /* Keep compact animated/fading elements on dedicated compositor layers to
-     reduce transient flicker/blink during repaint cycles. */
-  html[data-display-mode="compact"] main,
-  html[data-display-mode="compact"] #compact-session-sidebar,
-  html[data-display-mode="compact"] #compact-session-sidebar > div,
-  html[data-display-mode="compact"] .animate-fade-in,
-  html[data-display-mode="compact"] [class*="transition-opacity"],
-  html[data-display-mode="compact"] [class*="transition-all"],
-  html[data-display-mode="compact"] [class*="transition-[opacity,transform]"] {
-    will-change: transform, opacity;
-    transform: translateZ(0);
-    backface-visibility: hidden;
-  }
-
   /* Native select styling - override OS defaults for consistent dark mode */
   select {
     appearance: none;

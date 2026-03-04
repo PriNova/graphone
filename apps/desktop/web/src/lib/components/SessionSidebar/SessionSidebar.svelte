@@ -705,8 +705,8 @@
                           class="shrink-0 inline-flex h-5 w-5 items-center justify-center rounded text-muted-foreground hover:text-foreground hover:bg-secondary opacity-0 group-hover/session:opacity-100 transition-opacity"
                           onclick={(e) =>
                             handleOpenHistoryInWindow(projectDir, history, e)}
-                          aria-label="Open session in compact window"
-                          title="Open in compact window"
+                          aria-label="Open session in floating window"
+                          title="Open in floating window"
                         >
                           <svg
                             class="h-3 w-3"

@@ -22,7 +22,7 @@ Graphone provides a desktop interface for the pi-mono coding agent using Tauri's
 ### Key Features
 
 - 🤖 **Unified Interface** - Consistent chat UI for desktop platforms
-- 🗜️ **Compact Mode** - Switch between full workspace and compact capsule mode (with a collapsible scope drawer)
+- 🪟 **Floating Session Windows** - Open isolated session windows from the workspace/sidebar with native decorated window chrome
 - 🖥️ **Desktop Apps** - Native Windows, macOS, and Linux applications
 - ⚡ **Streaming Responses** - Real-time agent output
 - 🔒 **Local-First** - Works with local and remote LLM providers
@@ -429,4 +429,4 @@ MIT License - See [LICENSE](LICENSE) for details.
 
 ---
 
-**Status**: Active development | **Last Updated**: February 23, 2026
+**Status**: Active development | **Last Updated**: March 4, 2026

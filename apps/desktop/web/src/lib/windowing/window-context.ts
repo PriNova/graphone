@@ -1,4 +1,4 @@
-export type WindowRole = "main" | "compact-session";
+export type WindowRole = "main" | "floating-session-chat";
 
 export interface WindowContext {
   role: WindowRole;
@@ -25,22 +25,20 @@ export function parseWindowContextFromSearch(search: string): WindowContext {
   const projectDir = normalizeQueryValue(params.get(PROJECT_DIR_QUERY_KEY));
   const sessionFile = normalizeQueryValue(params.get(SESSION_FILE_QUERY_KEY));
 
-  const isCompactSessionRole = roleParam === "compact-session";
-
-  if (!isCompactSessionRole || !sessionId) {
+  if (roleParam === "floating-session-chat" && sessionId) {
     return {
-      role: "main",
-      sessionId: null,
-      projectDir: null,
-      sessionFile: null,
+      role: "floating-session-chat",
+      sessionId,
+      projectDir,
+      sessionFile,
     };
   }
 
   return {
-    role: "compact-session",
-    sessionId,
-    projectDir,
-    sessionFile,
+    role: "main",
+    sessionId: null,
+    projectDir: null,
+    sessionFile: null,
   };
 }
 

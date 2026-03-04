@@ -8,7 +8,7 @@ import {
 } from "$lib/windowing/window-context";
 
 const MAIN_WINDOW_LABEL = "main";
-const COMPACT_SESSION_WINDOW_PREFIX = "compact-session-";
+const FLOATING_SESSION_WINDOW_PREFIX = "floating-session-";
 
 function sanitizeSessionIdForWindowLabel(sessionId: string): string {
   const sanitized = sessionId
@@ -20,8 +20,8 @@ function sanitizeSessionIdForWindowLabel(sessionId: string): string {
   return sanitized.length > 0 ? sanitized : "session";
 }
 
-function toCompactSessionWindowLabel(sessionId: string): string {
-  return `${COMPACT_SESSION_WINDOW_PREFIX}${sanitizeSessionIdForWindowLabel(sessionId)}`;
+function toFloatingSessionWindowLabel(sessionId: string): string {
+  return `${FLOATING_SESSION_WINDOW_PREFIX}${sanitizeSessionIdForWindowLabel(sessionId)}`;
 }
 
 async function focusWindowByLabel(label: string): Promise<boolean> {
@@ -41,14 +41,18 @@ async function focusWindowByLabel(label: string): Promise<boolean> {
   return true;
 }
 
-function buildCompactSessionWindowUrl(args: {
+function buildFloatingSessionWindowUrl(args: {
   sessionId: string;
   projectDir?: string;
   sessionFile?: string;
 }): string {
   const query = new URLSearchParams();
-  query.set(WINDOW_ROLE_QUERY_KEY, "compact-session");
-  query.set(SESSION_ID_QUERY_KEY, args.sessionId);
+  query.set(WINDOW_ROLE_QUERY_KEY, "floating-session-chat");
+
+  const sessionId = args.sessionId.trim();
+  if (sessionId.length > 0) {
+    query.set(SESSION_ID_QUERY_KEY, sessionId);
+  }
 
   const projectDir = args.projectDir?.trim();
   if (projectDir && projectDir.length > 0) {
@@ -63,42 +67,42 @@ function buildCompactSessionWindowUrl(args: {
   return `/?${query.toString()}`;
 }
 
-export interface OpenCompactSessionWindowArgs {
+export interface OpenFloatingSessionWindowArgs {
   sessionId: string;
   projectDir?: string;
   sessionFile?: string;
 }
 
-export async function openOrFocusCompactSessionWindow(
-  args: OpenCompactSessionWindowArgs,
+export async function openOrFocusFloatingSessionWindow(
+  args: OpenFloatingSessionWindowArgs,
 ): Promise<void> {
   const sessionId = args.sessionId.trim();
   if (sessionId.length === 0) {
     return;
   }
 
-  const label = toCompactSessionWindowLabel(sessionId);
+  const label = toFloatingSessionWindowLabel(sessionId);
   const alreadyOpen = await focusWindowByLabel(label);
   if (alreadyOpen) {
     return;
   }
 
-  const windowUrl = buildCompactSessionWindowUrl({
+  const windowUrl = buildFloatingSessionWindowUrl({
     sessionId,
     projectDir: args.projectDir,
     sessionFile: args.sessionFile,
   });
 
   new WebviewWindow(label, {
-    title: "",
+    title: "Graphone Session",
     url: windowUrl,
-    width: 660,
-    height: 380,
-    minWidth: 560,
-    minHeight: 58,
-    transparent: true,
-    shadow: false,
-    decorations: false,
+    width: 900,
+    height: 620,
+    minWidth: 660,
+    minHeight: 380,
+    transparent: false,
+    shadow: true,
+    decorations: true,
     resizable: true,
     focus: true,
   });
@@ -115,8 +119,8 @@ export async function openOrFocusMainWindow(): Promise<void> {
     url: "/",
     width: 1024,
     height: 768,
-    transparent: true,
-    shadow: false,
+    transparent: false,
+    shadow: true,
     decorations: true,
     resizable: true,
     focus: true,

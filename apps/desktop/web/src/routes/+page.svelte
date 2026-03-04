@@ -1,14 +1,9 @@
 <script lang="ts">
-  import { onDestroy, onMount, tick } from "svelte";
+  import { onDestroy, onMount } from "svelte";
   import { invoke } from "@tauri-apps/api/core";
   import { getCurrentWindow } from "@tauri-apps/api/window";
 
-  import CompactChatLayout from "$lib/components/layout/CompactChatLayout.svelte";
   import MainChatLayout from "$lib/components/layout/MainChatLayout.svelte";
-  import {
-    buildCompactActivityItems,
-    type CompactActivityItem,
-  } from "$lib/components/layout/compact-activity";
   import { handleAgentEvent } from "$lib/handlers/agent-events";
   import { setupAgentEventBridge } from "$lib/handlers/agent-event-bridge";
   import {
@@ -20,7 +15,6 @@
   import {
     hasPersistedSessionHistory,
     mergeScopeHistory,
-    toScopeTitle,
   } from "$lib/session/scope-history";
   import {
     ensureRuntime as ensureSessionRuntime,
@@ -41,11 +35,7 @@
   import { settingsStore } from "$lib/stores/settings.svelte";
   import type { PromptImageAttachment } from "$lib/types/agent";
   import type { SessionRuntime } from "$lib/types/session";
-  import { applyWindowMode, type DisplayMode } from "$lib/utils/window-mode";
-  import {
-    openOrFocusCompactSessionWindow,
-    openOrFocusMainWindow,
-  } from "$lib/windowing/session-windows";
+  import { openOrFocusFloatingSessionWindow } from "$lib/windowing/session-windows";
   import { getCurrentWindowContext } from "$lib/windowing/window-context";
 
   // DOM refs
@@ -53,14 +43,13 @@
 
   // Event unlistener
   let disposeAgentEventBridge: (() => void) | null = null;
+  let disposeWindowFocusChanged: (() => void) | null = null;
 
   let sessionRuntimes = $state<SessionRuntimeMap>({});
   let projectDirInput = $state("");
   let startupError = $state<string | null>(null);
   let sessionsBootstrapped = $state(false);
   let sidebarCollapsed = $state(false);
-  let compactScopesSidebarOpen = $state(false);
-  let runtimeDisplayMode = $state<DisplayMode>("full");
   let sessionSidebarRefreshTimer: ReturnType<typeof setTimeout> | null = null;
   const pendingSessionSidebarSync = new Set<string>();
   let optimisticFirstPromptBySession = $state<
@@ -70,17 +59,13 @@
   let promptAttachmentDraftBySession = $state<
     Record<string, PromptImageAttachment[]>
   >({});
-  let compactSessionMissing = $state(false);
+  let floatingSessionMissing = $state(false);
   const windowContext = getCurrentWindowContext();
-  const isCompactSessionWindow = windowContext.role === "compact-session";
+  const isFloatingSessionWindow =
+    windowContext.role === "floating-session-chat";
+  const isMainWindow = windowContext.role === "main";
   const boundSessionId = windowContext.sessionId;
   const EMPTY_PROMPT_ATTACHMENTS: PromptImageAttachment[] = [];
-
-  // Ensure compact transparency CSS applies as early as possible on compact
-  // pop-out windows to avoid first-paint background flashes.
-  if (typeof document !== "undefined" && isCompactSessionWindow) {
-    document.documentElement.setAttribute("data-display-mode", "compact");
-  }
 
   const sessions = $derived(sessionsStore.sessions);
   const activeSessionId = $derived(sessionsStore.activeSessionId);
@@ -157,9 +142,6 @@
   const currentModelSupportsImageInput = $derived(
     activeRuntime ? activeRuntime.agent.supportsImageInput : false,
   );
-  const isStreaming = $derived(
-    activeRuntime ? activeRuntime.messages.streamingMessageId !== null : false,
-  );
   const chatHasMessages = $derived(messages.length > 0);
   const usageIndicator = $derived(
     activeRuntime ? activeRuntime.agent.usageIndicator : null,
@@ -222,91 +204,17 @@
 
     return Array.from(busy);
   });
-  const compactUsageTooltipLine = $derived.by(() => {
-    const contextText = usageIndicator?.contextText?.trim() ?? "";
-    if (contextText.length === 0) {
-      return "Usage: unavailable";
-    }
-
-    const usageText = contextText.split(/\s+/)[0] ?? contextText;
-    return `Usage: ${usageText}`;
-  });
-
-  const compactModelTooltipLine = $derived.by(() => {
-    const provider = currentProvider.trim();
-    const model = currentModel.trim();
-
-    if (provider && model) {
-      return `Model: ${provider}/${model}`;
-    }
-
-    return `Model: ${model || "No model selected"}`;
-  });
-
-  const compactScopeTooltip = $derived.by(() => {
-    const scopeLine = activeProjectDir
-      ? `Project Scope: ${toScopeTitle(activeProjectDir)}`
-      : "Project Scope: none";
-
-    return [compactUsageTooltipLine, compactModelTooltipLine, scopeLine].join(
-      "\n",
-    );
-  });
-  const displayMode = $derived.by((): DisplayMode => {
-    if (isCompactSessionWindow) {
-      return "compact";
-    }
-
-    return runtimeDisplayMode;
-  });
-  const isCompactMode = $derived(displayMode === "compact");
-
-  const compactActivityItems = $derived.by((): CompactActivityItem[] => {
-    if (!activeRuntime || messages.length === 0) {
-      return [];
-    }
-
-    return buildCompactActivityItems(messages);
-  });
-
-  let hideCompactRail = $state(false);
-  let lastCompactRailSessionId = $state<string | null>(null);
-
-  $effect(() => {
-    const currentSessionId = activeSessionId;
-
-    if (currentSessionId !== lastCompactRailSessionId) {
-      hideCompactRail = false;
-      lastCompactRailSessionId = currentSessionId;
-    }
-  });
-
-  const showCompactActivityRail = $derived.by(() => {
-    if (
-      hideCompactRail ||
-      !isCompactMode ||
-      compactActivityItems.length === 0
-    ) {
-      return false;
-    }
-
-    return true;
-  });
-
-  const showCompactActivityRailShell = $derived(
-    !hideCompactRail && isCompactMode && sessionStarted,
+  const showSidebarInLayout = $derived(isMainWindow);
+  const showPopOutActiveSessionButton = $derived(isMainWindow);
+  const layoutWindowTitleHint = $derived(
+    isFloatingSessionWindow ? "Floating isolated session" : null,
   );
-
-  const compactRailViewportClass = $derived.by(() => {
-    if (!showCompactActivityRail) {
-      return "";
+  const layoutEmptyStateText = $derived.by(() => {
+    if (isFloatingSessionWindow && floatingSessionMissing) {
+      return "This floating session is no longer available.";
     }
 
-    const hasAssistantCard = compactActivityItems.some(
-      (item) => item.type === "assistant",
-    );
-
-    return hasAssistantCard ? "h-[18rem]" : "h-[5.75rem]";
+    return "Create a session to start chatting.";
   });
 
   function handleScroll(): void {
@@ -465,19 +373,17 @@
   }
 
   async function popOutSession(descriptor: SessionDescriptor): Promise<void> {
-    await openOrFocusCompactSessionWindow({
+    await openOrFocusFloatingSessionWindow({
       sessionId: descriptor.sessionId,
       projectDir: descriptor.projectDir,
       sessionFile: descriptor.sessionFile,
     });
   }
 
-  async function onOpenHistoryInCompactWindow(
+  async function onOpenHistoryInFloatingWindow(
     projectDir: string,
     history: PersistedSessionHistoryItem,
   ): Promise<void> {
-    const previousActiveSessionId = sessionsStore.activeSessionId;
-
     const existing = sessionsStore.sessions.find(
       (session) => session.sessionFile === history.filePath,
     );
@@ -489,11 +395,8 @@
         undefined,
         undefined,
         history.filePath,
+        { activate: false },
       ));
-
-    if (!existing && previousActiveSessionId) {
-      sessionsStore.setActiveSession(previousActiveSessionId);
-    }
 
     if (!existing) {
       scheduleSessionSidebarRefresh(250);
@@ -511,110 +414,23 @@
     await popOutSession(descriptor);
   }
 
-  async function createSiblingCompactSessionWindow(
+  async function createSiblingFloatingSessionWindow(
     projectDir: string,
   ): Promise<void> {
-    const previousActiveSessionId = activeRuntime?.sessionId ?? null;
-    const descriptor = await sessionsStore.createSession(projectDir);
+    const descriptor = await sessionsStore.createSession(
+      projectDir,
+      undefined,
+      undefined,
+      undefined,
+      { activate: false },
+    );
 
     scheduleSessionSidebarRefresh(250);
     await popOutSession(descriptor);
-
-    if (previousActiveSessionId) {
-      sessionsStore.setActiveSession(previousActiveSessionId);
-    }
-  }
-
-  async function closeCurrentWindow(): Promise<void> {
-    await getCurrentWindow()
-      .close()
-      .catch(() => undefined);
   }
 
   function toggleSidebar(): void {
     sidebarCollapsed = !sidebarCollapsed;
-  }
-
-  function toggleCompactScopesSidebar(): void {
-    compactScopesSidebarOpen = !compactScopesSidebarOpen;
-  }
-
-  async function setRuntimeDisplayMode(mode: DisplayMode): Promise<void> {
-    if (isCompactSessionWindow) {
-      await applyWindowMode("compact").catch(() => undefined);
-      return;
-    }
-
-    if (runtimeDisplayMode === mode) {
-      return;
-    }
-
-    const previousMode = runtimeDisplayMode;
-
-    try {
-      await applyWindowMode(mode);
-      runtimeDisplayMode = mode;
-    } catch (error) {
-      console.error("Failed to switch display mode:", error);
-
-      // Best effort rollback for window visuals if apply partially succeeded.
-      try {
-        await applyWindowMode(previousMode);
-      } catch {
-        // ignore rollback errors
-      }
-    }
-  }
-
-  async function setStartupDisplayModePreference(
-    mode: DisplayMode,
-  ): Promise<void> {
-    await settingsStore.setDisplayMode(mode);
-  }
-
-  async function enterCompactMode(): Promise<void> {
-    await setRuntimeDisplayMode("compact");
-  }
-
-  async function enterFullMode(): Promise<void> {
-    if (isCompactSessionWindow) {
-      await openOrFocusMainWindow();
-      return;
-    }
-
-    compactScopesSidebarOpen = false;
-    await setRuntimeDisplayMode("full");
-
-    await tick();
-    requestAnimationFrame(() => scrollToBottom(false));
-  }
-
-  async function onCompactDragHandleMouseDown(
-    event: MouseEvent,
-  ): Promise<void> {
-    if (event.button !== 0) {
-      return;
-    }
-
-    await getCurrentWindow()
-      .startDragging()
-      .catch(() => undefined);
-  }
-
-  async function onCompactResizeHandleMouseDown(
-    event: MouseEvent,
-    direction: "West" | "East",
-  ): Promise<void> {
-    if (event.button !== 0) {
-      return;
-    }
-
-    event.preventDefault();
-    event.stopPropagation();
-
-    await getCurrentWindow()
-      .startResizeDragging(direction)
-      .catch(() => undefined);
   }
 
   function onProjectDirInputChange(value: string): void {
@@ -629,7 +445,6 @@
       activeRuntime &&
       normalizeScopePath(activeRuntime.projectDir) === normalizedTarget
     ) {
-      compactScopesSidebarOpen = false;
       return;
     }
 
@@ -637,7 +452,6 @@
     await settingsStore.setLastSelectedScope(normalizedTarget);
 
     await createSession(projectDir);
-    compactScopesSidebarOpen = false;
   }
 
   async function onSelectHistory(
@@ -655,7 +469,6 @@
       sessionsStore.setActiveSession(existing.sessionId);
       await ensureRuntime(existing);
       requestAnimationFrame(() => scrollToBottom(false));
-      compactScopesSidebarOpen = false;
       return;
     }
 
@@ -663,7 +476,6 @@
     await settingsStore.setLastSelectedScope(normalizedTarget);
 
     await createSession(projectDir, history.filePath);
-    compactScopesSidebarOpen = false;
   }
 
   async function onRemoveHistory(
@@ -777,7 +589,6 @@
     images?: PromptImageAttachment[],
   ): Promise<void> {
     if (!activeRuntime) return;
-    hideCompactRail = false;
     maybeTrackOptimisticFirstPrompt(activeRuntime, prompt);
     await handlePromptSubmit(activeRuntime, prompt, images);
   }
@@ -791,11 +602,9 @@
       return;
     }
 
-    hideCompactRail = true;
-
     if (activeRuntime.agent.isLoading) {
-      if (isCompactSessionWindow) {
-        await createSiblingCompactSessionWindow(activeRuntime.projectDir);
+      if (isFloatingSessionWindow) {
+        await createSiblingFloatingSessionWindow(activeRuntime.projectDir);
         return;
       }
 
@@ -855,13 +664,11 @@
     if (!activeRuntime) return;
 
     if (command === "new") {
-      hideCompactRail = true;
-
       if (activeRuntime.agent.isLoading) {
         clearOptimisticFirstPrompt(activeRuntime.sessionId);
 
-        if (isCompactSessionWindow) {
-          await createSiblingCompactSessionWindow(activeRuntime.projectDir);
+        if (isFloatingSessionWindow) {
+          await createSiblingFloatingSessionWindow(activeRuntime.projectDir);
           return;
         }
 
@@ -882,7 +689,6 @@
         activeRuntime.messages.addErrorMessage(result.message);
         break;
       case "submit":
-        hideCompactRail = false;
         maybeTrackOptimisticFirstPrompt(activeRuntime, result.text);
         await handlePromptSubmit(activeRuntime, result.text);
         break;
@@ -930,7 +736,7 @@
   });
 
   $effect(() => {
-    if (!sessionsBootstrapped || !isCompactSessionWindow || !boundSessionId) {
+    if (!sessionsBootstrapped || !isFloatingSessionWindow || !boundSessionId) {
       return;
     }
 
@@ -939,51 +745,25 @@
     );
 
     if (!hasBoundSession && !sessionsStore.creating) {
-      compactSessionMissing = true;
-    }
-  });
-
-  $effect(() => {
-    document.documentElement.setAttribute("data-display-mode", displayMode);
-  });
-
-  $effect(() => {
-    if (!isCompactMode && compactScopesSidebarOpen) {
-      compactScopesSidebarOpen = false;
+      floatingSessionMissing = true;
     }
   });
 
   onMount(async () => {
     // Never block startup on settings/plugin-store load.
     // If store access stalls, keep bootstrapping sessions with defaults.
-    const settingsLoad = settingsStore
-      .load()
-      .catch((error) => {
-        console.warn("Failed to load settings:", error);
-      })
-      .then(() => {
-        // Do not block session/bootstrap initialization on window-manager APIs.
-        // On some Linux setups, mode application can stall temporarily.
-        const initialMode: DisplayMode = isCompactSessionWindow
-          ? "compact"
-          : settingsStore.displayMode;
-
-        if (!isCompactSessionWindow) {
-          runtimeDisplayMode = initialMode;
-        }
-
-        return applyWindowMode(initialMode).catch((error) => {
-          console.warn("Failed to apply initial window mode:", error);
-        });
-      });
+    const settingsLoad = settingsStore.load().catch((error) => {
+      console.warn("Failed to load settings:", error);
+    });
 
     void settingsLoad;
 
     try {
       await Promise.race([
         bootstrapSessions({
-          isCompactSessionWindow,
+          isFloatingSessionWindow,
           boundSessionId,
+          requestedSessionId: windowContext.sessionId,
           requestedSessionFile: windowContext.sessionFile,
           loadCwd: async () => cwdStore.load(),
           refreshProjectScopes: async () => projectScopesStore.refresh(),
@@ -1007,8 +787,8 @@
           requestScrollToBottom: () => {
             requestAnimationFrame(() => scrollToBottom(false));
           },
-          setCompactSessionMissing: (missing) => {
-            compactSessionMissing = missing;
+          setFloatingSessionMissing: (missing) => {
+            floatingSessionMissing = missing;
           },
         }),
         new Promise<never>((_, reject) => {
@@ -1022,6 +802,18 @@
     } finally {
       sessionsBootstrapped = true;
     }
+
+    await settingsLoad;
+
+    disposeWindowFocusChanged = await getCurrentWindow()
+      .onFocusChanged((event) => {
+        if (!event.payload) {
+          return;
+        }
+
+        void settingsStore.load().catch(() => undefined);
+      })
+      .catch(() => null);
 
     disposeAgentEventBridge = await setupAgentEventBridge({
       getRuntime: (sessionId) => sessionRuntimes[sessionId],
@@ -1044,6 +836,7 @@
 
   onDestroy(() => {
     disposeAgentEventBridge?.();
+    disposeWindowFocusChanged?.();
 
     if (sessionSidebarRefreshTimer) {
       clearTimeout(sessionSidebarRefreshTimer);
@@ -1062,137 +855,75 @@
   });
 </script>
 
-{#if isCompactMode}
-  <CompactChatLayout
-    {isCompactSessionWindow}
-    {sessionsBootstrapped}
-    {compactSessionMissing}
-    {projectScopes}
-    {scopeHistoryByProject}
-    {activeProjectDir}
-    {activeSessionId}
-    {activeSessionFile}
-    {busySessionIds}
-    {busySessionFiles}
-    {projectDirInput}
-    sessionsCreating={sessionsStore.creating}
-    collapsedScopes={settingsStore.collapsedScopes}
-    {compactScopesSidebarOpen}
-    {compactScopeTooltip}
-    {showCompactActivityRailShell}
-    {showCompactActivityRail}
-    {compactRailViewportClass}
-    {compactActivityItems}
-    {isStreaming}
-    {activeRuntime}
-    {sessionStarted}
-    {activePromptDraft}
-    {activePromptAttachmentDraft}
-    {isLoading}
-    {currentModel}
-    {currentProvider}
-    {currentThinkingLevel}
-    {currentModelSupportsImageInput}
-    {supportsThinking}
-    {availableThinkingLevels}
-    {availableModels}
-    {isModelsLoading}
-    {isSettingModel}
-    {isSettingThinking}
-    modelFilter={settingsStore.modelFilter}
-    {chatHasMessages}
-    onclosewindow={closeCurrentWindow}
-    onopenmainwindow={openOrFocusMainWindow}
-    ontogglecompactscopes={toggleCompactScopesSidebar}
-    onprojectdirinput={onProjectDirInputChange}
-    oncreatesession={createSessionFromInput}
-    onselectscope={onSelectScope}
-    onselecthistory={onSelectHistory}
-    onopenhistorywindow={onOpenHistoryInCompactWindow}
-    onremovehistory={onRemoveHistory}
-    onremovescope={onRemoveScope}
-    ontogglescopecollapse={onToggleScopeCollapse}
-    oncompactdraghandlemousedown={onCompactDragHandleMouseDown}
-    oncompactresizehandlemousedown={onCompactResizeHandleMouseDown}
-    onenterfullmode={enterFullMode}
-    onpromptinput={onPromptInput}
-    onpromptattachmentschange={onPromptAttachmentsChange}
-    onsubmit={onSubmit}
-    oncancel={onCancel}
-    onslashcommand={onSlashCommand}
-    onnewchat={onNewChat}
-    onmodelchange={onModelChange}
-    onthinkingchange={onThinkingChange}
-    onmodelfilterchange={onModelFilterChange}
-  />
-{:else}
-  <MainChatLayout
-    {projectScopes}
-    {scopeHistoryByProject}
-    {activeProjectDir}
-    {activeSessionId}
-    {activeSessionFile}
-    {busySessionIds}
-    {busySessionFiles}
-    {projectDirInput}
-    sessionsCreating={sessionsStore.creating}
-    {sidebarCollapsed}
-    collapsedScopes={settingsStore.collapsedScopes}
-    {activeSession}
-    {startupError}
-    {activeRuntime}
-    {messages}
-    {activePromptDraft}
-    {activePromptAttachmentDraft}
-    {isLoading}
-    {sessionStarted}
-    {currentModel}
-    {currentProvider}
-    {currentThinkingLevel}
-    {currentModelSupportsImageInput}
-    {supportsThinking}
-    {availableThinkingLevels}
-    {availableModels}
-    {isModelsLoading}
-    {isSettingModel}
-    {isSettingThinking}
-    modelFilter={settingsStore.modelFilter}
-    settingsDisplayMode={settingsStore.displayMode}
-    toolResultsCollapsedByDefault={settingsStore.toolResultsCollapsedByDefault}
-    thinkingCollapsedByDefault={settingsStore.thinkingCollapsedByDefault}
-    {chatHasMessages}
-    {usageIndicator}
-    {isExtensionsLoading}
-    {extensionsLoadError}
-    {globalExtensions}
-    {localExtensions}
-    {extensionLoadDiagnostics}
-    onmessagescroll={handleScroll}
-    onmessagescontainerchange={(element) => {
-      messagesContainerRef = element;
-    }}
-    ontogglesidebar={toggleSidebar}
-    onprojectdirinput={onProjectDirInputChange}
-    oncreatesession={createSessionFromInput}
-    onselectscope={onSelectScope}
-    onselecthistory={onSelectHistory}
-    onopenhistorywindow={onOpenHistoryInCompactWindow}
-    onremovehistory={onRemoveHistory}
-    onremovescope={onRemoveScope}
-    ontogglescopecollapse={onToggleScopeCollapse}
-    onpopoutactivesession={onPopOutActiveSession}
-    onentercompactmode={enterCompactMode}
-    onpromptinput={onPromptInput}
-    onpromptattachmentschange={onPromptAttachmentsChange}
-    onsubmit={onSubmit}
-    oncancel={onCancel}
-    onslashcommand={onSlashCommand}
-    onnewchat={onNewChat}
-    onmodelchange={onModelChange}
-    onthinkingchange={onThinkingChange}
-    onmodelfilterchange={onModelFilterChange}
-    ondisplaymodechange={setStartupDisplayModePreference}
-    ontoolresultscollapsedchange={onToolResultsCollapsedChange}
-    onthinkingcollapsedchange={onThinkingCollapsedChange}
-  />
-{/if}
+<MainChatLayout
+  {projectScopes}
+  {scopeHistoryByProject}
+  {activeProjectDir}
+  {activeSessionId}
+  {activeSessionFile}
+  {busySessionIds}
+  {busySessionFiles}
+  {projectDirInput}
+  sessionsCreating={sessionsStore.creating}
+  {sidebarCollapsed}
+  collapsedScopes={settingsStore.collapsedScopes}
+  {activeSession}
+  {startupError}
+  emptyStateText={layoutEmptyStateText}
+  {activeRuntime}
+  {messages}
+  {activePromptDraft}
+  {activePromptAttachmentDraft}
+  {isLoading}
+  {sessionStarted}
+  {currentModel}
+  {currentProvider}
+  {currentThinkingLevel}
+  {currentModelSupportsImageInput}
+  {supportsThinking}
+  {availableThinkingLevels}
+  {availableModels}
+  {isModelsLoading}
+  {isSettingModel}
+  {isSettingThinking}
+  modelFilter={settingsStore.modelFilter}
+  toolResultsCollapsedByDefault={settingsStore.toolResultsCollapsedByDefault}
+  thinkingCollapsedByDefault={settingsStore.thinkingCollapsedByDefault}
+  {chatHasMessages}
+  {usageIndicator}
+  {isExtensionsLoading}
+  {extensionsLoadError}
+  {globalExtensions}
+  {localExtensions}
+  {extensionLoadDiagnostics}
+  showSidebar={showSidebarInLayout}
+  showSettingsButton={true}
+  windowTitleHint={layoutWindowTitleHint}
+  onmessagescroll={handleScroll}
+  onmessagescontainerchange={(element) => {
+    messagesContainerRef = element;
+  }}
+  ontogglesidebar={toggleSidebar}
+  onprojectdirinput={onProjectDirInputChange}
+  oncreatesession={createSessionFromInput}
+  onselectscope={onSelectScope}
+  onselecthistory={onSelectHistory}
+  onopenhistorywindow={onOpenHistoryInFloatingWindow}
+  onremovehistory={onRemoveHistory}
+  onremovescope={onRemoveScope}
+  ontogglescopecollapse={onToggleScopeCollapse}
+  onpopoutactivesession={showPopOutActiveSessionButton
+    ? onPopOutActiveSession
+    : undefined}
+  onpromptinput={onPromptInput}
+  onpromptattachmentschange={onPromptAttachmentsChange}
+  onsubmit={onSubmit}
+  oncancel={onCancel}
+  onslashcommand={onSlashCommand}
+  onnewchat={onNewChat}
+  onmodelchange={onModelChange}
+  onthinkingchange={onThinkingChange}
+  onmodelfilterchange={onModelFilterChange}
+  ontoolresultscollapsedchange={onToolResultsCollapsedChange}
+  onthinkingcollapsedchange={onThinkingCollapsedChange}
+/>

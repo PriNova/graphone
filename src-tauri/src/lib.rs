@@ -16,10 +16,31 @@ use tokio::sync::Mutex;
 
 use state::SidecarState;
 
+#[cfg(target_os = "linux")]
+fn clear_linux_webkit_renderer_overrides() {
+    const WEBKIT_RENDERER_DISABLE_FLAGS: [&str; 2] = [
+        "WEBKIT_DISABLE_DMABUF_RENDERER",
+        "WEBKIT_DISABLE_COMPOSITING_MODE",
+    ];
+
+    for key in WEBKIT_RENDERER_DISABLE_FLAGS {
+        if std::env::var_os(key).is_some() {
+            std::env::remove_var(key);
+            logger::log(format!(
+                "Cleared inherited environment override: {} (using WebKit defaults)",
+                key
+            ));
+        }
+    }
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     logger::init();
     logger::log("Starting graphone");
+
+    #[cfg(target_os = "linux")]
+    clear_linux_webkit_renderer_overrides();
 
     std::panic::set_hook(Box::new(|panic_info| {
         crate::logger::log(format!("panic: {}", panic_info));

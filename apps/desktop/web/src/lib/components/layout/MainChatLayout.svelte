@@ -29,6 +29,7 @@
     collapsedScopes?: string[];
     activeSession?: SessionDescriptor | null;
     startupError?: string | null;
+    emptyStateText?: string;
     activeRuntime?: SessionRuntime | null;
     messages?: Message[];
     activePromptDraft?: string;
@@ -53,9 +54,11 @@
     globalExtensions?: RegisteredExtensionSummary[];
     localExtensions?: RegisteredExtensionSummary[];
     extensionLoadDiagnostics?: Array<{ path: string; error: string }>;
-    settingsDisplayMode?: "full" | "compact";
     toolResultsCollapsedByDefault?: boolean;
     thinkingCollapsedByDefault?: boolean;
+    showSidebar?: boolean;
+    showSettingsButton?: boolean;
+    windowTitleHint?: string | null;
     onmessagescroll?: () => void;
     onmessagescontainerchange?: (element: HTMLDivElement | null) => void;
     ontogglesidebar?: () => void;
@@ -77,7 +80,6 @@
     onremovescope?: (projectDir: string) => void | Promise<void>;
     ontogglescopecollapse?: (projectDir: string) => void | Promise<void>;
     onpopoutactivesession?: () => void | Promise<void>;
-    onentercompactmode?: () => void | Promise<void>;
     onpromptinput?: (value: string) => void;
     onpromptattachmentschange?: (images: PromptImageAttachment[]) => void;
     onsubmit?: (
@@ -94,7 +96,6 @@
     onmodelchange?: (provider: string, modelId: string) => void | Promise<void>;
     onthinkingchange?: (level: ThinkingLevel) => void | Promise<void>;
     onmodelfilterchange?: (mode: "all" | "enabled") => void | Promise<void>;
-    ondisplaymodechange?: (mode: "full" | "compact") => void | Promise<void>;
     ontoolresultscollapsedchange?: (collapsed: boolean) => void | Promise<void>;
     onthinkingcollapsedchange?: (collapsed: boolean) => void | Promise<void>;
   }
@@ -113,6 +114,7 @@
     collapsedScopes = [],
     activeSession = null,
     startupError = null,
+    emptyStateText = "Create a session to start chatting.",
     activeRuntime = null,
     messages = [],
     activePromptDraft = "",
@@ -137,9 +139,11 @@
     globalExtensions = [],
     localExtensions = [],
     extensionLoadDiagnostics = [],
-    settingsDisplayMode = "full",
     toolResultsCollapsedByDefault = true,
     thinkingCollapsedByDefault = true,
+    showSidebar = true,
+    showSettingsButton = true,
+    windowTitleHint = null,
     onmessagescroll,
     onmessagescontainerchange,
     ontogglesidebar,
@@ -152,7 +156,6 @@
     onremovescope,
     ontogglescopecollapse,
     onpopoutactivesession,
-    onentercompactmode,
     onpromptinput,
     onpromptattachmentschange,
     onsubmit,
@@ -162,7 +165,6 @@
     onmodelchange,
     onthinkingchange,
     onmodelfilterchange,
-    ondisplaymodechange,
     ontoolresultscollapsedchange,
     onthinkingcollapsedchange,
   }: Props = $props();
@@ -184,88 +186,16 @@
 </script>
 
 <main class="relative flex w-full h-screen overflow-hidden">
-  <button
-    type="button"
-    class="absolute top-3 right-14 z-20 flex items-center justify-center h-9 w-9 rounded border border-border text-muted-foreground hover:text-foreground hover:border-foreground hover:bg-secondary transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
-    onclick={onpopoutactivesession}
-    disabled={!activeSession}
-    aria-label="Detach Session"
-    title={activeSession ? "Detach Session" : "No active session"}
-  >
-    <svg
-      aria-hidden="true"
-      class="h-4 w-4"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      stroke-width="2"
-    >
-      <rect x="4" y="4" width="16" height="12" rx="2"></rect>
-      <path d="M9 20h6"></path>
-    </svg>
-  </button>
-
-  <button
-    type="button"
-    class="absolute top-3 right-4 z-20 flex items-center justify-center h-9 w-9 rounded border border-border text-muted-foreground hover:text-foreground hover:border-foreground hover:bg-secondary transition-colors"
-    onclick={onentercompactmode}
-    aria-label="Switch to compact mode"
-    title="Compact mode"
-  >
-    <svg
-      aria-hidden="true"
-      class="h-4 w-4"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      stroke-width="2.2"
-      stroke-linecap="round"
-      stroke-linejoin="round"
-    >
-      <path d="M5 5L10 10" />
-      <path d="M7 10H10V7" />
-      <path d="M19 19L14 14" />
-      <path d="M17 14H14V17" />
-    </svg>
-  </button>
-
-  <SessionSidebar
-    {projectScopes}
-    {scopeHistoryByProject}
-    {activeProjectDir}
-    {activeSessionId}
-    {activeSessionFile}
-    {busySessionIds}
-    {busySessionFiles}
-    {projectDirInput}
-    creating={sessionsCreating}
-    collapsed={sidebarCollapsed}
-    {collapsedScopes}
-    ontoggle={ontogglesidebar}
-    {onprojectdirinput}
-    {oncreatesession}
-    {onselectscope}
-    {onselecthistory}
-    {onopenhistorywindow}
-    {onremovehistory}
-    {onremovescope}
-    {ontogglescopecollapse}
-  />
-
-  <section
-    class="relative flex-1 min-w-0 h-full flex items-stretch justify-center overflow-hidden"
-  >
+  {#if showSidebar && onpopoutactivesession}
     <button
       type="button"
-      class={`absolute top-3 left-4 z-40 flex items-center justify-center h-9 w-9 rounded border transition-colors ${
-        settingsOpen
-          ? "border-foreground bg-secondary text-foreground shadow-xs"
-          : "border-border text-muted-foreground hover:text-foreground hover:border-foreground hover:bg-secondary"
-      }`}
-      onclick={toggleSettings}
-      aria-label={settingsOpen ? "Close settings" : "Open settings"}
-      title={settingsOpen ? "Close settings" : "Open settings"}
-      aria-expanded={settingsOpen}
+      class="absolute top-3 right-4 z-20 flex items-center justify-center h-9 w-9 rounded border border-border text-muted-foreground hover:text-foreground hover:border-foreground hover:bg-secondary transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+      onclick={onpopoutactivesession}
+      disabled={!activeSession}
+      aria-label="Open active session in floating window"
+      title={activeSession
+        ? "Open active session in floating window"
+        : "No active session"}
     >
       <svg
         aria-hidden="true"
@@ -275,24 +205,83 @@
         stroke="currentColor"
         stroke-width="2"
       >
-        <circle cx="12" cy="12" r="3" />
-        <path
-          d="M19.4 15a1.7 1.7 0 0 0 .34 1.87l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.7 1.7 0 0 0-1.87-.34 1.7 1.7 0 0 0-1.04 1.56V21a2 2 0 1 1-4 0v-.09a1.7 1.7 0 0 0-1.04-1.56 1.7 1.7 0 0 0-1.87.34l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.7 1.7 0 0 0 .34-1.87 1.7 1.7 0 0 0-1.56-1.04H3a2 2 0 1 1 0-4h.09a1.7 1.7 0 0 0 1.56-1.04 1.7 1.7 0 0 0-.34-1.87l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.7 1.7 0 0 0 1.87.34H9A1.7 1.7 0 0 0 10 3.09V3a2 2 0 1 1 4 0v.09A1.7 1.7 0 0 0 15.04 4h.01a1.7 1.7 0 0 0 1.87-.34l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.7 1.7 0 0 0-.34 1.87V8.4a1.7 1.7 0 0 0 1.56 1.04H21a2 2 0 1 1 0 4h-.09A1.7 1.7 0 0 0 19.4 15z"
-        />
+        <rect x="4" y="4" width="16" height="12" rx="2"></rect>
+        <path d="M9 20h6"></path>
       </svg>
     </button>
+  {/if}
+
+  {#if showSidebar}
+    <SessionSidebar
+      {projectScopes}
+      {scopeHistoryByProject}
+      {activeProjectDir}
+      {activeSessionId}
+      {activeSessionFile}
+      {busySessionIds}
+      {busySessionFiles}
+      {projectDirInput}
+      creating={sessionsCreating}
+      collapsed={sidebarCollapsed}
+      {collapsedScopes}
+      ontoggle={ontogglesidebar}
+      {onprojectdirinput}
+      {oncreatesession}
+      {onselectscope}
+      {onselecthistory}
+      {onopenhistorywindow}
+      {onremovehistory}
+      {onremovescope}
+      {ontogglescopecollapse}
+    />
+  {/if}
+
+  <section
+    class="relative flex-1 min-w-0 h-full flex items-stretch justify-center overflow-hidden"
+  >
+    {#if showSettingsButton}
+      <button
+        type="button"
+        class={`absolute top-3 ${showSidebar ? "left-4" : "left-3"} z-40 flex items-center justify-center h-9 w-9 rounded border transition-colors ${
+          settingsOpen
+            ? "border-foreground bg-secondary text-foreground shadow-xs"
+            : "border-border text-muted-foreground hover:text-foreground hover:border-foreground hover:bg-secondary"
+        }`}
+        onclick={toggleSettings}
+        aria-label={settingsOpen ? "Close settings" : "Open settings"}
+        title={settingsOpen ? "Close settings" : "Open settings"}
+        aria-expanded={settingsOpen}
+      >
+        <svg
+          aria-hidden="true"
+          class="h-4 w-4"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="2"
+        >
+          <circle cx="12" cy="12" r="3" />
+          <path
+            d="M19.4 15a1.7 1.7 0 0 0 .34 1.87l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.7 1.7 0 0 0-1.87-.34 1.7 1.7 0 0 0-1.04 1.56V21a2 2 0 1 1-4 0v-.09a1.7 1.7 0 0 0-1.04-1.56 1.7 1.7 0 0 0-1.87.34l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.7 1.7 0 0 0 .34-1.87 1.7 1.7 0 0 0-1.56-1.04H3a2 2 0 1 1 0-4h.09a1.7 1.7 0 0 0 1.56-1.04 1.7 1.7 0 0 0-.34-1.87l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.7 1.7 0 0 0 1.87.34H9A1.7 1.7 0 0 0 10 3.09V3a2 2 0 1 1 4 0v.09A1.7 1.7 0 0 0 15.04 4h.01a1.7 1.7 0 0 0 1.87-.34l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.7 1.7 0 0 0-.34 1.87V8.4a1.7 1.7 0 0 0 1.56 1.04H21a2 2 0 1 1 0 4h-.09A1.7 1.7 0 0 0 19.4 15z"
+          />
+        </svg>
+      </button>
+    {/if}
 
     <div
       class="flex flex-col w-full h-full max-w-[min(95vw,1200px)] lg:max-w-[min(88vw,1360px)] px-4 py-4"
     >
       <header
-        class="shrink-0 h-[86px] flex items-center justify-center text-center"
+        class="shrink-0 h-[86px] flex flex-col items-center justify-center text-center gap-1"
       >
         <h1
           class="text-3xl font-semibold tracking-tight bg-linear-to-r from-foreground to-muted-foreground bg-clip-text text-transparent"
         >
           Graphone
         </h1>
+        {#if windowTitleHint}
+          <p class="text-xs text-muted-foreground">{windowTitleHint}</p>
+        {/if}
       </header>
 
       <div
@@ -308,9 +297,7 @@
           </div>
         {:else if !activeRuntime}
           <div class="flex items-center justify-center h-full">
-            <p class="text-muted-foreground text-sm">
-              Create a session to start chatting.
-            </p>
+            <p class="text-muted-foreground text-sm">{emptyStateText}</p>
           </div>
         {:else if messages.length === 0}
           <div class="flex items-center justify-center h-full">
@@ -379,7 +366,6 @@
 
     {#if settingsOpen}
       <SettingsOverlay
-        displayMode={settingsDisplayMode}
         {toolResultsCollapsedByDefault}
         {thinkingCollapsedByDefault}
         {isExtensionsLoading}
@@ -387,7 +373,6 @@
         {globalExtensions}
         {localExtensions}
         {extensionLoadDiagnostics}
-        {ondisplaymodechange}
         {ontoolresultscollapsedchange}
         {onthinkingcollapsedchange}
       />

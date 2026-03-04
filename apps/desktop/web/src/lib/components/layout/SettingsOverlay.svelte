@@ -2,7 +2,6 @@
   import type { RegisteredExtensionSummary } from "$lib/stores/agent.svelte";
 
   interface Props {
-    displayMode?: "full" | "compact";
     toolResultsCollapsedByDefault?: boolean;
     thinkingCollapsedByDefault?: boolean;
     isExtensionsLoading?: boolean;
@@ -10,13 +9,11 @@
     globalExtensions?: RegisteredExtensionSummary[];
     localExtensions?: RegisteredExtensionSummary[];
     extensionLoadDiagnostics?: Array<{ path: string; error: string }>;
-    ondisplaymodechange?: (mode: "full" | "compact") => void | Promise<void>;
     ontoolresultscollapsedchange?: (collapsed: boolean) => void | Promise<void>;
     onthinkingcollapsedchange?: (collapsed: boolean) => void | Promise<void>;
   }
 
   let {
-    displayMode = "full",
     toolResultsCollapsedByDefault = true,
     thinkingCollapsedByDefault = true,
     isExtensionsLoading = false,
@@ -24,13 +21,9 @@
     globalExtensions = [],
     localExtensions = [],
     extensionLoadDiagnostics = [],
-    ondisplaymodechange,
     ontoolresultscollapsedchange,
     onthinkingcollapsedchange,
   }: Props = $props();
-
-  const startupDisplayModeHint =
-    "Select which chat surface Graphone should open in on startup.";
   const toolResultsCollapseHint =
     "When enabled, new tool result blocks start collapsed.";
   const thinkingCollapseHint =
@@ -58,12 +51,6 @@
     return bits.length > 0 ? bits.join(" • ") : "No commands or tools";
   }
 
-  async function handleDisplayModeChange(event: Event): Promise<void> {
-    const target = event.currentTarget as HTMLSelectElement;
-    const mode = target.value === "compact" ? "compact" : "full";
-    await ondisplaymodechange?.(mode);
-  }
-
   async function handleToolResultsCollapsedChange(event: Event): Promise<void> {
     const target = event.currentTarget as HTMLInputElement;
     await ontoolresultscollapsedchange?.(target.checked);
@@ -89,30 +76,6 @@
   </header>
 
   <div class="flex-1 min-h-0 overflow-y-auto p-6 space-y-6">
-    <section class="rounded-lg border border-border bg-card/50 p-4">
-      <h3 class="text-sm font-semibold text-foreground">Startup View</h3>
-
-      <div class="mt-4">
-        <label
-          class="block text-xs font-medium text-foreground mb-1"
-          for="display-mode-select"
-          title={startupDisplayModeHint}
-        >
-          Display mode
-        </label>
-        <select
-          id="display-mode-select"
-          class="w-full max-w-xs rounded border border-border bg-input-background px-2.5 py-2 text-sm text-foreground focus:outline-none focus:border-ring"
-          value={displayMode}
-          onchange={handleDisplayModeChange}
-          title={startupDisplayModeHint}
-        >
-          <option value="full">Full</option>
-          <option value="compact">Compact</option>
-        </select>
-      </div>
-    </section>
-
     <section class="rounded-lg border border-border bg-card/50 p-4">
       <h3 class="text-sm font-semibold text-foreground">Message Blocks</h3>
 
