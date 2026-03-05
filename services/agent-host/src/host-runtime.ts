@@ -100,6 +100,9 @@ export class HostRuntime {
 
     const resolvedCwd = validateCwd(sessionManager.getCwd());
 
+    // Pick up latest models.json/provider overrides before session bootstrap.
+    this.modelRegistry.refresh();
+
     const { session, modelFallbackMessage } = await createAgentSession({
       cwd: resolvedCwd,
       sessionManager,
@@ -261,6 +264,10 @@ export class HostRuntime {
     modelId: string,
   ): Promise<unknown> {
     const session = this.requireSession(sessionId, "set_model");
+
+    // Keep provider/model list fresh (built-ins from current package + models.json).
+    this.modelRegistry.refresh();
+
     const models = await session.modelRegistry.getAvailable();
     const model = models.find(
       (m) => m.provider === provider && m.id === modelId,
@@ -313,6 +320,9 @@ export class HostRuntime {
       supportsImageInput: boolean;
     }>;
   }> {
+    // Refresh before listing so model picker reflects latest models.json edits.
+    this.modelRegistry.refresh();
+
     const models = await this.modelRegistry.getAvailable();
 
     return {
