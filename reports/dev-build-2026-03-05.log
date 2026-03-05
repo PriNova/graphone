@@ -1,0 +1,39 @@
+
+> graphone@0.2.0 dev:linux
+> tauri dev
+
+     Running BeforeDevCommand (`npm --prefix apps/desktop/web run dev --`)
+
+> @graphone/desktop-web@0.1.0 dev
+> vite dev
+
+
+  VITE v6.4.1  ready in 1246 ms
+
+  ➜  Local:   http://localhost:1420/
+     Running DevCommand (`cargo  run --no-default-features --color always --`)
+        Info Watching /home/prinova/CodeProjects/graphone/src-tauri for changes...
+[1m[92m   Compiling[0m graphone v0.2.0 (/home/prinova/CodeProjects/graphone/src-tauri)
+[1m[96m    Building[0m [=======================> ] 575/578: graphone(build)             [K[1m[33mwarning[0m: graphone@0.2.0: Building pi binary for target x86_64-unknown-linux-gnu from graphone local host: /home/prinova/CodeProjects/graphone/services/agent-host
+[1m[33mwarning[0m: graphone@0.2.0: Compiling pi with externalized koffi runtime assets
+[1m[33mwarning[0m: graphone@0.2.0: Copying pi runtime assets...
+[1m[33mwarning[0m: graphone@0.2.0: Applied Graphone runtime override docs from /home/prinova/CodeProjects/graphone/services/agent-host/runtime-overrides/docs
+[1m[33mwarning[0m: graphone@0.2.0: Applied Graphone runtime override examples from /home/prinova/CodeProjects/graphone/services/agent-host/runtime-overrides/examples
+[1m[33mwarning[0m: graphone@0.2.0: Staged linux sidecar resources at /home/prinova/CodeProjects/graphone/src-tauri/sidecar/linux
+[1m[33mwarning[0m: graphone@0.2.0: Copying runtime assets to target/debug for development...
+[1m[33mwarning[0m: graphone@0.2.0: Applied Graphone runtime override docs from /home/prinova/CodeProjects/graphone/services/agent-host/runtime-overrides/docs
+[1m[33mwarning[0m: graphone@0.2.0: Applied Graphone runtime override examples from /home/prinova/CodeProjects/graphone/services/agent-host/runtime-overrides/examples
+[1m[33mwarning[0m: graphone@0.2.0: Copying runtime assets to target/release...
+[1m[33mwarning[0m: graphone@0.2.0: Applied Graphone runtime override docs from /home/prinova/CodeProjects/graphone/services/agent-host/runtime-overrides/docs
+[1m[33mwarning[0m: graphone@0.2.0: Applied Graphone runtime override examples from /home/prinova/CodeProjects/graphone/services/agent-host/runtime-overrides/examples
+[1m[33mwarning[0m: graphone@0.2.0: pi built successfully at /home/prinova/CodeProjects/graphone/src-tauri/binaries/pi-x86_64-unknown-linux-gnu
+[1m[96m    Building[0m [=======================> ] 576/578: graphone                    [1m[96m    Building[0m [=======================> ] 577/578: graphone(bin)               [K[1m[92m    Finished[0m ]8;;https://doc.rust-lang.org/cargo/reference/profiles.html#default-profiles\`dev` profile [unoptimized + debuginfo]]8;;\ target(s) in 52.51s
+[1m[92m     Running[0m `target/debug/graphone`
+Logger initialized at /tmp/graphone.log
+Starting graphone
+Sidecar backend=host args: [--graphone-host]
+Launching linux sidecar from extracted runtime: /home/prinova/.local/share/com.prinova.graphone/sidecar/linux-runtime/pi
+Sidecar spawned successfully
+shutdown requested
+aborting 1 sessions
+sidecar shutdown complete
