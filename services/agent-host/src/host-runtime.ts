@@ -1,5 +1,7 @@
 import { randomUUID } from "node:crypto";
-import { basename, dirname, extname, resolve } from "node:path";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { homedir } from "node:os";
+import { basename, dirname, extname, join, resolve } from "node:path";
 
 import type { ThinkingLevel } from "@mariozechner/pi-agent-core";
 import type { ImageContent } from "@mariozechner/pi-ai";
@@ -54,6 +56,41 @@ interface RegisteredExtensionSummary {
   commandCount: number;
 }
 
+interface ModelsJsonModelEntry {
+  id: string;
+  name?: string;
+  api?: string;
+  [key: string]: unknown;
+}
+
+interface ModelsJsonProviderEntry {
+  baseUrl?: string;
+  api?: string;
+  apiKey?: string;
+  models?: ModelsJsonModelEntry[];
+  [key: string]: unknown;
+}
+
+interface ModelsJsonConfig {
+  providers?: Record<string, ModelsJsonProviderEntry>;
+}
+
+interface ModelCatalogSyncSummary {
+  provider: string;
+  before: number;
+  after: number;
+  added: number;
+  removed: number;
+}
+
+interface ModelCatalogSyncResult {
+  synced: ModelCatalogSyncSummary[];
+  skipped: Array<{ provider: string; reason: string }>;
+  errors: Array<{ provider: string; error: string }>;
+}
+
+const DISCOVERABLE_APIS = new Set(["openai-completions", "openai-responses"]);
+
 export class HostRuntime {
   private readonly sessions = new Map<string, HostedSession>();
   private readonly authStorage = AuthStorage.create();
@@ -99,6 +136,16 @@ export class HostRuntime {
       : SessionManager.create(fallbackCwd);
 
     const resolvedCwd = validateCwd(sessionManager.getCwd());
+
+    // Strict freshness: sync provider catalogs into models.json before bootstrap.
+    try {
+      await this.syncModelsJsonFromProviderCatalogs();
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      console.error(
+        `[pi-host-sidecar] model catalog sync failed before create_session: ${message}`,
+      );
+    }
 
     // Pick up latest models.json/provider overrides before session bootstrap.
     this.modelRegistry.refresh();
@@ -336,11 +383,30 @@ export class HostRuntime {
     const before = this.modelRegistry.getAvailable();
     const beforeCounts = countByProvider(before);
 
+    const catalogSync = await this.syncModelsJsonFromProviderCatalogs();
+
     // Refresh before listing so model picker reflects latest models.json edits.
     this.modelRegistry.refresh();
 
     const models = await this.modelRegistry.getAvailable();
     const afterCounts = countByProvider(models);
+
+    if (catalogSync.synced.length > 0) {
+      const synced = catalogSync.synced
+        .map(
+          (entry) =>
+            `${entry.provider} +${entry.added}/-${entry.removed} (${entry.before}->${entry.after})`,
+        )
+        .join(", ");
+      console.error(`[pi-host-sidecar] model catalog sync: ${synced}`);
+    }
+
+    if (catalogSync.errors.length > 0) {
+      const errors = catalogSync.errors
+        .map((entry) => `${entry.provider}: ${entry.error}`)
+        .join(" | ");
+      console.error(`[pi-host-sidecar] model catalog sync errors: ${errors}`);
+    }
 
     const providerSummaries = Array.from(afterCounts.entries())
       .sort(([a], [b]) => a.localeCompare(b))
@@ -725,6 +791,389 @@ export class HostRuntime {
     }
 
     return parent;
+  }
+
+  private async syncModelsJsonFromProviderCatalogs(): Promise<ModelCatalogSyncResult> {
+    const candidates = this.getModelCatalogDiscoveryCandidates();
+
+    if (candidates.length === 0) {
+      return { synced: [], skipped: [], errors: [] };
+    }
+
+    const modelsJsonPath = this.getModelsJsonPath();
+    let config: ModelsJsonConfig;
+
+    try {
+      config = await this.readModelsJsonConfig(modelsJsonPath);
+    } catch (error) {
+      return {
+        synced: [],
+        skipped: [],
+        errors: [
+          {
+            provider: "models.json",
+            error:
+              error instanceof Error
+                ? error.message
+                : "Failed to read models.json",
+          },
+        ],
+      };
+    }
+
+    if (!config.providers || typeof config.providers !== "object") {
+      config.providers = {};
+    }
+
+    const result: ModelCatalogSyncResult = {
+      synced: [],
+      skipped: [],
+      errors: [],
+    };
+
+    let fileChanged = false;
+
+    for (const candidate of candidates) {
+      try {
+        const discoveredIds = await this.discoverProviderModelIds(
+          candidate.provider,
+          candidate.baseUrl,
+        );
+
+        if (discoveredIds.length === 0) {
+          result.skipped.push({
+            provider: candidate.provider,
+            reason: "provider catalog returned zero models",
+          });
+          continue;
+        }
+
+        const providerConfig =
+          config.providers[candidate.provider] &&
+          typeof config.providers[candidate.provider] === "object"
+            ? (config.providers[candidate.provider] as ModelsJsonProviderEntry)
+            : {};
+
+        const existingModels = Array.isArray(providerConfig.models)
+          ? providerConfig.models.filter(
+              (entry): entry is ModelsJsonModelEntry =>
+                Boolean(
+                  entry &&
+                  typeof entry === "object" &&
+                  typeof (entry as ModelsJsonModelEntry).id === "string",
+                ),
+            )
+          : [];
+
+        const existingIds = existingModels.map((entry) => entry.id);
+        const existingIdSet = new Set(existingIds);
+        const discoveredIdSet = new Set(discoveredIds);
+
+        const added = discoveredIds.filter(
+          (id) => !existingIdSet.has(id),
+        ).length;
+        const removed = existingIds.filter(
+          (id) => !discoveredIdSet.has(id),
+        ).length;
+
+        const existingById = new Map(
+          existingModels.map((entry) => [entry.id, entry]),
+        );
+
+        const modelApi =
+          typeof providerConfig.api === "string" && providerConfig.api.trim()
+            ? undefined
+            : candidate.api;
+
+        const nextModels = discoveredIds.map((id) => {
+          const existing = existingById.get(id);
+          if (existing) {
+            return existing;
+          }
+
+          return {
+            id,
+            name: id,
+            ...(modelApi ? { api: modelApi } : {}),
+          } satisfies ModelsJsonModelEntry;
+        });
+
+        let providerChanged = false;
+
+        if (
+          typeof providerConfig.baseUrl !== "string" ||
+          providerConfig.baseUrl.trim().length === 0
+        ) {
+          providerConfig.baseUrl = candidate.baseUrl;
+          providerChanged = true;
+        }
+
+        if (
+          typeof providerConfig.api !== "string" ||
+          providerConfig.api.trim().length === 0
+        ) {
+          providerConfig.api = candidate.api;
+          providerChanged = true;
+        }
+
+        if (
+          typeof providerConfig.apiKey !== "string" ||
+          providerConfig.apiKey.trim().length === 0
+        ) {
+          providerConfig.apiKey = this.getDefaultProviderApiKeyEnv(
+            candidate.provider,
+          );
+          providerChanged = true;
+        }
+
+        if (
+          !Array.isArray(providerConfig.models) ||
+          added > 0 ||
+          removed > 0 ||
+          providerConfig.models.length !== nextModels.length
+        ) {
+          providerConfig.models = nextModels;
+          providerChanged = true;
+        }
+
+        if (providerChanged) {
+          config.providers[candidate.provider] = providerConfig;
+          fileChanged = true;
+        }
+
+        if (added > 0 || removed > 0) {
+          result.synced.push({
+            provider: candidate.provider,
+            before: existingModels.length,
+            after: nextModels.length,
+            added,
+            removed,
+          });
+        }
+      } catch (error) {
+        result.errors.push({
+          provider: candidate.provider,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+    }
+
+    if (fileChanged) {
+      await mkdir(dirname(modelsJsonPath), { recursive: true });
+      await writeFile(
+        modelsJsonPath,
+        `${JSON.stringify(config, null, 2)}\n`,
+        "utf-8",
+      );
+    }
+
+    return result;
+  }
+
+  private getModelCatalogDiscoveryCandidates(): Array<{
+    provider: string;
+    api: string;
+    baseUrl: string;
+  }> {
+    const byProvider = new Map<
+      string,
+      {
+        provider: string;
+        api: string;
+        baseUrl: string;
+      }
+    >();
+
+    for (const model of this.modelRegistry.getAvailable()) {
+      if (byProvider.has(model.provider)) {
+        continue;
+      }
+
+      const api = typeof model.api === "string" ? model.api.trim() : "";
+      const baseUrl =
+        typeof model.baseUrl === "string" ? model.baseUrl.trim() : "";
+
+      if (!api || !baseUrl || !DISCOVERABLE_APIS.has(api)) {
+        continue;
+      }
+
+      byProvider.set(model.provider, {
+        provider: model.provider,
+        api,
+        baseUrl,
+      });
+    }
+
+    return Array.from(byProvider.values()).sort((a, b) =>
+      a.provider.localeCompare(b.provider),
+    );
+  }
+
+  private async discoverProviderModelIds(
+    provider: string,
+    baseUrl: string,
+  ): Promise<string[]> {
+    const apiKey = await this.authStorage.getApiKey(provider);
+
+    const headers: Record<string, string> = {
+      Accept: "application/json",
+    };
+
+    if (apiKey && apiKey.trim().length > 0) {
+      headers.Authorization = `Bearer ${apiKey}`;
+    }
+
+    const candidates = this.buildModelCatalogUrlCandidates(baseUrl);
+
+    let lastError = "unknown error";
+
+    for (const url of candidates) {
+      try {
+        const response = await fetch(url, {
+          method: "GET",
+          headers,
+          signal: AbortSignal.timeout(6000),
+        });
+
+        if (!response.ok) {
+          throw new Error(`HTTP ${response.status} ${response.statusText}`);
+        }
+
+        const payload = (await response.json()) as unknown;
+        const ids = this.parseModelCatalogModelIds(payload);
+        if (ids.length === 0) {
+          throw new Error("catalog response did not include model IDs");
+        }
+
+        return ids;
+      } catch (error) {
+        lastError = error instanceof Error ? error.message : String(error);
+      }
+    }
+
+    throw new Error(lastError);
+  }
+
+  private buildModelCatalogUrlCandidates(baseUrl: string): string[] {
+    const normalized = baseUrl.trim().replace(/\/+$/, "");
+    if (!normalized) {
+      return [];
+    }
+
+    const candidates = [`${normalized}/models`];
+    if (!/\/v\d+$/i.test(normalized)) {
+      candidates.push(`${normalized}/v1/models`);
+    }
+
+    return Array.from(new Set(candidates));
+  }
+
+  private parseModelCatalogModelIds(payload: unknown): string[] {
+    if (!payload || typeof payload !== "object") {
+      return [];
+    }
+
+    const source = payload as {
+      data?: unknown;
+      models?: unknown;
+    };
+
+    const entries: unknown[] = [];
+
+    if (Array.isArray(source.data)) {
+      entries.push(...source.data);
+    }
+
+    if (Array.isArray(source.models)) {
+      entries.push(...source.models);
+    }
+
+    const ids = entries
+      .map((entry) => {
+        if (!entry || typeof entry !== "object") {
+          return undefined;
+        }
+
+        const model = entry as { id?: unknown; name?: unknown };
+        if (typeof model.id === "string" && model.id.trim().length > 0) {
+          return model.id.trim();
+        }
+
+        if (typeof model.name === "string" && model.name.trim().length > 0) {
+          return model.name.trim();
+        }
+
+        return undefined;
+      })
+      .filter((id): id is string => Boolean(id));
+
+    return Array.from(new Set(ids)).sort((a, b) => a.localeCompare(b));
+  }
+
+  private getDefaultProviderApiKeyEnv(provider: string): string {
+    if (provider === "openai-codex") {
+      return "OPENAI_API_KEY";
+    }
+
+    if (provider === "azure-openai-responses") {
+      return "AZURE_OPENAI_API_KEY";
+    }
+
+    return `${provider.toUpperCase().replace(/[^A-Z0-9]/g, "_")}_API_KEY`;
+  }
+
+  private async readModelsJsonConfig(path: string): Promise<ModelsJsonConfig> {
+    try {
+      const content = await readFile(path, "utf-8");
+      const parsed = JSON.parse(content) as unknown;
+
+      if (!parsed || typeof parsed !== "object") {
+        return { providers: {} };
+      }
+
+      const config = parsed as ModelsJsonConfig;
+      if (!config.providers || typeof config.providers !== "object") {
+        return { ...config, providers: {} };
+      }
+
+      return config;
+    } catch (error) {
+      if (
+        error &&
+        typeof error === "object" &&
+        "code" in error &&
+        (error as { code?: unknown }).code === "ENOENT"
+      ) {
+        return { providers: {} };
+      }
+
+      throw error;
+    }
+  }
+
+  private getModelsJsonPath(): string {
+    const configuredAgentDir = process.env.PI_CODING_AGENT_DIR?.trim();
+    const agentDir = configuredAgentDir
+      ? this.expandTilde(configuredAgentDir)
+      : join(homedir(), ".pi", "agent");
+
+    return join(agentDir, "models.json");
+  }
+
+  private expandTilde(path: string): string {
+    if (!path.startsWith("~")) {
+      return path;
+    }
+
+    if (path === "~") {
+      return homedir();
+    }
+
+    if (path.startsWith("~/")) {
+      return join(homedir(), path.slice(2));
+    }
+
+    return path;
   }
 
   private compactSessionEventForWire(event: unknown): unknown {
