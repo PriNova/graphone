@@ -1,9 +1,20 @@
 name: Release Binaries
 
 on:
+  pull_request:
+    branches:
+      - main
   push:
+    branches:
+      - main
     tags:
       - 'v*'
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: 'Tag to build/publish (example: v0.2.0). Leave empty to run checks only.'
+        required: false
+        type: string
 
 permissions:
   contents: write
@@ -24,6 +35,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.release_tag != '' && github.event.inputs.release_tag || github.ref }}
 
       - name: Install system dependencies
         run: |
@@ -71,6 +84,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.release_tag != '' && github.event.inputs.release_tag || github.ref }}
 
       - name: Install llvm resource tools
         run: |
@@ -95,6 +110,7 @@ jobs:
 
   build-linux-bundles:
     name: Build Linux bundles (.deb, .rpm, .AppImage)
+    if: startsWith(github.ref, 'refs/tags/v') || (github.event_name == 'workflow_dispatch' && github.event.inputs.release_tag != '')
     runs-on: ubuntu-22.04
     timeout-minutes: 90
     needs:
@@ -106,6 +122,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.release_tag != '' && github.event.inputs.release_tag || github.ref }}
 
       - name: Install system dependencies
         run: |
@@ -154,12 +172,13 @@ jobs:
       - name: Upload Linux release assets
         uses: actions/upload-artifact@v4
         with:
-          name: release-linux-${{ github.ref_name }}
+          name: release-linux-${{ github.event_name == 'workflow_dispatch' && github.event.inputs.release_tag != '' && github.event.inputs.release_tag || github.ref_name }}
           path: dist/linux/*
           if-no-files-found: error
 
   build-windows-portable:
     name: Build Windows portable (.zip)
+    if: startsWith(github.ref, 'refs/tags/v') || (github.event_name == 'workflow_dispatch' && github.event.inputs.release_tag != '')
     runs-on: ubuntu-22.04
     timeout-minutes: 90
     needs:
@@ -169,6 +188,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.release_tag != '' && github.event.inputs.release_tag || github.ref }}
 
       - name: Install build dependencies
         run: |
@@ -205,7 +226,8 @@ jobs:
 
       - name: Zip Windows portable bundle
         run: |
-          VERSION="${GITHUB_REF_NAME#v}"
+          VERSION="${{ github.event_name == 'workflow_dispatch' && github.event.inputs.release_tag != '' && github.event.inputs.release_tag || github.ref_name }}"
+          VERSION="${VERSION#v}"
           RELEASE_DIR="src-tauri/target/x86_64-pc-windows-msvc/release"
           PORTABLE_DIR="$RELEASE_DIR/portable"
           ZIP_NAME="graphone_${VERSION}_windows_x64_portable.zip"
@@ -223,12 +245,13 @@ jobs:
       - name: Upload Windows release assets
         uses: actions/upload-artifact@v4
         with:
-          name: release-windows-portable-${{ github.ref_name }}
+          name: release-windows-portable-${{ github.event_name == 'workflow_dispatch' && github.event.inputs.release_tag != '' && github.event.inputs.release_tag || github.ref_name }}
           path: dist/windows/*.zip
           if-no-files-found: error
 
   publish-release:
     name: Publish GitHub Release assets
+    if: startsWith(github.ref, 'refs/tags/v') || (github.event_name == 'workflow_dispatch' && github.event.inputs.release_tag != '')
     runs-on: ubuntu-22.04
     needs:
       - build-linux-bundles
@@ -243,7 +266,7 @@ jobs:
       - name: Publish assets to GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ github.ref_name }}
+          tag_name: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.release_tag != '' && github.event.inputs.release_tag || github.ref_name }}
           generate_release_notes: true
           fail_on_unmatched_files: true
           files: |
