@@ -51,6 +51,7 @@ This page helps you quickly understand what to expect from **Graphone** today, e
 ### Model controls & context
 
 - Model selection from available providers/models
+- Runtime provider model catalog sync refreshes supported provider model lists before session startup
 - Thinking level selection (when supported by model)
 - Usage/context indicator in the status area
 
@@ -90,6 +91,12 @@ This page helps you quickly understand what to expect from **Graphone** today, e
 - Prompt templates and skills can work, but there is no full dedicated browser-style management UI yet
 - Extensions are visible in Settings (grouped Global/Local), but enable/disable/package management UX is still limited
 - Extension-powered features can run, but Graphone does not yet expose all interactive extension UI capabilities available in the terminal experience
+
+### Runtime model catalog sync limits
+
+- Runtime provider model catalog sync currently supports providers with OpenAI-style model listing endpoints using `openai-completions`, `openai-responses`, and `openai-codex-responses`
+- OpenAI Codex-backed model catalogs can now be synced into `~/.pi/agent/models.json`, but broader provider discovery is still incomplete
+- Anthropic, Google, Bedrock, and other provider-specific catalogs are not yet fully auto-discovered at runtime
 
 ### Tool result HTML rendering limits
 
