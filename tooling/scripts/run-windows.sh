@@ -52,7 +52,7 @@ else
   echo ""
 fi
 
-# Stage portable runtime (graphone + sidecar + sidecar assets)
+# Stage portable runtime (graphone + pi sidecar + sidecar assets)
 echo "Staging portable runtime..."
 bash tooling/scripts/stage-windows-portable.sh "$TARGET_TRIPLE"
 
@@ -61,8 +61,8 @@ if [ ! -f "${PORTABLE_DIR}/graphone.exe" ]; then
   exit 1
 fi
 
-if [ ! -f "${PORTABLE_DIR}/pi-agent.exe" ]; then
-  echo -e "${RED}Portable runtime staging failed (pi-agent.exe missing).${NC}"
+if [ ! -f "${PORTABLE_DIR}/pi.exe" ]; then
+  echo -e "${RED}Portable runtime staging failed (pi.exe missing).${NC}"
   exit 1
 fi
 

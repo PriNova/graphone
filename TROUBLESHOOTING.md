@@ -40,7 +40,7 @@ This can happen if Linux sidecar resources were not staged (for example on older
 GRAPHONE_SKIP_SIDECAR_BUILD=true cargo check --manifest-path src-tauri/Cargo.toml
 
 # Verify staged resource exists
-ls src-tauri/sidecar/linux/pi-agent.gz
+ls src-tauri/sidecar/linux/pi.gz
 ```
 
 If the file is still missing, ensure you're on a commit that includes the Linux sidecar resource staging fix and retry.
@@ -51,8 +51,8 @@ If the file is still missing, ensure you're on a commit that includes the Linux 
 
 Ensure the binary naming matches the target triple:
 
-- Linux: `pi-agent-x86_64-unknown-linux-gnu`
-- Windows: `pi-agent-x86_64-pc-windows-msvc.exe`
+- Linux: `pi-x86_64-unknown-linux-gnu`
+- Windows: `pi-x86_64-pc-windows-msvc.exe`
 
 ---
 
@@ -198,7 +198,7 @@ The error occurred because the Windows executable needs an [application manifest
 **If you still encounter issues:**
 
 - **Antivirus/Windows Defender**: The app might be blocked. Check Windows Defender history.
-- **Missing sidecar**: Ensure `pi-agent-x86_64-pc-windows-msvc.exe` is in the same folder as `graphone.exe`
+- **Missing sidecar**: Ensure `pi.exe` (portable) or `pi-x86_64-pc-windows-msvc.exe` (build output) is present alongside Graphone runtime assets
 - **Run from CMD**: Open Command Prompt and run the exe to see detailed error messages
 
 **Launch issues from Linux host interop:**

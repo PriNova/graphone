@@ -22,12 +22,12 @@ const targetConfig = {
   linux: {
     bunTarget: "bun-linux-x64-baseline",
     koffiTriplet: "linux_x64",
-    outfile: "src-tauri/binaries/pi-agent-x86_64-unknown-linux-gnu",
+    outfile: "src-tauri/binaries/pi-x86_64-unknown-linux-gnu",
   },
   windows: {
     bunTarget: "bun-windows-x64-baseline",
     koffiTriplet: "win32_x64",
-    outfile: "src-tauri/binaries/pi-agent-x86_64-pc-windows-msvc.exe",
+    outfile: "src-tauri/binaries/pi-x86_64-pc-windows-msvc.exe",
   },
 };
 

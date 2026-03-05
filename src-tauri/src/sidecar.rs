@@ -1,4 +1,7 @@
 use std::collections::HashMap;
+use std::env;
+use std::ffi::OsString;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tauri::{AppHandle, Emitter};
@@ -20,6 +23,66 @@ use crate::logger;
 use crate::state::SidecarState;
 use crate::types::{RpcCommand, RpcResponse, SessionEventEnvelope};
 
+const GRAPHONE_HOST_FLAG: &str = "--graphone-host";
+
+fn path_entries_match(lhs: &Path, rhs: &Path) -> bool {
+    #[cfg(windows)]
+    {
+        lhs.to_string_lossy()
+            .eq_ignore_ascii_case(&rhs.to_string_lossy())
+    }
+
+    #[cfg(not(windows))]
+    {
+        lhs == rhs
+    }
+}
+
+fn fallback_join_paths(path_entry: &Path, existing_path: &OsString) -> OsString {
+    let mut joined = OsString::from(path_entry.as_os_str());
+
+    if !existing_path.is_empty() {
+        joined.push(if cfg!(windows) { ";" } else { ":" });
+        joined.push(existing_path);
+    }
+
+    joined
+}
+
+fn prepend_path_directory(path_entry: &Path) -> OsString {
+    let existing_path = env::var_os("PATH").unwrap_or_default();
+    let mut entries: Vec<PathBuf> = env::split_paths(&existing_path).collect();
+
+    if !entries
+        .iter()
+        .any(|existing| path_entries_match(existing, path_entry))
+    {
+        entries.insert(0, path_entry.to_path_buf());
+    }
+
+    env::join_paths(entries.iter())
+        .unwrap_or_else(|_| fallback_join_paths(path_entry, &existing_path))
+}
+
+fn with_prepended_runtime_path(
+    command: tauri_plugin_shell::process::Command,
+    runtime_dir: &Path,
+) -> tauri_plugin_shell::process::Command {
+    command.env("PATH", prepend_path_directory(runtime_dir))
+}
+
+#[cfg(not(target_os = "linux"))]
+fn resolve_non_linux_sidecar_runtime_dir() -> Option<PathBuf> {
+    let current_exe = env::current_exe().ok()?;
+    let exe_dir = current_exe.parent()?;
+
+    if exe_dir.ends_with("deps") {
+        return Some(exe_dir.parent().unwrap_or(exe_dir).to_path_buf());
+    }
+
+    Some(exe_dir.to_path_buf())
+}
+
 pub struct SidecarManager;
 
 impl SidecarManager {
@@ -28,29 +91,47 @@ impl SidecarManager {
         _provider: Option<String>,
         _model: Option<String>,
     ) -> Result<tauri_plugin_shell::process::Command, String> {
-        logger::log("Sidecar backend=host args: []");
+        logger::log(format!(
+            "Sidecar backend=host args: [{}]",
+            GRAPHONE_HOST_FLAG
+        ));
 
         #[cfg(target_os = "linux")]
         {
             let sidecar_runtime_dir = prepare_linux_sidecar_runtime(app)?;
-            let sidecar_binary = sidecar_runtime_dir.join("pi-agent");
+            let sidecar_binary = sidecar_runtime_dir.join("pi");
 
             logger::log(format!(
                 "Launching linux sidecar from extracted runtime: {}",
                 sidecar_binary.display()
             ));
 
-            return Ok(app
+            let command = app
                 .shell()
                 .command(&sidecar_binary)
-                .current_dir(&sidecar_runtime_dir));
+                .current_dir(&sidecar_runtime_dir)
+                .arg(GRAPHONE_HOST_FLAG);
+
+            return Ok(with_prepended_runtime_path(command, &sidecar_runtime_dir));
         }
 
         #[cfg(not(target_os = "linux"))]
         {
-            app.shell()
-                .sidecar("pi-agent")
-                .map_err(|e| format!("Failed to create sidecar: {}", e))
+            let sidecar_runtime_dir = resolve_non_linux_sidecar_runtime_dir()
+                .ok_or_else(|| "Failed to resolve sidecar runtime directory".to_string())?;
+
+            logger::log(format!(
+                "Launching sidecar from runtime directory: {}",
+                sidecar_runtime_dir.display()
+            ));
+
+            let command = app
+                .shell()
+                .sidecar("pi")
+                .map_err(|e| format!("Failed to create sidecar: {}", e))?
+                .arg(GRAPHONE_HOST_FLAG);
+
+            Ok(with_prepended_runtime_path(command, &sidecar_runtime_dir))
         }
     }
 

@@ -54,7 +54,7 @@ graphone/
 │   ├── .cargo/config.toml       # lld linker settings per-target
 │   ├── build.rs                 # Auto-builds host sidecar binary with bun
 │   ├── Cargo.toml
-│   └── tauri.conf.json          # externalBin: ["binaries/pi-agent"]
+│   └── tauri.conf.json          # externalBin: ["binaries/pi"]
 ├── services/
 │   └── agent-host/              # Graphone host sidecar source
 ├── tooling/
@@ -128,7 +128,7 @@ Canonical repo map (quick):
 - Build source: `services/agent-host` (Graphone-local host multiplexer)
 - Runtime SDK assets: `node_modules/@mariozechner/pi-coding-agent` (pinned npm dependency)
 - Requires **bun**: `curl -fsSL https://bun.sh/install | bash`
-- Binary naming: `pi-agent-<target-triple>` (with `.exe` for Windows)
+- Binary naming: `pi-<target-triple>` (with `.exe` for Windows)
 - bun compiles host `dist/cli.js` to a standalone binary (not cargo/Rust)
 
 ### Linker Configuration (.cargo/config.toml)

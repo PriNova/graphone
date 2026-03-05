@@ -72,8 +72,8 @@ fn get_portable_log_path() -> Option<PathBuf> {
     let exe_path = env::current_exe().ok()?;
     let exe_dir = exe_path.parent()?;
 
-    // Detect our staged portable layout (graphone.exe + pi-agent.exe in same dir)
-    if !exe_dir.join("pi-agent.exe").exists() {
+    // Detect our staged portable layout (graphone.exe + pi.exe in same dir)
+    if !exe_dir.join("pi.exe").exists() {
         return None;
     }
 

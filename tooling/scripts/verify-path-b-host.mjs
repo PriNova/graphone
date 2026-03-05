@@ -15,7 +15,7 @@ function delay(ms) {
 
 class HostClient {
   constructor() {
-    this.child = spawn("node", ["services/agent-host/dist/cli.js"], {
+    this.child = spawn("node", ["services/agent-host/dist/cli.js", "--graphone-host"], {
       cwd: projectRoot,
       stdio: ["pipe", "pipe", "pipe"],
     });

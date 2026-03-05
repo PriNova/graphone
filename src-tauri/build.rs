@@ -134,7 +134,7 @@ fn stage_linux_sidecar_resource_bundle(
         let file_name = entry.file_name();
         let file_name = file_name.to_string_lossy();
 
-        if file_name == binary_file_name || file_name.starts_with("pi-agent-") {
+        if file_name == binary_file_name || file_name.starts_with("pi-") {
             continue;
         }
 
@@ -151,7 +151,7 @@ fn stage_linux_sidecar_resource_bundle(
         });
     }
 
-    let compressed_binary = bundle_dir.join("pi-agent.gz");
+    let compressed_binary = bundle_dir.join("pi.gz");
     gzip_file(sidecar_binary, &compressed_binary);
 
     println!(
@@ -290,7 +290,7 @@ fn compile_sidecar_binary(
         "--no-compile-autoload-bunfig".to_string(),
     ];
 
-    let explicit_target = env::var("GRAPHONE_PI_AGENT_BUN_TARGET").ok();
+    let explicit_target = env::var("GRAPHONE_PI_BUN_TARGET").ok();
 
     let compile_target = explicit_target.or_else(|| {
         if target_triple == "x86_64-unknown-linux-gnu" {
@@ -326,7 +326,7 @@ fn compile_sidecar_binary(
         "bun",
         &args,
         &source.package_root,
-        "compile pi-agent binary with bun",
+        "compile pi binary with bun",
     );
 
     resolve_compiled_binary_path(&output_stem, target_os)
@@ -740,9 +740,9 @@ fn sidecar_destination_binary_path(
 ) -> PathBuf {
     let dest_dir = manifest_dir.join("binaries");
     let dest_binary_name = if target_os == "windows" {
-        format!("pi-agent-{}.exe", target_triple)
+        format!("pi-{}.exe", target_triple)
     } else {
-        format!("pi-agent-{}", target_triple)
+        format!("pi-{}", target_triple)
     };
 
     dest_dir.join(dest_binary_name)
@@ -788,7 +788,7 @@ fn ensure_sidecar_placeholder_binary(manifest_dir: &Path, target_os: &str, targe
     }
 
     println!(
-        "cargo:warning=Created placeholder pi-agent binary at {}",
+        "cargo:warning=Created placeholder pi binary at {}",
         dest_binary.display()
     );
 }
@@ -811,17 +811,15 @@ fn ensure_linux_sidecar_bundle_for_skip_build(
 }
 
 fn build_sidecar() {
-    println!("cargo:rerun-if-env-changed=GRAPHONE_PI_AGENT_BUN_TARGET");
-    println!("cargo:rerun-if-env-changed=GRAPHONE_PI_AGENT_EXTERNAL_KOFFI");
+    println!("cargo:rerun-if-env-changed=GRAPHONE_PI_BUN_TARGET");
+    println!("cargo:rerun-if-env-changed=GRAPHONE_PI_EXTERNAL_KOFFI");
 
     let target_os = env::var("CARGO_CFG_TARGET_OS").unwrap();
     let target_triple = env::var("TARGET").unwrap();
     let manifest_dir = PathBuf::from(env::var("CARGO_MANIFEST_DIR").unwrap());
 
     if env_flag("GRAPHONE_SKIP_SIDECAR_BUILD") {
-        println!(
-            "cargo:warning=Skipping pi-agent build because GRAPHONE_SKIP_SIDECAR_BUILD is set"
-        );
+        println!("cargo:warning=Skipping pi build because GRAPHONE_SKIP_SIDECAR_BUILD is set");
         ensure_sidecar_placeholder_binary(&manifest_dir, &target_os, &target_triple);
         ensure_linux_sidecar_bundle_for_skip_build(&manifest_dir, &target_os, &target_triple);
         return;
@@ -833,7 +831,7 @@ fn build_sidecar() {
         .to_path_buf();
 
     if target_os == "android" || target_os == "ios" {
-        println!("cargo:warning=Skipping pi-agent build for mobile target");
+        println!("cargo:warning=Skipping pi build for mobile target");
         return;
     }
 
@@ -862,7 +860,7 @@ fn build_sidecar() {
     };
 
     println!(
-        "cargo:warning=Building pi-agent binary for target {} from {}: {}",
+        "cargo:warning=Building pi binary for target {} from {}: {}",
         target_triple,
         source.label(),
         source.package_root.display()
@@ -871,7 +869,7 @@ fn build_sidecar() {
     ensure_bun_installed();
     ensure_source_is_ready(&source);
 
-    let external_koffi = env::var("GRAPHONE_PI_AGENT_EXTERNAL_KOFFI")
+    let external_koffi = env::var("GRAPHONE_PI_EXTERNAL_KOFFI")
         .ok()
         .map(|value| {
             matches!(
@@ -882,9 +880,9 @@ fn build_sidecar() {
         .unwrap_or(true);
 
     if external_koffi {
-        println!("cargo:warning=Compiling pi-agent with externalized koffi runtime assets");
+        println!("cargo:warning=Compiling pi with externalized koffi runtime assets");
     } else {
-        println!("cargo:warning=Compiling pi-agent with bundled koffi runtime");
+        println!("cargo:warning=Compiling pi with bundled koffi runtime");
     }
 
     let is_cross_compiling_windows = target_os == "windows" && env::consts::OS != "windows";
@@ -895,7 +893,7 @@ fn build_sidecar() {
 
     let compile_dir = manifest_dir
         .join("target")
-        .join("pi-agent-build")
+        .join("pi-build")
         .join(&target_triple);
 
     let source_binary = compile_sidecar_binary(
@@ -931,7 +929,7 @@ fn build_sidecar() {
         fs::set_permissions(&dest_binary, perms).unwrap();
     }
 
-    println!("cargo:warning=Copying pi-agent runtime assets...");
+    println!("cargo:warning=Copying pi runtime assets...");
     copy_runtime_assets(
         &runtime_assets_source,
         &project_root,
@@ -970,7 +968,7 @@ fn build_sidecar() {
     }
 
     println!(
-        "cargo:warning=pi-agent built successfully at {}",
+        "cargo:warning=pi built successfully at {}",
         dest_binary.display()
     );
 

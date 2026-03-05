@@ -1,4 +1,4 @@
-# pi-agent-host (Graphone local sidecar)
+# pi host sidecar (Graphone local multiplexer)
 
 Graphone-local host/multiplexer sidecar for Path B.
 
@@ -74,7 +74,9 @@ Transport: newline-delimited JSON over stdio.
 ```bash
 cd services/agent-host
 bun run build
-bun dist/cli.js
+bun dist/cli.js --graphone-host
 ```
 
 Send newline-delimited JSON requests on stdin.
+
+Note: without `--graphone-host`, the binary runs regular pi CLI mode.

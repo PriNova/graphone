@@ -1,5 +1,5 @@
 #!/bin/bash
-# Stage a portable Windows runtime folder with graphone + pi-agent sidecar assets.
+# Stage a portable Windows runtime folder with graphone + pi sidecar assets.
 # Usage: bash tooling/scripts/stage-windows-portable.sh [target-triple] [profile]
 
 set -euo pipefail
@@ -12,8 +12,8 @@ PORTABLE_DIR="${BUILD_DIR}/portable"
 
 GRAPHONE_EXE="${BUILD_DIR}/graphone.exe"
 GRAPHONE_PDB="${BUILD_DIR}/graphone.pdb"
-SIDECAR_SUFFIXED="${BINARIES_DIR}/pi-agent-${TARGET_TRIPLE}.exe"
-SIDECAR_FALLBACK="${BUILD_DIR}/pi-agent.exe"
+SIDECAR_SUFFIXED="${BINARIES_DIR}/pi-${TARGET_TRIPLE}.exe"
+SIDECAR_FALLBACK="${BUILD_DIR}/pi.exe"
 
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -81,8 +81,8 @@ mkdir -p "$PORTABLE_DIR"
 cp "$GRAPHONE_EXE" "$PORTABLE_DIR/graphone.exe"
 copy_if_exists "$GRAPHONE_PDB" "$PORTABLE_DIR/"
 
-# Sidecar binary normalized to runtime name expected by Tauri shell sidecar("pi-agent")
-cp "$SIDECAR_SOURCE" "$PORTABLE_DIR/pi-agent.exe"
+# Sidecar binary normalized to runtime name expected by Tauri shell sidecar("pi")
+cp "$SIDECAR_SOURCE" "$PORTABLE_DIR/pi.exe"
 
 # Sidecar runtime files (required + helpful assets)
 copy_if_exists "${BINARIES_DIR}/package.json" "$PORTABLE_DIR/"

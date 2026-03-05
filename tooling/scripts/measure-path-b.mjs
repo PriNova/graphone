@@ -173,7 +173,9 @@ function mean(values) {
 }
 
 async function runHostScenario(sessionCount) {
-  const client = new JsonLineClient("node", ["services/agent-host/dist/cli.js"], { cwd: projectRoot });
+  const client = new JsonLineClient("node", ["services/agent-host/dist/cli.js", "--graphone-host"], {
+    cwd: projectRoot,
+  });
 
   const createLatenciesMs = [];
   const sessionIds = [];

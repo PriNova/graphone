@@ -1,6 +1,6 @@
 # Graphone Feature Availability (User Guide)
 
-_Last updated: 2026-03-04_
+_Last updated: 2026-03-05_
 
 This page helps you quickly understand what to expect from **Graphone** today, especially if you already know the pi terminal app (TUI).
 
@@ -61,6 +61,15 @@ This page helps you quickly understand what to expect from **Graphone** today, e
 ### Safety & lifecycle
 
 - Active generations are aborted during app shutdown to avoid orphaned runs
+
+### Sidecar runtime compatibility (internal)
+
+- Graphone ships a single bundled `pi` sidecar binary (`pi` / `pi.exe` / `pi.gz`)
+- Bundled sidecar supports dual mode dispatch:
+  - Graphone host mode via private `--graphone-host`
+  - Normal pi CLI behavior by default (for `--mode json`, `--mode rpc`, etc.)
+- Runtime PATH is prepended process-locally so extension subprocesses can resolve bundled `pi` first
+- Community/custom extensions that call `spawn("pi", ...)` work even without a global/system `pi` install
 
 ### Attachments
 

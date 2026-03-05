@@ -1,6 +1,9 @@
 #!/usr/bin/env node
 
 import * as readline from "node:readline";
+import { delimiter, dirname } from "node:path";
+
+import { main as runPiCliMain } from "@mariozechner/pi-coding-agent";
 
 import { handleHostCommand } from "./commands.js";
 import { HostRuntime } from "./host-runtime.js";
@@ -10,6 +13,45 @@ import {
   type HostResponse,
   type SessionEventEnvelope,
 } from "./protocol.js";
+
+const GRAPHONE_HOST_FLAG = "--graphone-host";
+
+function normalizePathForCompare(pathEntry: string): string {
+  if (process.platform === "win32") {
+    return pathEntry.toLowerCase();
+  }
+
+  return pathEntry;
+}
+
+function prependPathEntry(pathEntry: string): void {
+  const normalizedEntry = pathEntry.trim();
+  if (!normalizedEntry) {
+    return;
+  }
+
+  const existingPath = process.env.PATH ?? process.env.Path ?? "";
+  const entries = existingPath
+    .split(delimiter)
+    .map((entry) => entry.trim())
+    .filter((entry) => entry.length > 0);
+
+  const target = normalizePathForCompare(normalizedEntry);
+  const hasEntry = entries.some(
+    (entry) => normalizePathForCompare(entry) === target,
+  );
+
+  if (hasEntry) {
+    return;
+  }
+
+  const nextPath = [normalizedEntry, ...entries].join(delimiter);
+  process.env.PATH = nextPath;
+
+  if (process.platform === "win32") {
+    process.env.Path = nextPath;
+  }
+}
 
 class LineWriter {
   private readonly queue: string[] = [];
@@ -48,97 +90,128 @@ class LineWriter {
   }
 }
 
-const writer = new LineWriter();
+function runHostMode(): void {
+  const writer = new LineWriter();
 
-const runtime = new HostRuntime((event) => {
-  writer.writeObject(event);
-});
+  const runtime = new HostRuntime((event) => {
+    writer.writeObject(event);
+  });
 
-const rl = readline.createInterface({
-  input: process.stdin,
-  output: process.stdout,
-  terminal: false,
-});
+  const rl = readline.createInterface({
+    input: process.stdin,
+    output: process.stdout,
+    terminal: false,
+  });
 
-let shuttingDown = false;
-let shouldShutdownAfterQueue = false;
-let commandQueue = Promise.resolve();
+  let shuttingDown = false;
+  let shouldShutdownAfterQueue = false;
+  let commandQueue = Promise.resolve();
 
-async function requestShutdown(): Promise<void> {
-  if (shuttingDown) {
-    return;
+  async function requestShutdown(): Promise<void> {
+    if (shuttingDown) {
+      return;
+    }
+
+    shuttingDown = true;
+    try {
+      await runtime.shutdown();
+    } finally {
+      process.exit(0);
+    }
   }
 
-  shuttingDown = true;
-  try {
-    await runtime.shutdown();
-  } finally {
-    process.exit(0);
-  }
-}
+  async function processLine(line: string): Promise<void> {
+    let command: HostCommand;
 
-async function processLine(line: string): Promise<void> {
-  let command: HostCommand;
+    try {
+      const parsed: unknown = JSON.parse(line);
 
-  try {
-    const parsed: unknown = JSON.parse(line);
+      if (
+        !parsed ||
+        typeof parsed !== "object" ||
+        typeof (parsed as { type?: unknown }).type !== "string"
+      ) {
+        writer.writeObject(
+          failure(
+            undefined,
+            "parse",
+            "Command must be a JSON object with a string 'type' field",
+          ),
+        );
+        return;
+      }
 
-    if (
-      !parsed ||
-      typeof parsed !== "object" ||
-      typeof (parsed as { type?: unknown }).type !== "string"
-    ) {
+      command = parsed as HostCommand;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
       writer.writeObject(
-        failure(
-          undefined,
-          "parse",
-          "Command must be a JSON object with a string 'type' field",
-        ),
+        failure(undefined, "parse", `Failed to parse command: ${message}`),
       );
       return;
     }
 
-    command = parsed as HostCommand;
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    writer.writeObject(
-      failure(undefined, "parse", `Failed to parse command: ${message}`),
-    );
+    const response = await handleHostCommand(runtime, command);
+    writer.writeObject(response);
+
+    if (command.type === "shutdown" && response.success) {
+      shouldShutdownAfterQueue = true;
+    }
+  }
+
+  rl.on("line", (line) => {
+    commandQueue = commandQueue
+      .then(() => processLine(line))
+      .then(async () => {
+        if (shouldShutdownAfterQueue) {
+          await requestShutdown();
+        }
+      })
+      .catch((error) => {
+        const message = error instanceof Error ? error.message : String(error);
+        writer.writeObject(failure(undefined, "internal", message));
+      });
+  });
+
+  rl.on("close", () => {
+    commandQueue.finally(() => {
+      void requestShutdown();
+    });
+  });
+
+  process.on("SIGINT", () => {
+    void requestShutdown();
+  });
+
+  process.on("SIGTERM", () => {
+    void requestShutdown();
+  });
+}
+
+function runPiCliMode(args: string[]): void {
+  process.title = "pi";
+  void runPiCliMain(args);
+}
+
+function main(): void {
+  prependPathEntry(dirname(process.execPath));
+
+  const argv = process.argv.slice(2);
+  const hostMode = argv.includes(GRAPHONE_HOST_FLAG);
+  const passthroughArgs = hostMode
+    ? argv.filter((arg) => arg !== GRAPHONE_HOST_FLAG)
+    : argv;
+
+  if (hostMode) {
+    process.argv = [
+      process.argv[0] ?? "node",
+      process.argv[1] ?? "cli.js",
+      ...passthroughArgs,
+    ];
+    runHostMode();
     return;
   }
 
-  const response = await handleHostCommand(runtime, command);
-  writer.writeObject(response);
-
-  if (command.type === "shutdown" && response.success) {
-    shouldShutdownAfterQueue = true;
-  }
+  runPiCliMode(passthroughArgs);
 }
 
-rl.on("line", (line) => {
-  commandQueue = commandQueue
-    .then(() => processLine(line))
-    .then(async () => {
-      if (shouldShutdownAfterQueue) {
-        await requestShutdown();
-      }
-    })
-    .catch((error) => {
-      const message = error instanceof Error ? error.message : String(error);
-      writer.writeObject(failure(undefined, "internal", message));
-    });
-});
-
-rl.on("close", () => {
-  commandQueue.finally(() => {
-    void requestShutdown();
-  });
-});
-
-process.on("SIGINT", () => {
-  void requestShutdown();
-});
-
-process.on("SIGTERM", () => {
-  void requestShutdown();
-});
+main();

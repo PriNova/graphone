@@ -177,7 +177,7 @@ export class HostRuntime {
       .catch((error) => {
         const message = error instanceof Error ? error.message : String(error);
         console.error(
-          `[pi-agent-host] prompt failed for session ${sessionId}: ${message}`,
+          `[pi-host-sidecar] prompt failed for session ${sessionId}: ${message}`,
         );
       });
   }

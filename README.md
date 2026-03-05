@@ -14,10 +14,10 @@ A unified cross-platform interface for the [pi-mono](https://github.com/badlogic
 
 Graphone provides a desktop interface for the pi-mono coding agent using Tauri's sidecar pattern:
 
-| Platform            | Pattern                   | Mechanism                                                                                                 |
-| ------------------- | ------------------------- | --------------------------------------------------------------------------------------------------------- |
-| **Windows / macOS** | Sidecar (`externalBin`)   | Rust backend spawns bundled `pi-agent` binary via Tauri sidecar integration                               |
-| **Linux**           | Sidecar (resource bundle) | Build stages `sidecar/linux/pi-agent.gz` + runtime assets; app extracts to app-local runtime and launches |
+| Platform            | Pattern                   | Mechanism                                                                                           |
+| ------------------- | ------------------------- | --------------------------------------------------------------------------------------------------- |
+| **Windows / macOS** | Sidecar (`externalBin`)   | Rust backend spawns bundled `pi` binary via Tauri sidecar integration                               |
+| **Linux**           | Sidecar (resource bundle) | Build stages `sidecar/linux/pi.gz` + runtime assets; app extracts to app-local runtime and launches |
 
 ### Key Features
 
@@ -57,9 +57,9 @@ Runtime SDK assets are copied from the pinned npm dependency (`node_modules/@mar
 2. Compile `dist/cli.js` using `bun build --compile`
 3. Copy binary + runtime assets to `src-tauri/binaries/`
 4. Bundle sidecar by platform:
-   - Windows/macOS: Tauri bundles `binaries/pi-agent` via `externalBin`
-   - Linux: build script stages `src-tauri/sidecar/linux` with `pi-agent.gz` + runtime assets
-5. Linux runtime startup: app extracts `pi-agent.gz` into app-local data and launches from that extracted runtime directory
+   - Windows/macOS: Tauri bundles `binaries/pi` via `externalBin`
+   - Linux: build script stages `src-tauri/sidecar/linux` with `pi.gz` + runtime assets
+5. Linux runtime startup: app extracts `pi.gz` into app-local data and launches from that extracted runtime directory
 
 ---
 
@@ -153,7 +153,7 @@ The sidecar is built automatically when you run Tauri commands. The build script
 - Building Graphone host sidecar source (`services/agent-host`)
 - Compiling `dist/cli.js` with `bun build --compile`
 - Copying binary + runtime assets to `src-tauri/binaries/`
-- Staging Linux bundle resources under `src-tauri/sidecar/linux` (`pi-agent.gz` + runtime assets)
+- Staging Linux bundle resources under `src-tauri/sidecar/linux` (`pi.gz` + runtime assets)
 
 ### 3. Run Development Server
 
@@ -207,7 +207,7 @@ graphone/
 ├── src-tauri/                        # Rust/Tauri desktop shell
 │   ├── src/                          # Commands, sidecar bridge, state
 │   ├── binaries/                     # Sidecar binaries + runtime assets (auto-populated)
-│   ├── sidecar/linux/                # Linux resource bundle (auto-populated, includes pi-agent.gz)
+│   ├── sidecar/linux/                # Linux resource bundle (auto-populated, includes pi.gz)
 │   ├── capabilities/                 # Tauri permissions (desktop/mobile)
 │   ├── build.rs                      # Builds/stages sidecar binaries and Linux resource bundle
 │   ├── Cargo.toml
@@ -255,7 +255,7 @@ The sidecar binary is built automatically via `src-tauri/build.rs`:
    - Uses an explicit bun target when cross-compiling Windows from Linux
 4. **Copy**: Places the binary in `src-tauri/binaries/` with Tauri sidecar naming
 5. **Assets**: Copies runtime assets (`package.json`, docs/examples, theme, export-html, `photon_rs_bg.wasm`) from `@mariozechner/pi-coding-agent`
-6. **Linux Bundle Stage**: Compresses the Linux binary to `src-tauri/sidecar/linux/pi-agent.gz` and stages runtime assets for Linux packaging/runtime extraction
+6. **Linux Bundle Stage**: Compresses the Linux binary to `src-tauri/sidecar/linux/pi.gz` and stages runtime assets for Linux packaging/runtime extraction
 
 **Environment Variables:**
 
@@ -363,7 +363,7 @@ Sidecar bundling uses a base config plus a Linux override:
 ```json
 {
   "bundle": {
-    "externalBin": ["binaries/pi-agent"]
+    "externalBin": ["binaries/pi"]
   }
 }
 ```
@@ -379,7 +379,7 @@ Sidecar bundling uses a base config plus a Linux override:
 }
 ```
 
-On Linux, Graphone extracts `sidecar/linux/pi-agent.gz` into app-local data at runtime and launches the extracted binary from there.
+On Linux, Graphone extracts `sidecar/linux/pi.gz` into app-local data at runtime and launches the extracted binary from there.
 
 ### Capabilities
 

@@ -15,6 +15,11 @@ use tauri::{AppHandle, Manager};
 use crate::logger;
 
 #[cfg(target_os = "linux")]
+const SIDECAR_GZIP_NAME: &str = "pi.gz";
+#[cfg(target_os = "linux")]
+const SIDECAR_BINARY_NAME: &str = "pi";
+
+#[cfg(target_os = "linux")]
 fn copy_dir_recursive(source: &Path, destination: &Path) -> Result<(), String> {
     fs::create_dir_all(destination).map_err(|error| {
         format!(
@@ -69,6 +74,16 @@ fn copy_dir_recursive(source: &Path, destination: &Path) -> Result<(), String> {
 }
 
 #[cfg(target_os = "linux")]
+fn resolve_compressed_sidecar_path(source_dir: &Path) -> Option<PathBuf> {
+    let compressed = source_dir.join(SIDECAR_GZIP_NAME);
+    if compressed.exists() {
+        return Some(compressed);
+    }
+
+    None
+}
+
+#[cfg(target_os = "linux")]
 fn resolve_linux_sidecar_source_dir(app: &AppHandle) -> Result<PathBuf, String> {
     let mut candidates = Vec::new();
 
@@ -79,7 +94,7 @@ fn resolve_linux_sidecar_source_dir(app: &AppHandle) -> Result<PathBuf, String> 
     candidates.push(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("sidecar/linux"));
 
     for candidate in candidates {
-        if candidate.join("pi-agent.gz").exists() {
+        if resolve_compressed_sidecar_path(&candidate).is_some() {
             return Ok(candidate);
         }
     }
@@ -134,7 +149,8 @@ fn validate_linux_sidecar_binary(path: &Path) -> Result<(), String> {
 #[cfg(target_os = "linux")]
 pub(crate) fn prepare_linux_sidecar_runtime(app: &AppHandle) -> Result<PathBuf, String> {
     let source_dir = resolve_linux_sidecar_source_dir(app)?;
-    let compressed_binary = source_dir.join("pi-agent.gz");
+    let compressed_binary = resolve_compressed_sidecar_path(&source_dir)
+        .ok_or_else(|| "Linux sidecar compressed binary not found".to_string())?;
     let source_stamp = source_stamp(&compressed_binary)?;
 
     let app_local_data_dir = app.path().app_local_data_dir().map_err(|error| {
@@ -146,7 +162,7 @@ pub(crate) fn prepare_linux_sidecar_runtime(app: &AppHandle) -> Result<PathBuf, 
 
     let runtime_dir = app_local_data_dir.join("sidecar").join("linux-runtime");
     let stamp_path = runtime_dir.join(".stamp");
-    let extracted_binary = runtime_dir.join("pi-agent");
+    let extracted_binary = runtime_dir.join(SIDECAR_BINARY_NAME);
 
     let needs_refresh = match fs::read_to_string(&stamp_path) {
         Ok(current_stamp) => current_stamp.trim() != source_stamp || !extracted_binary.exists(),
@@ -198,7 +214,7 @@ pub(crate) fn prepare_linux_sidecar_runtime(app: &AppHandle) -> Result<PathBuf, 
         let name = entry.file_name();
         let name = name.to_string_lossy();
 
-        if name == "pi-agent.gz" {
+        if name == SIDECAR_GZIP_NAME {
             continue;
         }
 
