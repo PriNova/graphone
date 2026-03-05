@@ -167,6 +167,7 @@ export function handleAgentEnd(runtime: SessionRuntimeForEvents): void {
   }
   clearBatcher(sessionId);
   runtime.agent.setLoading(false);
+  runtime.messages.clearPendingToolCalls();
   runtime.messages.finalizeStreamingMessage();
   runtime.agent.refreshState().catch((error) => {
     console.warn("Failed to refresh agent state:", error);
@@ -456,6 +457,7 @@ export function handleToolExecutionStart(
   runtime: SessionRuntimeForEvents,
   event: Extract<AgentEvent, { type: "tool_execution_start" }>,
 ): void {
+  runtime.messages.setToolCallPending(event.toolCallId, true);
   runtime.messages.upsertToolCall({
     id: event.toolCallId,
     name: event.toolName,
@@ -463,10 +465,41 @@ export function handleToolExecutionStart(
   });
 }
 
+export function handleToolExecutionUpdate(
+  runtime: SessionRuntimeForEvents,
+  event: Extract<AgentEvent, { type: "tool_execution_update" }>,
+): void {
+  runtime.messages.setToolCallPending(event.toolCallId, true);
+
+  runtime.messages.upsertToolCall({
+    id: event.toolCallId,
+    name: event.toolName,
+    arguments: event.args ?? {},
+  });
+
+  if (event.partialResult === null || event.partialResult === undefined) {
+    return;
+  }
+
+  const toolResult = buildToolResultMessage({
+    toolCallId: event.toolCallId,
+    toolName: event.toolName,
+    result: event.partialResult,
+    isError: false,
+    timestamp: Date.now(),
+  });
+
+  if (toolResult) {
+    runtime.messages.upsertToolPartialResult(toolResult);
+  }
+}
+
 export function handleToolExecutionEnd(
   runtime: SessionRuntimeForEvents,
   event: Extract<AgentEvent, { type: "tool_execution_end" }>,
 ): void {
+  runtime.messages.setToolCallPending(event.toolCallId, false);
+
   const toolResult = buildToolResultMessage({
     toolCallId: event.toolCallId,
     toolName: event.toolName,
@@ -519,7 +552,7 @@ export function handleAgentEvent(
       break;
 
     case "tool_execution_update":
-      // Optional: can be wired to progressive tool output in future.
+      handleToolExecutionUpdate(runtime, event);
       break;
 
     case "tool_execution_end":

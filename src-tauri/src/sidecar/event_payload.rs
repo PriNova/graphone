@@ -339,10 +339,22 @@ fn compact_tool_execution_update_event(event: &serde_json::Value) -> serde_json:
         .and_then(|value| value.as_str())
         .unwrap_or_default();
 
+    let args = event
+        .get("args")
+        .map(|value| compact_json_value(value, 0))
+        .unwrap_or_else(|| serde_json::json!({}));
+
+    let partial_result = match event.get("partialResult") {
+        Some(value) => compact_tool_execution_end_result(value),
+        None => serde_json::Value::Null,
+    };
+
     serde_json::json!({
         "type": "tool_execution_update",
         "toolCallId": tool_call_id,
         "toolName": tool_name,
+        "args": args,
+        "partialResult": partial_result,
     })
 }
 
@@ -449,7 +461,7 @@ fn compact_tool_result_content(content: &serde_json::Value) -> serde_json::Value
 
 fn compact_tool_result_details(value: &serde_json::Value, depth: usize) -> serde_json::Value {
     const MAX_DEPTH: usize = 4;
-    const MAX_STRING_CHARS: usize = 8_000;
+    const MAX_STRING_CHARS: usize = 24_000;
     const MAX_OBJECT_KEYS: usize = 48;
     const MAX_ARRAY_ITEMS: usize = 64;
 

@@ -62,6 +62,7 @@
     windowTitleHint?: string | null;
     onmessagescroll?: () => void;
     onmessagescontainerchange?: (element: HTMLDivElement | null) => void;
+    onmessagescontentchange?: (element: HTMLDivElement | null) => void;
     ontogglesidebar?: () => void;
     onprojectdirinput?: (value: string) => void;
     oncreatesession?: () => void | Promise<void>;
@@ -148,6 +149,7 @@
     windowTitleHint = null,
     onmessagescroll,
     onmessagescontainerchange,
+    onmessagescontentchange,
     ontogglesidebar,
     onprojectdirinput,
     oncreatesession,
@@ -172,10 +174,15 @@
   }: Props = $props();
 
   let messagesContainerElement = $state<HTMLDivElement | null>(null);
+  let messagesContentElement = $state<HTMLDivElement | null>(null);
   let settingsOpen = $state(false);
 
   $effect(() => {
     onmessagescontainerchange?.(messagesContainerElement);
+  });
+
+  $effect(() => {
+    onmessagescontentchange?.(messagesContentElement);
   });
 
   function toggleSettings(): void {
@@ -184,6 +191,10 @@
 
   function getToolResult(toolCallId: string) {
     return activeRuntime?.messages.getToolResult(toolCallId);
+  }
+
+  function isToolPending(toolCallId: string): boolean {
+    return activeRuntime?.messages.isToolCallPending(toolCallId) ?? false;
   }
 </script>
 
@@ -292,7 +303,7 @@
       {/if}
 
       <div
-        class="flex-1 min-h-0 overflow-y-auto pr-4 flex flex-col gap-2 scroll-smooth [scrollbar-gutter:stable]"
+        class="flex-1 min-h-0 overflow-y-auto pr-4 flex flex-col [scrollbar-gutter:stable]"
         class:py-4={showHeader}
         class:pt-0={!showHeader}
         class:pb-4={!showHeader}
@@ -301,41 +312,46 @@
         bind:this={messagesContainerElement}
         onscroll={onmessagescroll}
       >
-        {#if startupError}
-          <div class="flex items-center justify-center h-full">
-            <p class="text-destructive text-sm">
-              Failed to initialize sessions: {startupError}
-            </p>
-          </div>
-        {:else if !activeRuntime}
-          <div class="flex items-center justify-center h-full">
-            <p class="text-muted-foreground text-sm">{emptyStateText}</p>
-          </div>
-        {:else if messages.length === 0}
-          <div class="flex items-center justify-center h-full">
-            <p class="text-muted-foreground text-sm">
-              Start a conversation by typing below
-            </p>
-          </div>
-        {:else}
-          {#each messages as message (message.id)}
-            {#if message.type === "user"}
-              <UserMessage
-                content={message.content}
-                timestamp={message.timestamp}
-              />
-            {:else}
-              <AssistantMessage
-                content={message.content}
-                timestamp={message.timestamp}
-                isStreaming={message.isStreaming}
-                defaultThinkingCollapsed={thinkingCollapsedByDefault}
-                defaultToolCollapsed={toolResultsCollapsedByDefault}
-                {getToolResult}
-              />
-            {/if}
-          {/each}
-        {/if}
+        <div class="min-h-full" bind:this={messagesContentElement}>
+          {#if startupError}
+            <div class="flex items-center justify-center h-full">
+              <p class="text-destructive text-sm">
+                Failed to initialize sessions: {startupError}
+              </p>
+            </div>
+          {:else if !activeRuntime}
+            <div class="flex items-center justify-center h-full">
+              <p class="text-muted-foreground text-sm">{emptyStateText}</p>
+            </div>
+          {:else if messages.length === 0}
+            <div class="flex items-center justify-center h-full">
+              <p class="text-muted-foreground text-sm">
+                Start a conversation by typing below
+              </p>
+            </div>
+          {:else}
+            {#each messages as message, messageIndex (message.id)}
+              <div class:mt-2={messageIndex > 0}>
+                {#if message.type === "user"}
+                  <UserMessage
+                    content={message.content}
+                    timestamp={message.timestamp}
+                  />
+                {:else}
+                  <AssistantMessage
+                    content={message.content}
+                    timestamp={message.timestamp}
+                    isStreaming={message.isStreaming}
+                    defaultThinkingCollapsed={thinkingCollapsedByDefault}
+                    defaultToolCollapsed={toolResultsCollapsedByDefault}
+                    {getToolResult}
+                    {isToolPending}
+                  />
+                {/if}
+              </div>
+            {/each}
+          {/if}
+        </div>
       </div>
 
       <section class="shrink-0 w-full px-2 pb-1 pt-1">

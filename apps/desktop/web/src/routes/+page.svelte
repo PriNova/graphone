@@ -40,6 +40,7 @@
 
   // DOM refs
   let messagesContainerRef = $state<HTMLDivElement | null>(null);
+  let messagesContentRef = $state<HTMLDivElement | null>(null);
 
   // Event unlistener
   let disposeAgentEventBridge: (() => void) | null = null;
@@ -234,6 +235,7 @@
   // Use instant scroll here for reliability while content grows rapidly;
   // smooth scrolling can fall behind and temporarily mark the view as unpinned.
   let scrollRaf: number | null = null;
+  let resizeScrollRaf: number | null = null;
 
   function scheduleScrollToBottom(): void {
     if (scrollRaf === null) {
@@ -243,6 +245,43 @@
       });
     }
   }
+
+  function schedulePinnedResizeScroll(): void {
+    if (resizeScrollRaf !== null) {
+      return;
+    }
+
+    resizeScrollRaf = requestAnimationFrame(() => {
+      resizeScrollRaf = null;
+
+      if (!messagesContainerRef || !activeRuntime) {
+        return;
+      }
+
+      if (!activeRuntime.messages.isPinnedToBottom()) {
+        return;
+      }
+
+      activeRuntime.messages.scrollToBottom(messagesContainerRef, false);
+    });
+  }
+
+  $effect(() => {
+    const contentElement = messagesContentRef;
+    if (!contentElement) {
+      return;
+    }
+
+    const resizeObserver = new ResizeObserver(() => {
+      schedulePinnedResizeScroll();
+    });
+
+    resizeObserver.observe(contentElement);
+
+    return () => {
+      resizeObserver.disconnect();
+    };
+  });
 
   function maybeTrackOptimisticFirstPrompt(
     runtime: SessionRuntime,
@@ -849,6 +888,11 @@
       scrollRaf = null;
     }
 
+    if (resizeScrollRaf !== null) {
+      cancelAnimationFrame(resizeScrollRaf);
+      resizeScrollRaf = null;
+    }
+
     pendingSessionSidebarSync.clear();
     optimisticFirstPromptBySession = {};
     promptDraftBySession = {};
@@ -904,6 +948,9 @@
   onmessagescroll={handleScroll}
   onmessagescontainerchange={(element) => {
     messagesContainerRef = element;
+  }}
+  onmessagescontentchange={(element) => {
+    messagesContentRef = element;
   }}
   ontogglesidebar={toggleSidebar}
   onprojectdirinput={onProjectDirInputChange}

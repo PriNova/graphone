@@ -19,6 +19,7 @@
     timestamp?: Date;
     isStreaming?: boolean;
     getToolResult?: (toolCallId: string) => ToolResultMessage | undefined;
+    isToolPending?: (toolCallId: string) => boolean;
     defaultThinkingCollapsed?: boolean;
     defaultToolCollapsed?: boolean;
   }
@@ -28,6 +29,7 @@
     timestamp,
     isStreaming,
     getToolResult,
+    isToolPending,
     defaultThinkingCollapsed = true,
     defaultToolCollapsed = true,
   }: Props = $props();
@@ -90,6 +92,34 @@
       event.preventDefault();
       toggleThinking(index);
     }
+  }
+
+  interface AutoScrollPayload {
+    enabled: boolean;
+    token: number;
+  }
+
+  function autoScrollToBottomOnUpdate(
+    node: HTMLElement,
+    payload: AutoScrollPayload,
+  ) {
+    const sync = (next: AutoScrollPayload) => {
+      if (!next.enabled) {
+        return;
+      }
+
+      requestAnimationFrame(() => {
+        node.scrollTop = node.scrollHeight;
+      });
+    };
+
+    sync(payload);
+
+    return {
+      update(nextPayload: AutoScrollPayload) {
+        sync(nextPayload);
+      },
+    };
   }
 
   /**
@@ -329,6 +359,70 @@
     return sanitized.length > 0 ? sanitized : null;
   }
 
+  type DiffLineKind = "added" | "removed" | "hunk" | "meta" | "context";
+
+  interface ParsedDiffLine {
+    kind: DiffLineKind;
+    text: string;
+  }
+
+  function resolveEditDiff(block: ToolCall): string | null {
+    if (block.name !== "edit") {
+      return null;
+    }
+
+    const toolResult = resolveToolResult(block);
+    if (!toolResult || !isObjectRecord(toolResult.details)) {
+      return null;
+    }
+
+    const rawDiff = toolResult.details.diff;
+    if (typeof rawDiff !== "string") {
+      return null;
+    }
+
+    const trimmedDiff = rawDiff.trim();
+    return trimmedDiff.length > 0 ? trimmedDiff : null;
+  }
+
+  function classifyDiffLine(line: string): DiffLineKind {
+    if (line.startsWith("@@")) {
+      return "hunk";
+    }
+
+    if (line.startsWith("+") && !line.startsWith("+++ ")) {
+      return "added";
+    }
+
+    if (line.startsWith("-") && !line.startsWith("--- ")) {
+      return "removed";
+    }
+
+    if (
+      line.startsWith("+++ ") ||
+      line.startsWith("--- ") ||
+      line.startsWith("diff ") ||
+      line.startsWith("index ") ||
+      line.startsWith("new file mode ") ||
+      line.startsWith("deleted file mode ") ||
+      line.startsWith("similarity index ") ||
+      line.startsWith("rename from ") ||
+      line.startsWith("rename to ") ||
+      line.startsWith("Binary files ")
+    ) {
+      return "meta";
+    }
+
+    return "context";
+  }
+
+  function parseUnifiedDiff(diff: string): ParsedDiffLine[] {
+    return diff.split("\n").map((line) => ({
+      kind: classifyDiffLine(line),
+      text: line,
+    }));
+  }
+
   // Performance: Memoize computed values to avoid recalculating on every render.
   // These $derived values only recalculate when the content array changes,
   // not when parent components re-render or unrelated state changes.
@@ -366,6 +460,24 @@
     return cache;
   });
 
+  // Cache parsed edit diffs by toolCallId
+  const editDiffLinesByCallId = $derived.by(() => {
+    const cache = new Map<string, ParsedDiffLine[]>();
+
+    for (const block of content) {
+      if (block.type !== "toolCall") {
+        continue;
+      }
+
+      const diff = resolveEditDiff(block);
+      if (diff) {
+        cache.set(block.id, parseUnifiedDiff(diff));
+      }
+    }
+
+    return cache;
+  });
+
   // Cache tool call summaries by toolCallId
   const toolCallSummaries = $derived.by(() => {
     const cache = new Map<string, string | null>();
@@ -386,6 +498,10 @@
     return toolResultHtmlByCallId.get(block.id) ?? null;
   }
 
+  function getEditDiffLines(block: ToolCall): ParsedDiffLine[] | null {
+    return editDiffLinesByCallId.get(block.id) ?? null;
+  }
+
   function getToolCallSummary(block: ToolCall): string | null {
     return toolCallSummaries.get(block.id) ?? null;
   }
@@ -395,18 +511,35 @@
   <div class={cn("w-full wrap-break-word", isStreaming && "opacity-90")}>
     <!-- Render blocks in the order they arrive -->
     {#each content as block, blockIndex (block.type === "toolCall" ? block.id : `${block.type}-${blockIndex}`)}
-      {#if isThinkingBlock(block)}
-        <div
-          class="mb-2 last:mb-0 bg-foreground/3 dark:bg-f6fff5/[0.03] border border-border rounded overflow-hidden"
-        >
-          <button
-            type="button"
-            class="flex items-center justify-between w-full gap-2 px-3 py-1 bg-foreground/5 dark:bg-f6fff5/[0.05] border-b border-border text-xs font-semibold text-muted-foreground uppercase tracking-wider hover:bg-foreground/8 dark:hover:bg-f6fff5/[0.08] transition-colors cursor-pointer"
-            onclick={() => toggleThinking(blockIndex)}
+      <div class:mt-2={blockIndex > 0}>
+        {#if isThinkingBlock(block)}
+          <div
+            class="bg-foreground/3 dark:bg-f6fff5/[0.03] border border-border rounded overflow-hidden"
           >
-            <div class="flex items-center gap-2">
+            <button
+              type="button"
+              class="flex items-center justify-between w-full gap-2 px-3 py-1 bg-foreground/5 dark:bg-f6fff5/[0.05] border-b border-border text-xs font-semibold text-muted-foreground uppercase tracking-wider hover:bg-foreground/8 dark:hover:bg-f6fff5/[0.08] transition-colors cursor-pointer"
+              onclick={() => toggleThinking(blockIndex)}
+            >
+              <div class="flex items-center gap-2">
+                <svg
+                  class="w-3.5 h-3.5"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                >
+                  <path
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                    stroke-width="2"
+                    d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z"
+                  />
+                </svg>
+                <span>Thinking</span>
+              </div>
               <svg
-                class="w-3.5 h-3.5"
+                class="w-3.5 h-3.5 transition-transform duration-200"
+                class:rotate-90={!isThinkingCollapsed(blockIndex)}
                 viewBox="0 0 24 24"
                 fill="none"
                 stroke="currentColor"
@@ -415,206 +548,242 @@
                   stroke-linecap="round"
                   stroke-linejoin="round"
                   stroke-width="2"
-                  d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z"
+                  d="M9 5l7 7-7 7"
                 />
               </svg>
-              <span>Thinking</span>
-            </div>
-            <svg
-              class="w-3.5 h-3.5 transition-transform duration-200"
-              class:rotate-90={!isThinkingCollapsed(blockIndex)}
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-            >
-              <path
-                stroke-linecap="round"
-                stroke-linejoin="round"
-                stroke-width="2"
-                d="M9 5l7 7-7 7"
-              />
-            </svg>
-          </button>
-          {#if !isThinkingCollapsed(blockIndex)}
-            <div
-              role="button"
-              tabindex="0"
-              class="p-3 font-mono text-[0.8125rem] leading-normal text-muted-foreground whitespace-pre-wrap wrap-break-word m-0 cursor-pointer hover:bg-foreground/3 dark:hover:bg-f6fff5/[0.02] transition-colors select-text focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset"
-              onclick={(e) => handleThinkingContentClick(blockIndex, e)}
-              onkeydown={(e) => handleThinkingContentKeydown(blockIndex, e)}
-            >
-              {block.thinking}
-            </div>
-          {/if}
-        </div>
-      {:else if isToolCall(block)}
-        {@const resultText = resolveToolResultText(block)}
-        {@const isError = resolveToolResultError(block)}
-        {@const hasResult = resultText !== undefined}
-        {@const truncated = getTruncatedResult(block)}
-        {@const toolResultHtml = getToolResultHtml(block)}
-        {@const hasToolResultHtml = toolResultHtml !== null}
-        {@const callSummary = getToolCallSummary(block)}
-        {@const collapsed = isToolCollapsed(block.id)}
-        {@const isReadResult = block.name === "read" && !isError}
-        {@const isReadTruncated = isReadResult && !!truncated?.truncated}
-        {@const showFullReadResult =
-          isReadTruncated && isReadResultExpanded(block.id)}
-        {@const readResultText = showFullReadResult
-          ? (resultText ?? truncated?.text ?? "")
-          : (truncated?.text ?? "")}
-        <div
-          class={cn(
-            "mb-2 last:mb-0 border rounded overflow-hidden",
-            !hasResult && "bg-foreground/3 dark:bg-f6fff5/[0.03] border-border",
-            hasResult &&
-              !isError &&
-              "bg-emerald-500/[0.03] dark:bg-emerald-500/[0.03] border-emerald-500/20",
-            hasResult &&
-              isError &&
-              "bg-destructive/3 dark:bg-destructive/3 border-destructive/20",
-          )}
-        >
-          <button
-            type="button"
+            </button>
+            {#if !isThinkingCollapsed(blockIndex)}
+              <div
+                role="button"
+                tabindex="0"
+                class="p-3 font-mono text-[0.8125rem] leading-normal text-muted-foreground whitespace-pre-wrap wrap-break-word m-0 cursor-pointer hover:bg-foreground/3 dark:hover:bg-f6fff5/[0.02] transition-colors select-text focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset"
+                onclick={(e) => handleThinkingContentClick(blockIndex, e)}
+                onkeydown={(e) => handleThinkingContentKeydown(blockIndex, e)}
+              >
+                {block.thinking}
+              </div>
+            {/if}
+          </div>
+        {:else if isToolCall(block)}
+          {@const resultText = resolveToolResultText(block)}
+          {@const isError = resolveToolResultError(block)}
+          {@const hasResult = resultText !== undefined}
+          {@const pending = isToolPending?.(block.id) ?? !hasResult}
+          {@const truncated = getTruncatedResult(block)}
+          {@const toolResultHtml = getToolResultHtml(block)}
+          {@const hasToolResultHtml = toolResultHtml !== null}
+          {@const editDiffLines = getEditDiffLines(block)}
+          {@const hasEditDiff = !!editDiffLines && editDiffLines.length > 0}
+          {@const callSummary = getToolCallSummary(block)}
+          {@const collapsed = isToolCollapsed(block.id)}
+          {@const isLiveBashOutput =
+            block.name === "bash" && pending && hasResult}
+          {@const isReadResult = block.name === "read" && !isError}
+          {@const isReadTruncated = isReadResult && !!truncated?.truncated}
+          {@const showFullReadResult =
+            isReadTruncated && isReadResultExpanded(block.id)}
+          {@const readResultText = showFullReadResult
+            ? (resultText ?? truncated?.text ?? "")
+            : (truncated?.text ?? "")}
+          <div
             class={cn(
-              "flex items-center w-full gap-2 px-3 py-2 text-xs font-semibold uppercase tracking-wider transition-colors cursor-pointer",
-              hasResult && !collapsed && "border-b",
-              !hasResult &&
-                "bg-foreground/5 dark:bg-f6fff5/[0.05] border-border text-muted-foreground hover:bg-foreground/8 dark:hover:bg-f6fff5/[0.08]",
+              "border rounded overflow-hidden",
+              (!hasResult || pending) &&
+                "bg-foreground/3 dark:bg-f6fff5/[0.03] border-border",
               hasResult &&
+                !pending &&
                 !isError &&
-                "bg-emerald-500/10 border-emerald-500/20 text-emerald-600 dark:text-emerald-400 hover:bg-emerald-500/15",
+                "bg-emerald-500/[0.03] dark:bg-emerald-500/[0.03] border-emerald-500/20",
               hasResult &&
+                !pending &&
                 isError &&
-                "bg-destructive/10 border-destructive/20 text-destructive hover:bg-destructive/15",
+                "bg-destructive/3 dark:bg-destructive/3 border-destructive/20",
             )}
-            onclick={() => toggleTool(block.id)}
           >
-            <svg
-              class="w-3.5 h-3.5 shrink-0"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
+            <button
+              type="button"
+              class={cn(
+                "flex items-center w-full gap-2 px-3 py-2 text-xs font-semibold uppercase tracking-wider transition-colors cursor-pointer",
+                hasResult && !collapsed && "border-b",
+                (!hasResult || pending) &&
+                  "bg-foreground/5 dark:bg-f6fff5/[0.05] border-border text-muted-foreground hover:bg-foreground/8 dark:hover:bg-f6fff5/[0.08]",
+                hasResult &&
+                  !pending &&
+                  !isError &&
+                  "bg-emerald-500/10 border-emerald-500/20 text-emerald-600 dark:text-emerald-400 hover:bg-emerald-500/15",
+                hasResult &&
+                  !pending &&
+                  isError &&
+                  "bg-destructive/10 border-destructive/20 text-destructive hover:bg-destructive/15",
+              )}
+              onclick={() => toggleTool(block.id)}
             >
-              <path
-                stroke-linecap="round"
-                stroke-linejoin="round"
-                stroke-width="2"
-                d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"
-              />
-              <path
-                stroke-linecap="round"
-                stroke-linejoin="round"
-                stroke-width="2"
-                d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"
-              />
-            </svg>
-            <div class="min-w-0 flex-1 flex items-center gap-1 overflow-hidden">
-              <span class="shrink-0">{block.name}</span>
-              {#if callSummary}
-                <span
-                  class="normal-case font-normal tracking-normal opacity-80 truncate"
-                  >• {callSummary}</span
-                >
-              {/if}
-            </div>
-            {#if !hasResult}
-              <span class="ml-auto text-muted-foreground normal-case shrink-0"
-                >Running...</span
+              <svg
+                class="w-3.5 h-3.5 shrink-0"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
               >
-            {:else if isError}
-              <span class="ml-auto normal-case shrink-0">Error</span>
-            {:else}
-              <span class="ml-auto normal-case opacity-60 shrink-0">Done</span>
-            {/if}
-            <svg
-              class="w-3.5 h-3.5 shrink-0 transition-transform duration-200"
-              class:rotate-90={!collapsed}
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-            >
-              <path
-                stroke-linecap="round"
-                stroke-linejoin="round"
-                stroke-width="2"
-                d="M9 5l7 7-7 7"
-              />
-            </svg>
-          </button>
-          {#if hasResult && truncated && !collapsed}
-            {#if hasToolResultHtml}
-              <div
-                class="p-3 text-[0.8125rem] leading-normal text-foreground wrap-break-word m-0 max-h-75 overflow-y-auto"
-              >
-                {@html toolResultHtml ?? ""}
-              </div>
-            {:else if isReadResult}
-              <div class="p-3 m-0 max-h-75 overflow-y-auto">
-                <MessageMarkdown
-                  content={formatReadResultMarkdown(block, readResultText)}
-                  class="message-markdown-read text-[0.8125rem] leading-normal text-foreground wrap-break-word"
+                <path
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  stroke-width="2"
+                  d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"
                 />
-              </div>
-            {:else}
-              <pre
-                class="p-3 font-mono text-[0.8125rem] leading-normal text-foreground whitespace-pre-wrap wrap-break-word m-0 max-h-75 overflow-y-auto">{truncated.text}</pre>
-            {/if}
-            {#if truncated.truncated && !hasToolResultHtml}
+                <path
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  stroke-width="2"
+                  d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"
+                />
+              </svg>
               <div
-                class={cn(
-                  "px-3 py-1.5 text-xs border-t",
-                  isError
-                    ? "bg-destructive/5 border-destructive/10 text-destructive/80"
-                    : "bg-emerald-500/5 border-emerald-500/10 text-emerald-600/70 dark:text-emerald-400/70",
-                )}
+                class="min-w-0 flex-1 flex items-center gap-1 overflow-hidden"
               >
-                {#if isReadResult}
-                  <span class="inline-flex items-center gap-1 flex-wrap">
-                    {#if showFullReadResult}
-                      <span
-                        >Showing full output ({truncated.totalLines} lines)</span
-                      >
-                    {:else if truncated.truncatedBy === "lines"}
-                      <span>
-                        Truncated: showing {truncated.text.split("\n").length} of
-                        {truncated.totalLines}
-                        lines
-                      </span>
-                    {:else}
-                      <span
-                        >Truncated: {MAX_RESULT_BYTES / 1024}KB limit reached</span
-                      >
-                    {/if}
-                    <button
-                      type="button"
-                      class="underline underline-offset-2 hover:no-underline"
-                      onclick={() => toggleReadResultExpanded(block.id)}
-                    >
-                      {showFullReadResult ? "Show less" : "Show full"}
-                    </button>
-                  </span>
-                {:else if truncated.truncatedBy === "lines"}
-                  Truncated: showing {truncated.text.split("\n").length} of {truncated.totalLines}
-                  lines
-                {:else}
-                  Truncated: {MAX_RESULT_BYTES / 1024}KB limit reached
+                <span class="shrink-0">{block.name}</span>
+                {#if callSummary}
+                  <span
+                    class="normal-case font-normal tracking-normal opacity-80 truncate"
+                    >• {callSummary}</span
+                  >
                 {/if}
               </div>
+              {#if pending || !hasResult}
+                <span class="ml-auto text-muted-foreground normal-case shrink-0"
+                  >Running...</span
+                >
+              {:else if isError}
+                <span class="ml-auto normal-case shrink-0">Error</span>
+              {:else}
+                <span class="ml-auto normal-case opacity-60 shrink-0">Done</span
+                >
+              {/if}
+              <svg
+                class="w-3.5 h-3.5 shrink-0 transition-transform duration-200"
+                class:rotate-90={!collapsed}
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+              >
+                <path
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  stroke-width="2"
+                  d="M9 5l7 7-7 7"
+                />
+              </svg>
+            </button>
+            {#if hasResult && truncated && !collapsed}
+              {#if hasToolResultHtml}
+                <div
+                  class="p-3 text-[0.8125rem] leading-normal text-foreground wrap-break-word m-0 max-h-75 overflow-y-auto"
+                >
+                  {@html toolResultHtml ?? ""}
+                </div>
+              {:else if hasEditDiff}
+                <div
+                  class="m-0 max-h-75 overflow-y-auto border-t border-border/40"
+                >
+                  <div
+                    class="font-mono text-[0.8125rem] leading-normal text-foreground whitespace-pre"
+                  >
+                    {#each editDiffLines as line, lineIndex (`${block.id}-diff-${lineIndex}`)}
+                      <div
+                        class={cn(
+                          "px-3 py-0.5",
+                          line.kind === "added" &&
+                            "bg-success/20 border-l-2 border-success/70 text-success",
+                          line.kind === "removed" &&
+                            "bg-destructive/10 border-l-2 border-destructive/70 text-destructive",
+                          line.kind === "hunk" &&
+                            "bg-sky-500/10 text-sky-700 dark:text-sky-300",
+                          line.kind === "meta" &&
+                            "bg-foreground/5 text-muted-foreground",
+                        )}
+                      >
+                        {line.text || " "}
+                      </div>
+                    {/each}
+                  </div>
+                </div>
+              {:else if isLiveBashOutput}
+                <div
+                  class="max-h-75 overflow-y-auto"
+                  use:autoScrollToBottomOnUpdate={{
+                    enabled: true,
+                    token: resultText?.length ?? 0,
+                  }}
+                >
+                  <pre
+                    class="p-3 font-mono text-[0.8125rem] leading-normal text-foreground whitespace-pre-wrap wrap-break-word m-0">{resultText ??
+                      ""}</pre>
+                </div>
+              {:else if isReadResult}
+                <div class="p-3 m-0 max-h-75 overflow-y-auto">
+                  <MessageMarkdown
+                    content={formatReadResultMarkdown(block, readResultText)}
+                    class="message-markdown-read text-[0.8125rem] leading-normal text-foreground wrap-break-word"
+                  />
+                </div>
+              {:else}
+                <pre
+                  class="p-3 font-mono text-[0.8125rem] leading-normal text-foreground whitespace-pre-wrap wrap-break-word m-0 max-h-75 overflow-y-auto">{truncated.text}</pre>
+              {/if}
+              {#if truncated.truncated && !hasToolResultHtml && !hasEditDiff && !isLiveBashOutput}
+                <div
+                  class={cn(
+                    "px-3 py-1.5 text-xs border-t",
+                    isError
+                      ? "bg-destructive/5 border-destructive/10 text-destructive/80"
+                      : pending
+                        ? "bg-foreground/5 border-border text-muted-foreground"
+                        : "bg-emerald-500/5 border-emerald-500/10 text-emerald-600/70 dark:text-emerald-400/70",
+                  )}
+                >
+                  {#if isReadResult}
+                    <span class="inline-flex items-center gap-1 flex-wrap">
+                      {#if showFullReadResult}
+                        <span
+                          >Showing full output ({truncated.totalLines} lines)</span
+                        >
+                      {:else if truncated.truncatedBy === "lines"}
+                        <span>
+                          Truncated: showing {truncated.text.split("\n").length} of
+                          {truncated.totalLines}
+                          lines
+                        </span>
+                      {:else}
+                        <span
+                          >Truncated: {MAX_RESULT_BYTES / 1024}KB limit reached</span
+                        >
+                      {/if}
+                      <button
+                        type="button"
+                        class="underline underline-offset-2 hover:no-underline"
+                        onclick={() => toggleReadResultExpanded(block.id)}
+                      >
+                        {showFullReadResult ? "Show less" : "Show full"}
+                      </button>
+                    </span>
+                  {:else if truncated.truncatedBy === "lines"}
+                    Truncated: showing {truncated.text.split("\n").length} of {truncated.totalLines}
+                    lines
+                  {:else}
+                    Truncated: {MAX_RESULT_BYTES / 1024}KB limit reached
+                  {/if}
+                </div>
+              {/if}
             {/if}
-          {/if}
-        </div>
-      {:else if isTextBlock(block)}
-        <div
-          class="bg-card border border-border rounded-lg px-5 py-2 mb-2 last:mb-0"
-        >
-          <MessageMarkdown
-            content={block.text}
-            class="text-[0.9375rem] leading-relaxed text-foreground wrap-break-word"
-          />
-        </div>
-      {/if}
+          </div>
+        {:else if isTextBlock(block)}
+          <div class="bg-card border border-border rounded-lg px-5 py-2">
+            <MessageMarkdown
+              content={block.text}
+              class="text-[0.9375rem] leading-relaxed text-foreground wrap-break-word"
+            />
+          </div>
+        {/if}
+      </div>
     {/each}
   </div>
 </div>

@@ -19,11 +19,15 @@ export class MessagesStore {
   // during high-frequency scroll events.
   private isUserPinnedToBottom = true;
   private isProgrammaticScroll = false;
-  private static readonly SCROLL_EPSILON_PX = 24;
+  private static readonly SCROLL_EPSILON_PX = 48;
 
   // Canonical tool results keyed by toolCallId.
   // Source of truth for tool execution outcome (pi-ai ToolResultMessage shape).
   toolResultsByCallId = $state<Record<string, ToolResultMessage>>({});
+
+  // Tracks tool calls currently executing so the UI can show `Running...`
+  // even when partial output has already started streaming.
+  pendingToolCallIds = $state<Record<string, boolean>>({});
 
   // Out-of-order safety: tool results can arrive before we have rendered the
   // corresponding toolCall block (e.g. dropped/delayed toolcall_end event).
@@ -42,21 +46,30 @@ export class MessagesStore {
       MessagesStore.SCROLL_EPSILON_PX;
   }
 
-  scrollToBottom(container: HTMLDivElement | null, smooth = true): void {
-    if (!container || !this.isUserPinnedToBottom) {
+  isPinnedToBottom(): boolean {
+    return this.isUserPinnedToBottom;
+  }
+
+  scrollToBottom(
+    container: HTMLDivElement | null,
+    smooth = true,
+    force = false,
+  ): void {
+    if (!container || (!force && !this.isUserPinnedToBottom)) {
       return;
     }
 
     this.isProgrammaticScroll = true;
+    this.isUserPinnedToBottom = true;
+
     container.scrollTo({
       top: container.scrollHeight,
-      behavior: smooth ? "smooth" : "auto",
+      behavior: smooth ? "smooth" : "instant",
     });
 
-    // Release suppression in next frame and refresh pin state once.
+    // Release suppression in next frame.
     requestAnimationFrame(() => {
       this.isProgrammaticScroll = false;
-      this.updateScrollPosition(container);
     });
   }
 
@@ -68,6 +81,7 @@ export class MessagesStore {
   clearMessages(): void {
     this.messages = [];
     this.toolResultsByCallId = {};
+    this.pendingToolCallIds = {};
     this.pendingToolResultsById.clear();
   }
 
@@ -87,6 +101,7 @@ export class MessagesStore {
     }>,
   ): void {
     this.pendingToolResultsById.clear();
+    this.pendingToolCallIds = {};
 
     const loadedMessages: Message[] = [];
     const toolResultsByCallId = new Map<string, ToolResultMessage>();
@@ -287,6 +302,27 @@ export class MessagesStore {
     this.streamingMessageId = null;
   }
 
+  setToolCallPending(toolCallId: string, pending: boolean): void {
+    if (!toolCallId) {
+      return;
+    }
+
+    if (pending) {
+      this.pendingToolCallIds[toolCallId] = true;
+      return;
+    }
+
+    delete this.pendingToolCallIds[toolCallId];
+  }
+
+  isToolCallPending(toolCallId: string): boolean {
+    return this.pendingToolCallIds[toolCallId] === true;
+  }
+
+  clearPendingToolCalls(): void {
+    this.pendingToolCallIds = {};
+  }
+
   // Ensure a tool call block exists as soon as execution starts.
   // Correlates by toolCallId so we can handle out-of-order/dropped toolcall_end events.
   upsertToolCall(toolCall: {
@@ -379,12 +415,10 @@ export class MessagesStore {
     );
   }
 
-  upsertToolResult(result: ToolResultMessage): void {
-    const normalized = MessagesStore.coerceToolResultMessage(result);
-    if (!normalized) {
-      return;
-    }
-
+  private applyToolResult(
+    normalized: ToolResultMessage,
+    warnIfUnknown: boolean,
+  ): void {
     this.toolResultsByCallId[normalized.toolCallId] = normalized;
 
     // Prefer most recent assistant message first.
@@ -406,10 +440,31 @@ export class MessagesStore {
     }
 
     this.pendingToolResultsById.set(normalized.toolCallId, normalized);
-    console.warn(
-      "Tool result received for unknown toolCallId:",
-      normalized.toolCallId,
-    );
+
+    if (warnIfUnknown) {
+      console.warn(
+        "Tool result received for unknown toolCallId:",
+        normalized.toolCallId,
+      );
+    }
+  }
+
+  upsertToolResult(result: ToolResultMessage): void {
+    const normalized = MessagesStore.coerceToolResultMessage(result);
+    if (!normalized) {
+      return;
+    }
+
+    this.applyToolResult(normalized, true);
+  }
+
+  upsertToolPartialResult(result: ToolResultMessage): void {
+    const normalized = MessagesStore.coerceToolResultMessage(result);
+    if (!normalized) {
+      return;
+    }
+
+    this.applyToolResult(normalized, false);
   }
 
   getToolResult(toolCallId: string): ToolResultMessage | undefined {
