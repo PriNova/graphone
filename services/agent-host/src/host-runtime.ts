@@ -324,6 +324,9 @@ export class HostRuntime {
     this.modelRegistry.refresh();
 
     const models = await this.modelRegistry.getAvailable();
+    console.log(
+      `[pi-host-sidecar] models refreshed (available=${models.length})`,
+    );
 
     return {
       models: models.map((model) => ({
