@@ -6,6 +6,8 @@
   "scripts": {
     "dev": "npm --prefix apps/desktop/web run dev --",
     "build": "npm --prefix apps/desktop/web run build",
+    "build:tauri": "npm run build && npm run tauri build",
+    "build:tauri:no-bundle": "npm run build && npm run tauri build -- --no-bundle",
     "preview": "npm --prefix apps/desktop/web run preview",
     "check": "npm --prefix apps/desktop/web run check",
     "check:watch": "npm --prefix apps/desktop/web run check:watch",

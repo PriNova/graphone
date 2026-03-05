@@ -60,6 +60,10 @@ interface ModelsJsonModelEntry {
   id: string;
   name?: string;
   api?: string;
+  reasoning?: boolean;
+  input?: Array<"text" | "image">;
+  contextWindow?: number;
+  maxTokens?: number;
   [key: string]: unknown;
 }
 
@@ -87,6 +91,16 @@ interface ModelCatalogSyncResult {
   synced: ModelCatalogSyncSummary[];
   skipped: Array<{ provider: string; reason: string }>;
   errors: Array<{ provider: string; error: string }>;
+}
+
+interface DiscoveredModelCatalogEntry {
+  id: string;
+  name?: string;
+  api?: string;
+  reasoning?: boolean;
+  input?: Array<"text" | "image">;
+  contextWindow?: number;
+  maxTokens?: number;
 }
 
 const DISCOVERABLE_APIS = new Set([
@@ -839,12 +853,13 @@ export class HostRuntime {
 
     for (const candidate of candidates) {
       try {
-        const discoveredIds = await this.discoverProviderModelIds(
+        const discoveredModels = await this.discoverProviderModels(
           candidate.provider,
+          candidate.api,
           candidate.baseUrl,
         );
 
-        if (discoveredIds.length === 0) {
+        if (discoveredModels.length === 0) {
           result.skipped.push({
             provider: candidate.provider,
             reason: "provider catalog returned zero models",
@@ -870,6 +885,7 @@ export class HostRuntime {
           : [];
 
         const existingIds = existingModels.map((entry) => entry.id);
+        const discoveredIds = discoveredModels.map((entry) => entry.id);
         const existingIdSet = new Set(existingIds);
         const discoveredIdSet = new Set(discoveredIds);
 
@@ -889,17 +905,9 @@ export class HostRuntime {
             ? undefined
             : candidate.api;
 
-        const nextModels = discoveredIds.map((id) => {
-          const existing = existingById.get(id);
-          if (existing) {
-            return existing;
-          }
-
-          return {
-            id,
-            name: id,
-            ...(modelApi ? { api: modelApi } : {}),
-          } satisfies ModelsJsonModelEntry;
+        const nextModels = discoveredModels.map((discovered) => {
+          const existing = existingById.get(discovered.id);
+          return this.mergeDiscoveredModelEntry(existing, discovered, modelApi);
         });
 
         let providerChanged = false;
@@ -930,12 +938,11 @@ export class HostRuntime {
           providerChanged = true;
         }
 
-        if (
+        const modelsChanged =
           !Array.isArray(providerConfig.models) ||
-          added > 0 ||
-          removed > 0 ||
-          providerConfig.models.length !== nextModels.length
-        ) {
+          JSON.stringify(providerConfig.models) !== JSON.stringify(nextModels);
+
+        if (modelsChanged || added > 0 || removed > 0) {
           providerConfig.models = nextModels;
           providerChanged = true;
         }
@@ -1013,10 +1020,22 @@ export class HostRuntime {
     );
   }
 
-  private async discoverProviderModelIds(
+  private async discoverProviderModels(
+    provider: string,
+    api: string,
+    baseUrl: string,
+  ): Promise<DiscoveredModelCatalogEntry[]> {
+    if (provider === "openai-codex" || api === "openai-codex-responses") {
+      return this.discoverOpenAICodexModels(provider, baseUrl);
+    }
+
+    return this.discoverOpenAICompatibleModels(provider, baseUrl);
+  }
+
+  private async discoverOpenAICompatibleModels(
     provider: string,
     baseUrl: string,
-  ): Promise<string[]> {
+  ): Promise<DiscoveredModelCatalogEntry[]> {
     const apiKey = await this.authStorage.getApiKey(provider);
 
     const headers: Record<string, string> = {
@@ -1044,18 +1063,70 @@ export class HostRuntime {
         }
 
         const payload = (await response.json()) as unknown;
-        const ids = this.parseModelCatalogModelIds(payload);
-        if (ids.length === 0) {
+        const models = this.parseOpenAICompatibleModelCatalog(payload);
+        if (models.length === 0) {
           throw new Error("catalog response did not include model IDs");
         }
 
-        return ids;
+        return models;
       } catch (error) {
         lastError = error instanceof Error ? error.message : String(error);
       }
     }
 
     throw new Error(lastError);
+  }
+
+  private async discoverOpenAICodexModels(
+    provider: string,
+    baseUrl: string,
+  ): Promise<DiscoveredModelCatalogEntry[]> {
+    const apiKey = await this.authStorage.getApiKey(provider);
+    if (!apiKey || apiKey.trim().length === 0) {
+      throw new Error("No auth available for openai-codex");
+    }
+
+    const normalizedBaseUrl = baseUrl.trim().replace(/\/+$/, "");
+    if (!normalizedBaseUrl) {
+      throw new Error("Missing baseUrl for openai-codex");
+    }
+
+    const codexBaseUrl = normalizedBaseUrl.endsWith("/codex")
+      ? normalizedBaseUrl
+      : `${normalizedBaseUrl}/codex`;
+    const url = `${codexBaseUrl}/models?client_version=99.99.99`;
+
+    const response = await fetch(url, {
+      method: "GET",
+      headers: {
+        Accept: "application/json",
+        Authorization: `Bearer ${apiKey}`,
+        "User-Agent": this.getOpenAICodexUserAgent(),
+      },
+      signal: AbortSignal.timeout(6000),
+    });
+
+    if (!response.ok) {
+      console.error(
+        `[pi-host-sidecar] openai-codex model catalog request failed: url=${url} status=${response.status} ${response.statusText}`,
+      );
+      throw new Error(`HTTP ${response.status} ${response.statusText}`);
+    }
+
+    const payload = (await response.json()) as unknown;
+    const models = this.parseOpenAICodexModelCatalog(payload);
+    if (models.length === 0) {
+      console.error(
+        `[pi-host-sidecar] openai-codex model catalog returned no models: url=${url}`,
+      );
+      throw new Error("catalog response did not include codex model IDs");
+    }
+
+    console.error(
+      `[pi-host-sidecar] openai-codex model catalog fetched: url=${url} models=${models.length}`,
+    );
+
+    return models;
   }
 
   private buildModelCatalogUrlCandidates(baseUrl: string): string[] {
@@ -1072,7 +1143,9 @@ export class HostRuntime {
     return Array.from(new Set(candidates));
   }
 
-  private parseModelCatalogModelIds(payload: unknown): string[] {
+  private parseOpenAICompatibleModelCatalog(
+    payload: unknown,
+  ): DiscoveredModelCatalogEntry[] {
     if (!payload || typeof payload !== "object") {
       return [];
     }
@@ -1092,31 +1165,196 @@ export class HostRuntime {
       entries.push(...source.models);
     }
 
-    const ids = entries
-      .map((entry) => {
-        if (!entry || typeof entry !== "object") {
-          return undefined;
-        }
+    const models: DiscoveredModelCatalogEntry[] = [];
 
-        const model = entry as { id?: unknown; name?: unknown };
-        if (typeof model.id === "string" && model.id.trim().length > 0) {
-          return model.id.trim();
-        }
+    for (const entry of entries) {
+      if (!entry || typeof entry !== "object") {
+        continue;
+      }
 
-        if (typeof model.name === "string" && model.name.trim().length > 0) {
-          return model.name.trim();
-        }
+      const model = entry as { id?: unknown; name?: unknown };
+      const id =
+        typeof model.id === "string" && model.id.trim().length > 0
+          ? model.id.trim()
+          : typeof model.name === "string" && model.name.trim().length > 0
+            ? model.name.trim()
+            : undefined;
 
-        return undefined;
-      })
-      .filter((id): id is string => Boolean(id));
+      if (!id) {
+        continue;
+      }
 
-    return Array.from(new Set(ids)).sort((a, b) => a.localeCompare(b));
+      models.push({
+        id,
+        name:
+          typeof model.name === "string" && model.name.trim().length > 0
+            ? model.name.trim()
+            : id,
+      });
+    }
+
+    return this.dedupeDiscoveredModels(models);
+  }
+
+  private parseOpenAICodexModelCatalog(
+    payload: unknown,
+  ): DiscoveredModelCatalogEntry[] {
+    if (!payload || typeof payload !== "object") {
+      return [];
+    }
+
+    const source = payload as { models?: unknown };
+    if (!Array.isArray(source.models)) {
+      return [];
+    }
+
+    const models: DiscoveredModelCatalogEntry[] = [];
+
+    for (const entry of source.models) {
+      if (!entry || typeof entry !== "object") {
+        continue;
+      }
+
+      const model = entry as {
+        slug?: unknown;
+        display_name?: unknown;
+        input_modalities?: unknown;
+        supported_reasoning_levels?: unknown;
+        context_window?: unknown;
+      };
+
+      const id =
+        typeof model.slug === "string" && model.slug.trim().length > 0
+          ? model.slug.trim()
+          : undefined;
+      if (!id) {
+        continue;
+      }
+
+      const inputModalities = Array.isArray(model.input_modalities)
+        ? model.input_modalities
+            .map((value) => (typeof value === "string" ? value : undefined))
+            .filter((value): value is string => Boolean(value))
+        : [];
+
+      const input: Array<"text" | "image"> = ["text"];
+      if (inputModalities.includes("image")) {
+        input.push("image");
+      }
+
+      models.push({
+        id,
+        name:
+          typeof model.display_name === "string" &&
+          model.display_name.trim().length > 0
+            ? model.display_name.trim()
+            : id,
+        api: "openai-codex-responses",
+        reasoning:
+          Array.isArray(model.supported_reasoning_levels) &&
+          model.supported_reasoning_levels.length > 0,
+        input,
+        contextWindow:
+          typeof model.context_window === "number" &&
+          Number.isFinite(model.context_window) &&
+          model.context_window > 0
+            ? model.context_window
+            : undefined,
+        maxTokens: 128000,
+      });
+    }
+
+    return this.dedupeDiscoveredModels(models);
+  }
+
+  private dedupeDiscoveredModels(
+    models: DiscoveredModelCatalogEntry[],
+  ): DiscoveredModelCatalogEntry[] {
+    const byId = new Map<string, DiscoveredModelCatalogEntry>();
+    for (const model of models) {
+      if (!byId.has(model.id)) {
+        byId.set(model.id, model);
+      }
+    }
+
+    return Array.from(byId.values()).sort((a, b) => a.id.localeCompare(b.id));
+  }
+
+  private mergeDiscoveredModelEntry(
+    existing: ModelsJsonModelEntry | undefined,
+    discovered: DiscoveredModelCatalogEntry,
+    defaultApi: string | undefined,
+  ): ModelsJsonModelEntry {
+    const next: ModelsJsonModelEntry = existing
+      ? { ...existing }
+      : { id: discovered.id };
+
+    next.id = discovered.id;
+
+    if (
+      !next.name ||
+      typeof next.name !== "string" ||
+      next.name.trim().length === 0
+    ) {
+      next.name = discovered.name ?? discovered.id;
+    }
+
+    if (
+      discovered.api &&
+      (!next.api ||
+        typeof next.api !== "string" ||
+        next.api.trim().length === 0)
+    ) {
+      next.api = discovered.api;
+    } else if (
+      defaultApi &&
+      (!next.api ||
+        typeof next.api !== "string" ||
+        next.api.trim().length === 0)
+    ) {
+      next.api = defaultApi;
+    }
+
+    if (
+      typeof discovered.reasoning === "boolean" &&
+      typeof next.reasoning !== "boolean"
+    ) {
+      next.reasoning = discovered.reasoning;
+    }
+
+    if (
+      discovered.input &&
+      (!Array.isArray(next.input) || next.input.length === 0)
+    ) {
+      next.input = discovered.input;
+    }
+
+    if (
+      typeof discovered.contextWindow === "number" &&
+      (!(typeof next.contextWindow === "number") || next.contextWindow <= 0)
+    ) {
+      next.contextWindow = discovered.contextWindow;
+    }
+
+    if (
+      typeof discovered.maxTokens === "number" &&
+      (!(typeof next.maxTokens === "number") || next.maxTokens <= 0)
+    ) {
+      next.maxTokens = discovered.maxTokens;
+    }
+
+    return next;
+  }
+
+  private getOpenAICodexUserAgent(): string {
+    const platform = process.platform || "unknown";
+    const arch = process.arch || "unknown";
+    return `pi (${platform}; ${arch})`;
   }
 
   private getDefaultProviderApiKeyEnv(provider: string): string {
     if (provider === "openai-codex") {
-      return "OPENAI_API_KEY";
+      return "OPENAI_CODEX_API_KEY";
     }
 
     if (provider === "azure-openai-responses") {
