@@ -89,7 +89,11 @@ interface ModelCatalogSyncResult {
   errors: Array<{ provider: string; error: string }>;
 }
 
-const DISCOVERABLE_APIS = new Set(["openai-completions", "openai-responses"]);
+const DISCOVERABLE_APIS = new Set([
+  "openai-completions",
+  "openai-responses",
+  "openai-codex-responses",
+]);
 
 export class HostRuntime {
   private readonly sessions = new Map<string, HostedSession>();
