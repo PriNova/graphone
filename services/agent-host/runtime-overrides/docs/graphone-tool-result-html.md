@@ -59,17 +59,19 @@ Graphone sanitizes `_html` before rendering.
 
 Current policy:
 
-- `ALLOWED_URI_REGEXP`: `^(?:https?|mailto|tel):`
+- `ALLOWED_URI_REGEXP`: safe `http:`, `https:`, `mailto:`, `tel:`, plus safe image data URIs such as `data:image/svg+xml,...`
 - `FORBID_TAGS`: `script`, `object`, `embed`, `form`, `button`
 - `ALLOWED_ATTR`: `src`, `href`, `class`, `style`, `srcset`, `alt`, `title`, `width`, `height`, `loading`, `name`, plus a curated set of SVG attributes (for example: `viewBox`, `xmlns`, `fill`, `stroke`, `d`, `points`, `transform`, and accessibility attributes).
+- SVG-oriented sanitizer profiles are enabled in the Graphone renderer.
 
 Implications:
 
 - Inline `style` attributes are allowed.
 - `<style>` blocks are allowed.
-- Inline SVG is allowed.
+- Inline SVG may work, but for complex SVG-heavy tool results a safer pattern is to render a standalone SVG through `<img src="data:image/svg+xml,...">`.
 - `<button>` elements are not allowed (use styled `<a>` for presentational actions).
 - `javascript:` URLs are stripped/blocked by URI policy.
+- Tool-result HTML is shown in a constrained panel by default; Graphone supports preview vs `Show full` / `Show less`, so responsive output is still recommended.
 
 ## Extension output requirements
 

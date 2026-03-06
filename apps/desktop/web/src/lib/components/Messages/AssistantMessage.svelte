@@ -288,7 +288,27 @@
 
     const sanitized = String(
       DOMPurify.sanitize(trimmedHtml, {
-        ALLOWED_URI_REGEXP: /^(?:https?|mailto|tel):/,
+        USE_PROFILES: { html: true, svg: true, svgFilters: true },
+        ADD_TAGS: [
+          "svg",
+          "g",
+          "path",
+          "circle",
+          "rect",
+          "line",
+          "polyline",
+          "polygon",
+          "ellipse",
+          "text",
+          "tspan",
+          "defs",
+          "marker",
+          "linearGradient",
+          "radialGradient",
+          "stop",
+        ],
+        ALLOWED_URI_REGEXP:
+          /^(?:(?:https?|mailto|tel):|data:image\/(?:png|gif|jpe?g|webp|svg\+xml)(?:;charset=[^;,]+)?(?:;base64)?,)/,
         FORBID_TAGS: ["script", "object", "embed", "form", "button"],
         ALLOWED_ATTR: [
           "src",
@@ -305,7 +325,9 @@
           "id",
           "xmlns",
           "viewBox",
+          "viewbox",
           "preserveAspectRatio",
+          "preserveaspectratio",
           "fill",
           "fill-rule",
           "fill-opacity",
@@ -334,6 +356,7 @@
           "dx",
           "dy",
           "pathLength",
+          "pathlength",
           "marker-start",
           "marker-mid",
           "marker-end",
@@ -578,8 +601,9 @@
             block.name === "bash" && pending && hasResult}
           {@const isReadResult = block.name === "read" && !isError}
           {@const isTruncated = !!truncated?.truncated}
+          {@const canExpandResult = isTruncated || hasToolResultHtml}
           {@const showFullResult =
-            isTruncated && isToolResultExpanded(block.id)}
+            canExpandResult && isToolResultExpanded(block.id)}
           {@const displayedResultText = showFullResult
             ? (resultText ?? truncated?.text ?? "")
             : (truncated?.text ?? "")}
@@ -670,7 +694,12 @@
             {#if hasResult && truncated && !collapsed}
               {#if hasToolResultHtml}
                 <div
-                  class="p-3 text-[0.8125rem] leading-normal text-foreground wrap-break-word m-0 max-h-75 overflow-y-auto"
+                  class={cn(
+                    "p-3 text-[0.8125rem] leading-normal text-foreground wrap-break-word m-0",
+                    showFullResult
+                      ? "overflow-visible"
+                      : "max-h-75 overflow-auto",
+                  )}
                 >
                   {@html toolResultHtml ?? ""}
                 </div>
@@ -726,7 +755,7 @@
                 <pre
                   class="p-3 font-mono text-[0.8125rem] leading-normal text-foreground whitespace-pre-wrap wrap-break-word m-0 max-h-75 overflow-y-auto">{displayedResultText}</pre>
               {/if}
-              {#if truncated.truncated && !hasToolResultHtml && !hasEditDiff && !isLiveBashOutput}
+              {#if (truncated.truncated || hasToolResultHtml) && !hasEditDiff && !isLiveBashOutput}
                 <div
                   class={cn(
                     "px-3 py-1.5 text-xs border-t",
@@ -738,7 +767,13 @@
                   )}
                 >
                   <span class="inline-flex items-center gap-1 flex-wrap">
-                    {#if showFullResult}
+                    {#if hasToolResultHtml}
+                      <span>
+                        {showFullResult
+                          ? "Showing full HTML result"
+                          : "Constrained HTML preview in tool panel"}
+                      </span>
+                    {:else if showFullResult}
                       <span
                         >Showing full output ({truncated.totalLines} lines)</span
                       >
@@ -758,7 +793,11 @@
                       class="underline underline-offset-2 hover:no-underline"
                       onclick={() => toggleToolResultExpanded(block.id)}
                     >
-                      {showFullResult ? "Show less" : "Show full"}
+                      {showFullResult
+                        ? "Show less"
+                        : hasToolResultHtml
+                          ? "Show full"
+                          : "Show full"}
                     </button>
                   </span>
                 </div>
