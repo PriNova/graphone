@@ -32,11 +32,12 @@
 ## Stack & Architecture
 
 - **Frontend**: Svelte 5 + TypeScript + Vite
-- **Backend**: Rust + Tauri 2.0
-- **Sidecar**: Graphone-local SDK host sidecar (`services/agent-host`, compiled with bun)
+- **Desktop shell**: Rust + Tauri 2.0 (`src-tauri`) for native desktop packaging/windowing
+- **Canonical runtime/service**: Graphone-local SDK host sidecar (`services/agent-host`, compiled with bun)
 - **Pattern**: Desktop uses one host sidecar process that multiplexes multiple in-process agent sessions
 - **Strategic direction**: Design new features for **multi-agent orchestration** first (parallel sessions, concurrent windows/views, and coordination-friendly state flows)
 - **Platform strategy**: Keep core behavior **platform-agnostic**; isolate OS-specific behavior behind small adapters and maintain parity across Linux/Windows/macOS (and future targets)
+- **Architecture direction**: Tauri is a **replaceable desktop shell**, not the long-term app/runtime boundary. Build around service + client seams so browser and future mobile clients do not depend on Tauri.
 - **SDK source**: Host sidecar consumes `@mariozechner/pi-coding-agent` from npm
 
 ## Project Structure
@@ -48,7 +49,7 @@ graphone/
 │       └── web/                 # Svelte frontend app
 │           ├── src/
 │           └── static/
-├── src-tauri/                   # Rust/Tauri backend shell
+├── src-tauri/                   # Rust/Tauri desktop shell (replaceable host shell)
 │   ├── src/                     # Rust backend
 │   ├── binaries/                # Sidecar binaries (auto-populated by build.rs)
 │   ├── capabilities/            # Tauri permissions (desktop.json, mobile.json)
@@ -71,7 +72,7 @@ Frontend canonical paths:
 Canonical repo map (quick):
 
 - `apps/desktop/web` → Svelte frontend workspace
-- `src-tauri` → Rust/Tauri shell backend
+- `src-tauri` → Rust/Tauri desktop shell (not the canonical runtime boundary)
 - `services/agent-host` → host sidecar source (bun)
 - `tooling/scripts` → helper scripts
 
