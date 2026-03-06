@@ -80,12 +80,29 @@ export async function initializeRuntime(
   };
 
   await runtime.agent.initialize();
-  await loadMessages(runtime);
-  await runtime.agent.loadAvailableModels().catch((error) => {
-    console.warn("Failed to load available models:", error);
-  });
 
   return runtime;
+}
+
+function warmRuntime(runtime: SessionRuntime): void {
+  void Promise.allSettled([
+    loadMessages(runtime),
+    runtime.agent.loadRegisteredExtensions(),
+    runtime.agent.loadAvailableModels(),
+  ]).then((results) => {
+    const [, extensionsResult, modelsResult] = results;
+
+    if (extensionsResult?.status === "rejected") {
+      console.warn(
+        "Failed to load registered extensions:",
+        extensionsResult.reason,
+      );
+    }
+
+    if (modelsResult?.status === "rejected") {
+      console.warn("Failed to load available models:", modelsResult.reason);
+    }
+  });
 }
 
 export async function ensureRuntime(
@@ -115,5 +132,6 @@ export async function ensureRuntime(
 
   const runtime = await initializeRuntime(descriptor);
   setRuntimes(setRuntimeForSession(runtimes, runtime));
+  warmRuntime(runtime);
   return runtime;
 }

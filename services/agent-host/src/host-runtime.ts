@@ -122,6 +122,40 @@ export class HostRuntime {
     private readonly emitSessionEvent: (event: SessionEventEnvelope) => void,
   ) {}
 
+  async initialize(): Promise<void> {
+    try {
+      const catalogSync = await this.syncModelsJsonFromProviderCatalogs();
+
+      if (catalogSync.synced.length > 0) {
+        const synced = catalogSync.synced
+          .map(
+            (entry) =>
+              `${entry.provider} +${entry.added}/-${entry.removed} (${entry.before}->${entry.after})`,
+          )
+          .join(", ");
+        console.error(
+          `[pi-host-sidecar] startup model catalog sync: ${synced}`,
+        );
+      }
+
+      if (catalogSync.errors.length > 0) {
+        const errors = catalogSync.errors
+          .map((entry) => `${entry.provider}: ${entry.error}`)
+          .join(" | ");
+        console.error(
+          `[pi-host-sidecar] startup model catalog sync errors: ${errors}`,
+        );
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      console.error(
+        `[pi-host-sidecar] startup model catalog sync failed: ${message}`,
+      );
+    }
+
+    this.modelRegistry.refresh();
+  }
+
   async createSession(args: {
     sessionId?: string;
     cwd: string;
@@ -155,17 +189,8 @@ export class HostRuntime {
 
     const resolvedCwd = validateCwd(sessionManager.getCwd());
 
-    // Strict freshness: sync provider catalogs into models.json before bootstrap.
-    try {
-      await this.syncModelsJsonFromProviderCatalogs();
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      console.error(
-        `[pi-host-sidecar] model catalog sync failed before create_session: ${message}`,
-      );
-    }
-
-    // Pick up latest models.json/provider overrides before session bootstrap.
+    // Pick up the latest local models.json/provider overrides before session bootstrap.
+    // Provider catalog syncing is handled once during host startup.
     this.modelRegistry.refresh();
 
     const { session, modelFallbackMessage } = await createAgentSession({
@@ -385,76 +410,11 @@ export class HostRuntime {
       supportsImageInput: boolean;
     }>;
   }> {
-    const countByProvider = (
-      models: Array<{ provider: string }>,
-    ): Map<string, number> => {
-      const counts = new Map<string, number>();
-      for (const model of models) {
-        counts.set(model.provider, (counts.get(model.provider) ?? 0) + 1);
-      }
-      return counts;
-    };
-
-    const formatDelta = (value: number): string =>
-      value >= 0 ? `+${value}` : `${value}`;
-
-    const before = this.modelRegistry.getAvailable();
-    const beforeCounts = countByProvider(before);
-
-    const catalogSync = await this.syncModelsJsonFromProviderCatalogs();
-
-    // Refresh before listing so model picker reflects latest models.json edits.
+    // Refresh before listing so model picker reflects local models.json edits,
+    // but do not re-sync remote provider catalogs here.
     this.modelRegistry.refresh();
 
     const models = await this.modelRegistry.getAvailable();
-    const afterCounts = countByProvider(models);
-
-    if (catalogSync.synced.length > 0) {
-      const synced = catalogSync.synced
-        .map(
-          (entry) =>
-            `${entry.provider} +${entry.added}/-${entry.removed} (${entry.before}->${entry.after})`,
-        )
-        .join(", ");
-      console.error(`[pi-host-sidecar] model catalog sync: ${synced}`);
-    }
-
-    if (catalogSync.errors.length > 0) {
-      const errors = catalogSync.errors
-        .map((entry) => `${entry.provider}: ${entry.error}`)
-        .join(" | ");
-      console.error(`[pi-host-sidecar] model catalog sync errors: ${errors}`);
-    }
-
-    const providerSummaries = Array.from(afterCounts.entries())
-      .sort(([a], [b]) => a.localeCompare(b))
-      .map(([provider, count]) => `${provider}=${count}`)
-      .join(", ");
-
-    const changedProviders = new Set<string>([
-      ...beforeCounts.keys(),
-      ...afterCounts.keys(),
-    ]);
-
-    const changedSummaries = Array.from(changedProviders)
-      .map((provider) => {
-        const beforeCount = beforeCounts.get(provider) ?? 0;
-        const afterCount = afterCounts.get(provider) ?? 0;
-        const delta = afterCount - beforeCount;
-        return { provider, beforeCount, afterCount, delta };
-      })
-      .filter((entry) => entry.delta !== 0)
-      .sort((a, b) => a.provider.localeCompare(b.provider))
-      .map(
-        (entry) =>
-          `${entry.provider} ${formatDelta(entry.delta)} (${entry.beforeCount}->${entry.afterCount})`,
-      )
-      .join(", ");
-
-    const totalDelta = models.length - before.length;
-    console.error(
-      `[pi-host-sidecar] models refreshed: total=${models.length} (delta=${formatDelta(totalDelta)}), providers=[${providerSummaries}], changed=${changedSummaries || "none"}`,
-    );
 
     return {
       models: models.map((model) => ({

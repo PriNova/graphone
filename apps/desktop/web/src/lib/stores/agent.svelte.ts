@@ -108,10 +108,6 @@ export class AgentStore {
     await this.refreshState().catch((error) => {
       console.warn("Failed to refresh initial agent state:", error);
     });
-
-    await this.loadRegisteredExtensions().catch((error) => {
-      console.warn("Failed to load registered extensions:", error);
-    });
   }
 
   async refreshState(): Promise<void> {

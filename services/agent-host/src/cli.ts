@@ -96,6 +96,7 @@ function runHostMode(): void {
   const runtime = new HostRuntime((event) => {
     writer.writeObject(event);
   });
+  const startupPromise = runtime.initialize();
 
   const rl = readline.createInterface({
     input: process.stdin,
@@ -105,7 +106,7 @@ function runHostMode(): void {
 
   let shuttingDown = false;
   let shouldShutdownAfterQueue = false;
-  let commandQueue = Promise.resolve();
+  let commandQueue = startupPromise;
 
   async function requestShutdown(): Promise<void> {
     if (shuttingDown) {
