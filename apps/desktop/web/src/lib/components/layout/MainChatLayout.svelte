@@ -282,26 +282,36 @@
     {/if}
 
     <div
-      class="flex flex-col w-full h-full max-w-[min(95vw,1200px)] lg:max-w-[min(88vw,1360px)] px-4"
+      class="flex flex-col w-full h-full px-4"
       class:py-4={showHeader}
       class:pt-3={!showHeader}
       class:pb-4={!showHeader}
     >
       {#if showHeader}
-        <header
-          class="shrink-0 h-[86px] flex flex-col items-center justify-center text-center gap-1"
+        <div
+          class="w-full pr-6 lg:pr-8"
+          class:pl-2={showHeader || !showSettingsButton}
+          class:pl-10={showSettingsButton && !showHeader}
         >
-          <h1 class="text-3xl font-semibold tracking-tight text-foreground">
-            Graphone
-          </h1>
-          {#if windowTitleHint}
-            <p class="text-xs text-muted-foreground">{windowTitleHint}</p>
-          {/if}
-        </header>
+          <div
+            class="w-full max-w-[min(95vw,1200px)] lg:max-w-[min(88vw,1360px)] mx-auto"
+          >
+            <header
+              class="shrink-0 h-[86px] flex flex-col items-center justify-center text-center gap-1"
+            >
+              <h1 class="text-3xl font-semibold tracking-tight text-foreground">
+                Graphone
+              </h1>
+              {#if windowTitleHint}
+                <p class="text-xs text-muted-foreground">{windowTitleHint}</p>
+              {/if}
+            </header>
+          </div>
+        </div>
       {/if}
 
       <div
-        class="flex-1 min-h-0 overflow-y-auto pr-4 flex flex-col [scrollbar-gutter:stable]"
+        class="flex-1 min-h-0 overflow-y-auto pr-6 lg:pr-8 flex flex-col [scrollbar-gutter:stable]"
         class:py-4={showHeader}
         class:pt-0={!showHeader}
         class:pb-4={!showHeader}
@@ -310,7 +320,10 @@
         bind:this={messagesContainerElement}
         onscroll={onmessagescroll}
       >
-        <div class="min-h-full" bind:this={messagesContentElement}>
+        <div
+          class="min-h-full w-full max-w-[min(95vw,1200px)] lg:max-w-[min(88vw,1360px)] mx-auto"
+          bind:this={messagesContentElement}
+        >
           {#if startupError}
             <div class="flex items-center justify-center h-full">
               <p class="text-destructive text-sm">
@@ -352,42 +365,60 @@
         </div>
       </div>
 
-      <section class="shrink-0 w-full px-2 pb-1 pt-1">
-        <PromptInput
-          value={activePromptDraft}
-          attachments={activePromptAttachmentDraft}
-          oninput={onpromptinput}
-          onattachmentschange={onpromptattachmentschange}
-          {onsubmit}
-          {oncancel}
-          {onslashcommand}
-          {onnewchat}
-          {onmodelchange}
-          {onthinkingchange}
-          {onmodelfilterchange}
-          {isLoading}
-          disabled={!activeRuntime || !sessionStarted}
-          placeholder={activeRuntime && sessionStarted
-            ? "What would you like to get done today?"
-            : "Create a session to begin..."}
-          model={currentModel}
-          provider={currentProvider}
-          thinkingLevel={currentThinkingLevel}
-          supportsImageInput={currentModelSupportsImageInput}
-          {supportsThinking}
-          {availableThinkingLevels}
-          models={availableModels}
-          modelsLoading={isModelsLoading}
-          modelChanging={isSettingModel}
-          thinkingChanging={isSettingThinking}
-          enabledModels={activeRuntime?.enabledModels}
-          {modelFilter}
-          autofocus={true}
-          {chatHasMessages}
-        />
+      <section
+        class="shrink-0 w-full pb-1 pt-1 pr-6 lg:pr-8"
+        class:pl-2={showHeader || !showSettingsButton}
+        class:pl-10={showSettingsButton && !showHeader}
+      >
+        <div
+          class="w-full max-w-[min(95vw,1200px)] lg:max-w-[min(88vw,1360px)] mx-auto"
+        >
+          <PromptInput
+            value={activePromptDraft}
+            attachments={activePromptAttachmentDraft}
+            oninput={onpromptinput}
+            onattachmentschange={onpromptattachmentschange}
+            {onsubmit}
+            {oncancel}
+            {onslashcommand}
+            {onnewchat}
+            {onmodelchange}
+            {onthinkingchange}
+            {onmodelfilterchange}
+            {isLoading}
+            disabled={!activeRuntime || !sessionStarted}
+            placeholder={activeRuntime && sessionStarted
+              ? "What would you like to get done today?"
+              : "Create a session to begin..."}
+            model={currentModel}
+            provider={currentProvider}
+            thinkingLevel={currentThinkingLevel}
+            supportsImageInput={currentModelSupportsImageInput}
+            {supportsThinking}
+            {availableThinkingLevels}
+            models={availableModels}
+            modelsLoading={isModelsLoading}
+            modelChanging={isSettingModel}
+            thinkingChanging={isSettingThinking}
+            enabledModels={activeRuntime?.enabledModels}
+            {modelFilter}
+            autofocus={true}
+            {chatHasMessages}
+          />
+        </div>
       </section>
 
-      <StatusBar cwd={activeProjectDir} {usageIndicator} />
+      <div
+        class="w-full pr-6 lg:pr-8"
+        class:pl-2={showHeader || !showSettingsButton}
+        class:pl-10={showSettingsButton && !showHeader}
+      >
+        <div
+          class="w-full max-w-[min(95vw,1200px)] lg:max-w-[min(88vw,1360px)] mx-auto"
+        >
+          <StatusBar cwd={activeProjectDir} {usageIndicator} />
+        </div>
+      </div>
     </div>
 
     {#if settingsOpen}
