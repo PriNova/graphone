@@ -40,8 +40,8 @@
   // State for collapsible tool blocks (default collapsed)
   let toolCollapsed = $state<Record<string, boolean>>({});
 
-  // State for read tool truncation expansion (default collapsed/preview mode)
-  let fullReadResultByToolId = $state<Record<string, boolean>>({});
+  // State for tool result truncation expansion (default collapsed/preview mode)
+  let fullToolResultByToolId = $state<Record<string, boolean>>({});
 
   // Limits for tool result display (UI-level safety truncation)
   const MAX_RESULT_LINES = 10;
@@ -65,12 +65,12 @@
     toolCollapsed[id] = !isToolCollapsed(id);
   }
 
-  function isReadResultExpanded(id: string): boolean {
-    return fullReadResultByToolId[id] ?? false;
+  function isToolResultExpanded(id: string): boolean {
+    return fullToolResultByToolId[id] ?? false;
   }
 
-  function toggleReadResultExpanded(id: string) {
-    fullReadResultByToolId[id] = !isReadResultExpanded(id);
+  function toggleToolResultExpanded(id: string) {
+    fullToolResultByToolId[id] = !isToolResultExpanded(id);
   }
 
   // Collapse thinking block on click, but only if no text is selected.
@@ -579,10 +579,10 @@
           {@const isLiveBashOutput =
             block.name === "bash" && pending && hasResult}
           {@const isReadResult = block.name === "read" && !isError}
-          {@const isReadTruncated = isReadResult && !!truncated?.truncated}
-          {@const showFullReadResult =
-            isReadTruncated && isReadResultExpanded(block.id)}
-          {@const readResultText = showFullReadResult
+          {@const isTruncated = !!truncated?.truncated}
+          {@const showFullResult =
+            isTruncated && isToolResultExpanded(block.id)}
+          {@const displayedResultText = showFullResult
             ? (resultText ?? truncated?.text ?? "")
             : (truncated?.text ?? "")}
           <div
@@ -721,13 +721,16 @@
               {:else if isReadResult}
                 <div class="p-3 m-0 max-h-75 overflow-y-auto">
                   <MessageMarkdown
-                    content={formatReadResultMarkdown(block, readResultText)}
+                    content={formatReadResultMarkdown(
+                      block,
+                      displayedResultText,
+                    )}
                     class="message-markdown-read text-[0.8125rem] leading-normal text-foreground wrap-break-word"
                   />
                 </div>
               {:else}
                 <pre
-                  class="p-3 font-mono text-[0.8125rem] leading-normal text-foreground whitespace-pre-wrap wrap-break-word m-0 max-h-75 overflow-y-auto">{truncated.text}</pre>
+                  class="p-3 font-mono text-[0.8125rem] leading-normal text-foreground whitespace-pre-wrap wrap-break-word m-0 max-h-75 overflow-y-auto">{displayedResultText}</pre>
               {/if}
               {#if truncated.truncated && !hasToolResultHtml && !hasEditDiff && !isLiveBashOutput}
                 <div
@@ -740,37 +743,30 @@
                         : "bg-emerald-500/5 border-emerald-500/10 text-emerald-600/70 dark:text-emerald-400/70",
                   )}
                 >
-                  {#if isReadResult}
-                    <span class="inline-flex items-center gap-1 flex-wrap">
-                      {#if showFullReadResult}
-                        <span
-                          >Showing full output ({truncated.totalLines} lines)</span
-                        >
-                      {:else if truncated.truncatedBy === "lines"}
-                        <span>
-                          Truncated: showing {truncated.text.split("\n").length} of
-                          {truncated.totalLines}
-                          lines
-                        </span>
-                      {:else}
-                        <span
-                          >Truncated: {MAX_RESULT_BYTES / 1024}KB limit reached</span
-                        >
-                      {/if}
-                      <button
-                        type="button"
-                        class="underline underline-offset-2 hover:no-underline"
-                        onclick={() => toggleReadResultExpanded(block.id)}
+                  <span class="inline-flex items-center gap-1 flex-wrap">
+                    {#if showFullResult}
+                      <span
+                        >Showing full output ({truncated.totalLines} lines)</span
                       >
-                        {showFullReadResult ? "Show less" : "Show full"}
-                      </button>
-                    </span>
-                  {:else if truncated.truncatedBy === "lines"}
-                    Truncated: showing {truncated.text.split("\n").length} of {truncated.totalLines}
-                    lines
-                  {:else}
-                    Truncated: {MAX_RESULT_BYTES / 1024}KB limit reached
-                  {/if}
+                    {:else if truncated.truncatedBy === "lines"}
+                      <span>
+                        Truncated: showing {truncated.text.split("\n").length} of
+                        {truncated.totalLines}
+                        lines
+                      </span>
+                    {:else}
+                      <span
+                        >Truncated: {MAX_RESULT_BYTES / 1024}KB limit reached</span
+                      >
+                    {/if}
+                    <button
+                      type="button"
+                      class="underline underline-offset-2 hover:no-underline"
+                      onclick={() => toggleToolResultExpanded(block.id)}
+                    >
+                      {showFullResult ? "Show less" : "Show full"}
+                    </button>
+                  </span>
                 </div>
               {/if}
             {/if}
