@@ -378,7 +378,7 @@
 <aside
   id="session-sidebar"
   class={cn(
-    "h-full shrink-0 border-r border-border bg-card/40 backdrop-blur-xs flex flex-col transition-[width] duration-200",
+    "h-full shrink-0 border-r border-border bg-card flex flex-col transition-[width] duration-200",
     collapsed ? "w-12" : "w-80",
   )}
   aria-label="Project scopes"
@@ -493,9 +493,9 @@
         {:else}
           <div
             class={cn(
-              "rounded border transition-colors hover:bg-secondary/40 group",
+              "rounded border transition-colors hover:bg-surface-hover group",
               projectDir === activeProjectDir
-                ? "border-foreground/70 bg-secondary/60"
+                ? "border-foreground bg-surface-active"
                 : "border-border",
             )}
           >
@@ -568,7 +568,7 @@
                     >
                     <button
                       type="button"
-                      class="inline-flex h-5 w-5 items-center justify-center rounded text-success hover:bg-success/10"
+                      class="inline-flex h-5 w-5 items-center justify-center rounded text-success hover:bg-success-surface-hover"
                       onclick={(e) => confirmDeleteScope(projectDir, e)}
                       aria-label="Confirm delete"
                       title="Confirm delete"
@@ -605,7 +605,7 @@
                 {:else}
                   <button
                     type="button"
-                    class="shrink-0 inline-flex h-5 w-5 items-center justify-center rounded text-muted-foreground hover:text-destructive hover:bg-destructive/10 opacity-0 group-hover:opacity-100 transition-opacity"
+                    class="shrink-0 inline-flex h-5 w-5 items-center justify-center rounded text-muted-foreground hover:text-destructive hover:bg-destructive-surface-hover opacity-0 group-hover:opacity-100 transition-opacity"
                     onclick={(e) => startDeleteScope(projectDir, e)}
                     aria-label="Delete scope"
                     title="Delete scope"
@@ -633,9 +633,7 @@
               {@const displayedHistory = showAllSessions
                 ? scopeHistory
                 : scopeHistory.slice(0, 6)}
-              <div
-                class="px-2 pb-2 ml-6 pl-2 border-l border-border/70 space-y-1"
-              >
+              <div class="px-2 pb-2 ml-6 pl-2 border-l border-border space-y-1">
                 {#each displayedHistory as history (history.filePath)}
                   {@const historyBusy = isHistoryBusy(history)}
                   {@const historyActive = isHistoryActive(history)}
@@ -643,12 +641,12 @@
                     class={cn(
                       "w-full rounded border px-1.5 py-1 text-left text-[11px] transition-colors group/session",
                       historyBusy && historyActive
-                        ? "border-foreground bg-secondary text-foreground border-l-4 border-l-success"
+                        ? "border-foreground bg-surface-active text-foreground border-l-4 border-l-success"
                         : historyBusy
-                          ? "border-border/70 hover:bg-secondary border-l-2 border-l-success"
+                          ? "border-border hover:bg-surface-hover border-l-2 border-l-success"
                           : historyActive
-                            ? "border-foreground/70 bg-secondary text-foreground"
-                            : "border-border/70 hover:bg-secondary",
+                            ? "border-foreground bg-surface-active text-foreground"
+                            : "border-border hover:bg-surface-hover",
                     )}
                   >
                     <div class="flex items-center gap-2">
@@ -729,7 +727,7 @@
                             >
                             <button
                               type="button"
-                              class="inline-flex h-5 w-5 items-center justify-center rounded text-success hover:bg-success/10"
+                              class="inline-flex h-5 w-5 items-center justify-center rounded text-success hover:bg-success-surface-hover"
                               onclick={(e) =>
                                 confirmDeleteHistory(projectDir, history, e)}
                               aria-label="Confirm delete session"
@@ -767,7 +765,7 @@
                         {:else}
                           <button
                             type="button"
-                            class="shrink-0 inline-flex h-5 w-5 items-center justify-center rounded text-muted-foreground hover:text-destructive hover:bg-destructive/10 opacity-0 group-hover/session:opacity-100 transition-opacity"
+                            class="shrink-0 inline-flex h-5 w-5 items-center justify-center rounded text-muted-foreground hover:text-destructive hover:bg-destructive-surface-hover opacity-0 group-hover/session:opacity-100 transition-opacity"
                             onclick={(e) => startDeleteHistory(history, e)}
                             aria-label="Delete session"
                             title="Delete session"

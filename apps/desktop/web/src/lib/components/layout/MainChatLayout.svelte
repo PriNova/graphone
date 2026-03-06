@@ -291,9 +291,7 @@
         <header
           class="shrink-0 h-[86px] flex flex-col items-center justify-center text-center gap-1"
         >
-          <h1
-            class="text-3xl font-semibold tracking-tight bg-linear-to-r from-foreground to-muted-foreground bg-clip-text text-transparent"
-          >
+          <h1 class="text-3xl font-semibold tracking-tight text-foreground">
             Graphone
           </h1>
           {#if windowTitleHint}

@@ -44,7 +44,7 @@
           <img
             src={`data:${image.mimeType};base64,${image.data}`}
             alt="Attachment"
-            class="max-h-40 rounded border border-primary-foreground/20"
+            class="max-h-40 rounded border border-border"
             loading="lazy"
             decoding="async"
           />

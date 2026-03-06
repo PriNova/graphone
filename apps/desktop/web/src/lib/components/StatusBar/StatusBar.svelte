@@ -12,15 +12,13 @@
     usageIndicator?.contextSeverity === "error"
       ? "text-destructive"
       : usageIndicator?.contextSeverity === "warning"
-        ? "text-warning"
-        : "text-muted-foreground/70",
+        ? "text-yellow-600 dark:text-yellow-400"
+        : "text-muted-foreground",
   );
 </script>
 
 <div class="shrink-0 w-full px-2 pt-1 pb-2">
-  <div
-    class="w-full rounded-md border border-border/70 bg-foreground/[0.02] px-3 py-1.5"
-  >
+  <div class="w-full rounded-md border border-border bg-surface px-3 py-1.5">
     <div class="flex items-center text-[11px] font-mono leading-tight">
       <span
         class="min-w-0 truncate text-muted-foreground/60"

@@ -513,12 +513,10 @@
     {#each content as block, blockIndex (block.type === "toolCall" ? block.id : `${block.type}-${blockIndex}`)}
       <div class:mt-2={blockIndex > 0}>
         {#if isThinkingBlock(block)}
-          <div
-            class="bg-foreground/3 dark:bg-f6fff5/[0.03] border border-border rounded overflow-hidden"
-          >
+          <div class="bg-surface border border-border rounded overflow-hidden">
             <button
               type="button"
-              class="flex items-center justify-between w-full gap-2 px-3 py-1 bg-foreground/5 dark:bg-f6fff5/[0.05] border-b border-border text-xs font-semibold text-muted-foreground uppercase tracking-wider hover:bg-foreground/8 dark:hover:bg-f6fff5/[0.08] transition-colors cursor-pointer"
+              class="flex items-center justify-between w-full gap-2 px-3 py-1 bg-surface-active border-b border-border text-xs font-semibold text-muted-foreground uppercase tracking-wider hover:bg-surface-hover transition-colors cursor-pointer"
               onclick={() => toggleThinking(blockIndex)}
             >
               <div class="flex items-center gap-2">
@@ -556,7 +554,7 @@
               <div
                 role="button"
                 tabindex="0"
-                class="p-3 font-mono text-[0.8125rem] leading-normal text-muted-foreground whitespace-pre-wrap wrap-break-word m-0 cursor-pointer hover:bg-foreground/3 dark:hover:bg-f6fff5/[0.02] transition-colors select-text focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset"
+                class="p-3 font-mono text-[0.8125rem] leading-normal text-muted-foreground whitespace-pre-wrap wrap-break-word m-0 cursor-pointer hover:bg-surface-hover transition-colors select-text focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset"
                 onclick={(e) => handleThinkingContentClick(blockIndex, e)}
                 onkeydown={(e) => handleThinkingContentKeydown(blockIndex, e)}
               >
@@ -588,16 +586,12 @@
           <div
             class={cn(
               "border rounded overflow-hidden",
-              (!hasResult || pending) &&
-                "bg-foreground/3 dark:bg-f6fff5/[0.03] border-border",
-              hasResult &&
-                !pending &&
-                !isError &&
-                "bg-emerald-500/[0.03] dark:bg-emerald-500/[0.03] border-emerald-500/20",
+              (!hasResult || pending) && "bg-surface border-border",
+              hasResult && !pending && !isError && "bg-surface border-border",
               hasResult &&
                 !pending &&
                 isError &&
-                "bg-destructive/3 dark:bg-destructive/3 border-destructive/20",
+                "bg-destructive-surface border-destructive",
             )}
           >
             <button
@@ -606,15 +600,15 @@
                 "flex items-center w-full gap-2 px-3 py-2 text-xs font-semibold uppercase tracking-wider transition-colors cursor-pointer",
                 hasResult && !collapsed && "border-b",
                 (!hasResult || pending) &&
-                  "bg-foreground/5 dark:bg-f6fff5/[0.05] border-border text-muted-foreground hover:bg-foreground/8 dark:hover:bg-f6fff5/[0.08]",
+                  "bg-surface-active border-border text-muted-foreground hover:bg-surface-hover",
                 hasResult &&
                   !pending &&
                   !isError &&
-                  "bg-emerald-500/10 border-emerald-500/20 text-emerald-600 dark:text-emerald-400 hover:bg-emerald-500/15",
+                  "bg-surface-active border-border text-foreground hover:bg-surface-hover",
                 hasResult &&
                   !pending &&
                   isError &&
-                  "bg-destructive/10 border-destructive/20 text-destructive hover:bg-destructive/15",
+                  "bg-destructive-surface border-destructive text-destructive hover:bg-destructive-surface-hover",
               )}
               onclick={() => toggleTool(block.id)}
             >
@@ -682,7 +676,7 @@
                 </div>
               {:else if hasEditDiff}
                 <div
-                  class="m-0 max-h-75 overflow-y-auto border-t border-border/40"
+                  class="m-0 max-h-75 overflow-y-auto border-t border-border"
                 >
                   <div
                     class="font-mono text-[0.8125rem] leading-normal text-foreground whitespace-pre"
@@ -692,13 +686,13 @@
                         class={cn(
                           "px-3 py-0.5",
                           line.kind === "added" &&
-                            "bg-success/20 border-l-2 border-success/70 text-success",
+                            "bg-success-surface border-l-2 border-success text-success",
                           line.kind === "removed" &&
-                            "bg-destructive/10 border-l-2 border-destructive/70 text-destructive",
+                            "bg-destructive-surface border-l-2 border-destructive text-destructive",
                           line.kind === "hunk" &&
-                            "bg-sky-500/10 text-sky-700 dark:text-sky-300",
+                            "bg-surface-active text-sky-700 dark:text-sky-300",
                           line.kind === "meta" &&
-                            "bg-foreground/5 text-muted-foreground",
+                            "bg-surface text-muted-foreground",
                         )}
                       >
                         {line.text || " "}
@@ -737,10 +731,10 @@
                   class={cn(
                     "px-3 py-1.5 text-xs border-t",
                     isError
-                      ? "bg-destructive/5 border-destructive/10 text-destructive/80"
+                      ? "bg-destructive-surface border-destructive text-destructive"
                       : pending
-                        ? "bg-foreground/5 border-border text-muted-foreground"
-                        : "bg-emerald-500/5 border-emerald-500/10 text-emerald-600/70 dark:text-emerald-400/70",
+                        ? "bg-surface border-border text-muted-foreground"
+                        : "bg-surface border-border text-muted-foreground",
                   )}
                 >
                   <span class="inline-flex items-center gap-1 flex-wrap">

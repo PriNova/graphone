@@ -12,12 +12,21 @@
   --color-input-background: var(--input-background);
   --color-input-border: var(--input-border);
   --color-card: var(--card);
+  --color-surface: var(--surface);
+  --color-surface-hover: var(--surface-hover);
+  --color-surface-active: var(--surface-active);
+  --color-overlay: var(--overlay);
   --color-primary: var(--primary);
   --color-primary-foreground: var(--primary-foreground);
   --color-secondary: var(--secondary);
   --color-accent: var(--accent);
   --color-destructive: var(--destructive);
+  --color-destructive-surface: var(--destructive-surface);
+  --color-destructive-surface-hover: var(--destructive-surface-hover);
   --color-success: var(--success);
+  --color-success-surface: var(--success-surface);
+  --color-success-surface-hover: var(--success-surface-hover);
+  --color-warning-surface: var(--warning-surface);
   --color-ring: var(--ring);
 
   /* Font stacks with broad UTF/emoji fallbacks */
@@ -99,23 +108,32 @@
     /* Core colors - Light mode */
     --background: #fafaf8;
     --foreground: #0b0d0b;
-    --border: rgba(135, 139, 134, 0.2);
-    --muted-foreground: rgba(11, 13, 11, 0.6);
+    --border: #d2d4cf;
+    --muted-foreground: #636762;
 
     /* Input specific */
     --input-background: #fcfcfc;
-    --input-border: rgba(11, 13, 11, 0.15);
+    --input-border: #d8dad6;
 
     /* Component colors */
-    --card: rgba(11, 13, 11, 0.02);
+    --card: #f4f5f2;
+    --surface: #f1f2ef;
+    --surface-hover: #e9ebe7;
+    --surface-active: #e2e4df;
+    --overlay: #fafaf8;
     --primary: var(--foreground);
     --primary-foreground: var(--background);
-    --secondary: rgba(11, 13, 11, 0.07);
-    --accent: rgba(11, 13, 11, 0.07);
+    --secondary: var(--surface-hover);
+    --accent: var(--surface-hover);
 
     /* Status */
     --destructive: hsl(0 62.8% 55%);
+    --destructive-surface: #f7e8e8;
+    --destructive-surface-hover: #f1dddd;
     --success: hsl(120, 58%, 40%);
+    --success-surface: #e6f3e6;
+    --success-surface-hover: #dcecdc;
+    --warning-surface: #f5efdc;
     --ring: var(--foreground);
 
     /* Sizing */
@@ -124,7 +142,7 @@
 
   /* Desktop app enhanced borders */
   :root[data-desktop="true"] {
-    --border: rgba(135, 139, 134, 0.6);
+    --border: #a3a79f;
   }
 
   /* Dark mode - explicit selector for forced dark mode */
@@ -132,18 +150,27 @@
   html.dark {
     --background: #0b0d0b;
     --foreground: #f6fff5;
-    --border: rgba(135, 139, 134, 0.2);
-    --muted-foreground: rgba(246, 255, 245, 0.6);
+    --border: #242824;
+    --muted-foreground: #9aa39a;
     --input-background: #0b0d0b;
-    --input-border: rgba(246, 255, 245, 0.15);
-    --card: rgba(246, 255, 245, 0.03);
-    --secondary: rgba(246, 255, 245, 0.07);
-    --accent: rgba(246, 255, 245, 0.07);
+    --input-border: #2e332e;
+    --card: #121512;
+    --surface: #151915;
+    --surface-hover: #1b201b;
+    --surface-active: #202620;
+    --overlay: #0b0d0b;
+    --secondary: var(--surface-hover);
+    --accent: var(--surface-hover);
+    --destructive-surface: #261516;
+    --destructive-surface-hover: #311b1c;
+    --success-surface: #152316;
+    --success-surface-hover: #1a2c1b;
+    --warning-surface: #2b2618;
   }
 
   :root.dark[data-desktop="true"],
   html.dark[data-desktop="true"] {
-    --border: rgba(135, 139, 134, 0.6);
+    --border: #5e645d;
   }
 
   *,

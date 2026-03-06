@@ -158,8 +158,8 @@
     class={cn(
       "text-xs px-1 py-0.5 rounded border transition-colors",
       currentModelIsEnabled
-        ? "bg-yellow-500/20 border-yellow-500/50 text-yellow-600 dark:text-yellow-400"
-        : "bg-transparent border-border text-muted-foreground hover:border-foreground hover:text-foreground",
+        ? "bg-warning-surface border-amber-600 dark:border-amber-500 text-yellow-600 dark:text-yellow-400"
+        : "bg-card border-border text-muted-foreground hover:border-foreground hover:text-foreground",
       (disabled || loading || changing || !currentProvider || !currentModel) &&
         "opacity-40 cursor-not-allowed",
     )}
@@ -212,7 +212,7 @@
     >
       Enabled
       {#if hasEnabledScope}
-        <span class="text-[10px] bg-primary/20 px-1 rounded"
+        <span class="text-[10px] bg-surface-active px-1 rounded"
           >{enabledCount}</span
         >
       {/if}

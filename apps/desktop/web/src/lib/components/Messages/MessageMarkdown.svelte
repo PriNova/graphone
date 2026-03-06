@@ -237,14 +237,14 @@
     padding: 0.35em 0.8em;
     border-left: 3px solid var(--border);
     color: var(--muted-foreground);
-    background: color-mix(in srgb, var(--foreground) 3%, transparent);
+    background: var(--surface);
   }
 
   .message-markdown :global(code) {
     font-family: var(--font-mono);
     font-size: 0.92em;
-    background: color-mix(in srgb, var(--foreground) 8%, transparent);
-    border: 1px solid color-mix(in srgb, var(--border) 75%, transparent);
+    background: var(--surface-active);
+    border: 1px solid var(--border);
     border-radius: 0.22rem;
     padding: 0.06rem 0.3rem;
   }
@@ -254,13 +254,13 @@
     padding: 0.7rem 0.8rem;
     border: 1px solid var(--border);
     border-radius: 0.35rem;
-    background: color-mix(in srgb, var(--foreground) 4%, transparent);
+    background: var(--surface);
     overflow-x: auto;
     line-height: 1.4;
   }
 
   .message-markdown :global(pre code) {
-    background: transparent;
+    background: inherit;
     border: none;
     border-radius: 0;
     padding: 0;
@@ -303,7 +303,7 @@
   }
 
   .message-markdown :global(thead) {
-    background: color-mix(in srgb, var(--foreground) 6%, transparent);
+    background: var(--surface-active);
   }
 
   .message-markdown :global(.hljs-comment),
@@ -332,7 +332,7 @@
     padding: 0;
     border: none;
     border-radius: 0;
-    background: transparent;
+    background: inherit;
   }
 
   .message-markdown.message-markdown-read :global(pre code) {

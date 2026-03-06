@@ -62,21 +62,17 @@
   }
 </script>
 
-<div
-  class="absolute inset-0 z-30 flex flex-col bg-background/96 backdrop-blur-xs"
->
+<div class="absolute inset-0 z-30 flex flex-col bg-overlay">
   <header
     class="shrink-0 h-[86px] border-b border-border flex items-center justify-center"
   >
-    <h2
-      class="text-3xl font-semibold tracking-tight bg-linear-to-r from-foreground to-muted-foreground bg-clip-text text-transparent"
-    >
+    <h2 class="text-3xl font-semibold tracking-tight text-foreground">
       Settings
     </h2>
   </header>
 
   <div class="flex-1 min-h-0 overflow-y-auto p-6 space-y-6">
-    <section class="rounded-lg border border-border bg-card/50 p-4">
+    <section class="rounded-lg border border-border bg-card p-4">
       <h3 class="text-sm font-semibold text-foreground">Message Blocks</h3>
 
       <div class="mt-4 space-y-3">
@@ -112,7 +108,7 @@
       </div>
     </section>
 
-    <section class="rounded-lg border border-border bg-card/50 p-4">
+    <section class="rounded-lg border border-border bg-card p-4">
       <div class="flex items-center justify-between gap-4">
         <h3
           class="text-sm font-semibold text-foreground"
@@ -149,7 +145,7 @@
               <ul class="mt-2 space-y-2">
                 {#each globalExtensions as extension (extension.resolvedPath)}
                   <li
-                    class="rounded border border-border/70 bg-background/60 p-2.5"
+                    class="rounded border border-border bg-surface p-2.5"
                     title={extension.resolvedPath}
                   >
                     <p class="text-sm text-foreground">{extension.name}</p>
@@ -176,7 +172,7 @@
               <ul class="mt-2 space-y-2">
                 {#each localExtensions as extension (extension.resolvedPath)}
                   <li
-                    class="rounded border border-border/70 bg-background/60 p-2.5"
+                    class="rounded border border-border bg-surface p-2.5"
                     title={extension.resolvedPath}
                   >
                     <p class="text-sm text-foreground">{extension.name}</p>
@@ -191,7 +187,7 @@
 
           {#if extensionLoadDiagnostics.length > 0}
             <details
-              class="rounded border border-amber-500/30 bg-amber-500/5 p-2.5"
+              class="rounded border border-amber-600 dark:border-amber-500 bg-warning-surface p-2.5"
             >
               <summary
                 class="cursor-pointer text-xs text-amber-700 dark:text-amber-300"

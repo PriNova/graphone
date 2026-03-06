@@ -822,19 +822,19 @@
 
   <div
     class={cn(
-      "flex flex-col w-full bg-foreground/3 border border-input-border rounded-md transition-all duration-100 overflow-hidden relative",
-      isFocused && "bg-foreground/4 border-ring",
-      isDragOver && "border-primary bg-primary/5",
+      "flex flex-col w-full bg-surface border border-input-border rounded-md transition-all duration-100 overflow-hidden relative",
+      isFocused && "bg-surface-hover border-ring",
+      isDragOver && "border-primary bg-surface-active",
       isSlashCommand &&
         isKnownCommand &&
         commandHandler === "local" &&
-        "border-success/50",
+        "border-success",
       isSlashCommand &&
         isKnownCommand &&
         commandHandler === "unimplemented" &&
-        "border-warning/50",
-      isSlashCommand && !isKnownCommand && "border-destructive/50",
-      isLoading && "bg-primary/5 border-primary/30",
+        "border-yellow-600 dark:border-yellow-500",
+      isSlashCommand && !isKnownCommand && "border-destructive",
+      isLoading && "bg-surface-active border-primary",
     )}
     ondragenter={handleDragEnter}
     ondragover={handleDragOver}
@@ -844,10 +844,10 @@
   >
     {#if isDragOver}
       <div
-        class="absolute inset-0 z-10 pointer-events-none flex items-center justify-center bg-background/60 backdrop-blur-[1px]"
+        class="absolute inset-0 z-10 pointer-events-none flex items-center justify-center bg-overlay"
       >
         <span
-          class="px-3 py-1 rounded border border-primary/40 bg-primary/10 text-xs text-primary"
+          class="px-3 py-1 rounded border border-primary bg-surface-active text-xs text-primary"
         >
           Drop images to attach
         </span>
@@ -855,9 +855,7 @@
     {/if}
 
     {#if attachments.length > 0}
-      <div
-        class="px-3 pt-3 pb-1 flex flex-wrap gap-2 border-b border-border/60"
-      >
+      <div class="px-3 pt-3 pb-1 flex flex-wrap gap-2 border-b border-border">
         {#each attachments as image (image.id)}
           <div
             class="relative w-14 h-14 rounded overflow-hidden border border-border"
@@ -869,7 +867,7 @@
             />
             <button
               type="button"
-              class="absolute top-0 right-0 w-5 h-5 text-[10px] bg-black/65 text-white hover:bg-black/80"
+              class="absolute top-0 right-0 w-5 h-5 text-[10px] bg-black text-white hover:bg-neutral-800"
               onclick={() => removeAttachment(image.id)}
               aria-label="Remove image attachment"
               title="Remove"
@@ -908,8 +906,8 @@
           class={cn(
             "flex items-center justify-center w-8 h-8 p-0 rounded border transition-all duration-150",
             !disabled && !isLoading
-              ? "bg-transparent border-border text-muted-foreground hover:bg-secondary hover:border-foreground hover:text-foreground cursor-pointer"
-              : "bg-transparent border-border/70 text-muted-foreground/50 cursor-not-allowed opacity-50",
+              ? "bg-card border-border text-muted-foreground hover:bg-secondary hover:border-foreground hover:text-foreground cursor-pointer"
+              : "bg-card border-border text-muted-foreground cursor-not-allowed opacity-50",
           )}
           disabled={disabled || isLoading}
           onclick={openFilePicker}
@@ -936,8 +934,8 @@
           class={cn(
             "flex items-center justify-center w-8 h-8 p-0 rounded border transition-all duration-150",
             canStartNewChat
-              ? "bg-transparent border-border text-muted-foreground hover:bg-secondary hover:border-foreground hover:text-foreground cursor-pointer"
-              : "bg-transparent border-border/70 text-muted-foreground/50 cursor-not-allowed opacity-50",
+              ? "bg-card border-border text-muted-foreground hover:bg-secondary hover:border-foreground hover:text-foreground cursor-pointer"
+              : "bg-card border-border text-muted-foreground cursor-not-allowed opacity-50",
           )}
           disabled={!canStartNewChat}
           onclick={handleNewChat}
@@ -966,8 +964,8 @@
           class={cn(
             "flex items-center justify-center w-8 h-8 p-0 rounded cursor-pointer transition-all duration-150",
             isLoading
-              ? "bg-destructive border-destructive text-destructive-foreground hover:bg-destructive/90"
-              : "bg-transparent border border-border text-muted-foreground hover:not-disabled:bg-secondary hover:not-disabled:border-foreground hover:not-disabled:text-foreground",
+              ? "bg-destructive border-destructive text-destructive-foreground hover:bg-destructive"
+              : "bg-card border border-border text-muted-foreground hover:not-disabled:bg-secondary hover:not-disabled:border-foreground hover:not-disabled:text-foreground",
             !isLoading &&
               (hasContent || hasAttachments) &&
               !submitBlockedByModel &&
