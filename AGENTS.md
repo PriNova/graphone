@@ -9,6 +9,7 @@
 - **Use title + body commit messages by default** - Unless the user explicitly requests otherwise, write commits with a concise title and a descriptive body (not title-only).
 - **Use robust multiline commit messages** - Do not embed literal `\n` in a single `git commit -m` string. Use multiple `-m` flags (one per paragraph) or `git commit -F` with a heredoc/file so line breaks render correctly on GitHub.
 - **PAT push hygiene** - If pushing with `GITHUB_PAT`, pass it via git auth headers/env only; never echo, print, or otherwise expose the token in commands/output.
+- **Default autonomous iteration guidance** - For general coding-agent-first execution patterns (tests, TDD/debug loops, logs, traces, artifacts, contracts, smokes, escalation), see `docs/agent-first-autonomous-iteration-playbook.md`
 
 ## Build Commands
 
