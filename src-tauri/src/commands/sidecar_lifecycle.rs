@@ -383,6 +383,8 @@ pub async fn create_session_internal(
 ) -> Result<RpcResponse, String> {
     ensure_sidecar_started(&app, state, provider.clone(), model.clone()).await?;
 
+    // Keep one internal session id for the full create/retry flow so retries
+    // correlate to the same runtime session in the sidecar.
     let requested_session_id = crypto_random_uuid();
     let mut last_error = "Failed to create session".to_string();
 
