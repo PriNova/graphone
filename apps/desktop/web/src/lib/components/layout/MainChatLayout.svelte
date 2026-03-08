@@ -23,6 +23,8 @@
     activeSessionFile?: string | null;
     busySessionIds?: string[];
     busySessionFiles?: string[];
+    reviewSessionIds?: string[];
+    reviewSessionFiles?: string[];
     projectDirInput?: string;
     sessionsCreating?: boolean;
     sidebarCollapsed?: boolean;
@@ -110,6 +112,8 @@
     activeSessionFile = null,
     busySessionIds = [],
     busySessionFiles = [],
+    reviewSessionIds = [],
+    reviewSessionFiles = [],
     projectDirInput = "",
     sessionsCreating = false,
     sidebarCollapsed = false,
@@ -233,6 +237,8 @@
       {activeSessionFile}
       {busySessionIds}
       {busySessionFiles}
+      {reviewSessionIds}
+      {reviewSessionFiles}
       {projectDirInput}
       creating={sessionsCreating}
       collapsed={sidebarCollapsed}

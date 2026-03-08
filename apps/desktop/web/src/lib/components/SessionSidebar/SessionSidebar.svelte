@@ -10,6 +10,8 @@
     activeSessionFile?: string | null;
     busySessionIds?: string[];
     busySessionFiles?: string[];
+    reviewSessionIds?: string[];
+    reviewSessionFiles?: string[];
     projectDirInput?: string;
     creating?: boolean;
     collapsed?: boolean;
@@ -42,6 +44,8 @@
     activeSessionFile = null,
     busySessionIds = [],
     busySessionFiles = [],
+    reviewSessionIds = [],
+    reviewSessionFiles = [],
     projectDirInput = "",
     creating = false,
     collapsed = false,
@@ -105,6 +109,20 @@
       .map((filePath) => fileBaseName(filePath))
       .filter((fileName) => fileName.length > 0);
     return new Set(names);
+  });
+
+  const reviewSessionIdSet = $derived.by(() => {
+    const normalized = reviewSessionIds
+      .map((sessionId) => sessionId.trim())
+      .filter((sessionId) => sessionId.length > 0);
+    return new Set(normalized);
+  });
+
+  const reviewSessionFileSet = $derived.by(() => {
+    const normalized = reviewSessionFiles
+      .map((filePath) => normalizeFilePath(filePath))
+      .filter((filePath) => filePath.length > 0);
+    return new Set(normalized);
   });
 
   function toggleScopeCollapse(projectDir: string, event: MouseEvent): void {
@@ -240,6 +258,18 @@
     }
 
     return false;
+  }
+
+  function isHistoryNeedingReview(
+    history: PersistedSessionHistoryItem,
+  ): boolean {
+    const sessionId = history.sessionId.trim();
+    if (sessionId.length > 0 && reviewSessionIdSet.has(sessionId)) {
+      return true;
+    }
+
+    const filePath = normalizeFilePath(history.filePath);
+    return filePath.length > 0 && reviewSessionFileSet.has(filePath);
   }
 
   function showHistoryTooltip(
@@ -552,6 +582,7 @@
                   {#if scopeHistory.length > 0}
                     <span
                       class="text-[10px] px-1.5 py-0.5 rounded border border-border text-muted-foreground shrink-0"
+                      title={`${scopeHistory.length} stored session${scopeHistory.length === 1 ? "" : "s"}`}
                     >
                       {scopeHistory.length}
                     </span>
@@ -637,6 +668,7 @@
                 {#each displayedHistory as history (history.filePath)}
                   {@const historyBusy = isHistoryBusy(history)}
                   {@const historyActive = isHistoryActive(history)}
+                  {@const historyNeedsReview = isHistoryNeedingReview(history)}
                   <div
                     class={cn(
                       "w-full rounded border px-1.5 py-1 text-left text-[11px] transition-colors group/session",
@@ -646,7 +678,9 @@
                           ? "border-border hover:bg-surface-hover border-l-2 border-l-success"
                           : historyActive
                             ? "border-foreground bg-surface-active text-foreground"
-                            : "border-border hover:bg-surface-hover",
+                            : historyNeedsReview
+                              ? "border-[#4da3ff] hover:bg-surface-hover border-l-2 border-l-[#4da3ff]"
+                              : "border-border hover:bg-surface-hover",
                     )}
                   >
                     <div class="flex items-center gap-2">
@@ -680,8 +714,8 @@
                                     ? "text-foreground font-semibold"
                                     : "text-muted-foreground",
                               )}
-                              title={`${historySourceName(history)} • ${historyBusy ? "Agent active" : "Agent idle"}${historyActive ? " • Current view" : ""}`}
-                              aria-label={`${historySourceName(history)} source, ${historyBusy ? "agent active" : "agent idle"}${historyActive ? ", current visible session" : ""}`}
+                              title={`${historySourceName(history)} • ${historyBusy ? "Agent active" : "Agent idle"}${historyActive ? " • Current view" : ""}${historyNeedsReview ? " • Needs review" : ""}`}
+                              aria-label={`${historySourceName(history)} source, ${historyBusy ? "agent active" : "agent idle"}${historyActive ? ", current visible session" : ""}${historyNeedsReview ? ", completed while away" : ""}`}
                             >
                               {historySourceLabel(history)}
                             </span>

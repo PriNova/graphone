@@ -20,7 +20,7 @@ function sanitizeSessionIdForWindowLabel(sessionId: string): string {
   return sanitized.length > 0 ? sanitized : "session";
 }
 
-function toFloatingSessionWindowLabel(sessionId: string): string {
+export function toFloatingSessionWindowLabel(sessionId: string): string {
   return `${FLOATING_SESSION_WINDOW_PREFIX}${sanitizeSessionIdForWindowLabel(sessionId)}`;
 }
 

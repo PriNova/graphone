@@ -1,6 +1,6 @@
 # Graphone Feature Availability (User Guide)
 
-_Last updated: 2026-03-05_
+_Last updated: 2026-03-08_
 
 This page helps you quickly understand what to expect from **Graphone** today, especially if you already know the pi terminal app (TUI).
 
@@ -22,6 +22,7 @@ This page helps you quickly understand what to expect from **Graphone** today, e
 - Session persistence and reopening from sidebar history
 - Project-scope sidebar with session history
 - Session activity indicators in the sidebar/history list (idle vs active)
+- Unseen-completion indicators for finished sessions in sidebar history
 - Deleting a **single session** from a project scope
 - Deleting an entire project scope
 
@@ -106,6 +107,7 @@ This page helps you quickly understand what to expect from **Graphone** today, e
 ### Session resume parity
 
 - Session resume works through sidebar/history flow; command-level parity is still incomplete
+- Unseen-completion indicators persist across app restarts for completions Graphone observed while it was open, but completions that happen while the app is closed are not reconstructed on next launch
 
 ### Floating session window limits
 

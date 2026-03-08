@@ -1,7 +1,7 @@
 <script lang="ts">
   import { onDestroy, onMount } from "svelte";
   import { invoke } from "@tauri-apps/api/core";
-  import { getCurrentWindow } from "@tauri-apps/api/window";
+  import { getAllWindows, getCurrentWindow } from "@tauri-apps/api/window";
 
   import MainChatLayout from "$lib/components/layout/MainChatLayout.svelte";
   import { handleAgentEvent } from "$lib/handlers/agent-events";
@@ -10,6 +10,13 @@
     handlePromptSubmit,
     handleSlashCommand,
   } from "$lib/handlers/commands";
+  import {
+    isSessionVisibleInCurrentWindow,
+    mergeSessionAttentionSubjects,
+    subjectFromPersistedHistory,
+    subjectFromSessionDescriptor,
+    subjectFromSessionRuntime,
+  } from "$lib/session/attention";
   import { bootstrapSessions } from "$lib/session/bootstrap";
   import { recoverSessionSelectionAfterMutation } from "$lib/session/post-mutation-recovery";
   import {
@@ -32,10 +39,14 @@
     sessionsStore,
     type SessionDescriptor,
   } from "$lib/stores/sessions.svelte";
+  import { sessionAttentionStore } from "$lib/stores/sessionAttention.svelte";
   import { settingsStore } from "$lib/stores/settings.svelte";
   import type { PromptImageAttachment } from "$lib/types/agent";
   import type { SessionRuntime } from "$lib/types/session";
-  import { openOrFocusFloatingSessionWindow } from "$lib/windowing/session-windows";
+  import {
+    openOrFocusFloatingSessionWindow,
+    toFloatingSessionWindowLabel,
+  } from "$lib/windowing/session-windows";
   import { getCurrentWindowContext } from "$lib/windowing/window-context";
 
   // DOM refs
@@ -61,6 +72,9 @@
     Record<string, PromptImageAttachment[]>
   >({});
   let floatingSessionMissing = $state(false);
+  let isWindowFocused = $state(
+    typeof document === "undefined" ? true : document.hasFocus(),
+  );
   const windowContext = getCurrentWindowContext();
   const isFloatingSessionWindow =
     windowContext.role === "floating-session-chat";
@@ -205,6 +219,39 @@
 
     return Array.from(busy);
   });
+  const reviewSessionIds = $derived.by(() => {
+    const review = new Set<string>();
+
+    for (const history of Object.values(scopeHistoryByProject).flat()) {
+      if (
+        !sessionAttentionStore.needsReview(subjectFromPersistedHistory(history))
+      ) {
+        continue;
+      }
+
+      review.add(history.sessionId);
+    }
+
+    return Array.from(review);
+  });
+  const reviewSessionFiles = $derived.by(() => {
+    const review = new Set<string>();
+
+    for (const history of Object.values(scopeHistoryByProject).flat()) {
+      if (
+        !sessionAttentionStore.needsReview(subjectFromPersistedHistory(history))
+      ) {
+        continue;
+      }
+
+      const filePath = history.filePath.trim();
+      if (filePath.length > 0) {
+        review.add(filePath);
+      }
+    }
+
+    return Array.from(review);
+  });
   const showSidebarInLayout = $derived(isMainWindow);
   const showPopOutActiveSessionButton = $derived(isMainWindow);
   const showHeaderInLayout = $derived(!isFloatingSessionWindow);
@@ -217,6 +264,122 @@
     }
 
     return "Create a session to start chatting.";
+  });
+
+  function getAttentionSubjectForDescriptor(
+    descriptor: SessionDescriptor | null | undefined,
+  ) {
+    if (!descriptor) {
+      return null;
+    }
+
+    return mergeSessionAttentionSubjects(
+      subjectFromSessionDescriptor(descriptor),
+      subjectFromSessionRuntime(sessionRuntimes[descriptor.sessionId]),
+    );
+  }
+
+  function getAttentionSubjectForHistory(
+    history: PersistedSessionHistoryItem | null | undefined,
+  ) {
+    if (!history) {
+      return null;
+    }
+
+    const matchingSession = sessionsStore.sessions.find(
+      (session) => session.sessionFile === history.filePath,
+    );
+
+    return mergeSessionAttentionSubjects(
+      subjectFromPersistedHistory(history),
+      subjectFromSessionDescriptor(matchingSession),
+      matchingSession
+        ? subjectFromSessionRuntime(sessionRuntimes[matchingSession.sessionId])
+        : null,
+    );
+  }
+
+  function getAttentionSubjectForRuntime(
+    runtime: SessionRuntime | null | undefined,
+  ) {
+    if (!runtime) {
+      return null;
+    }
+
+    const matchingSession = sessionsStore.sessions.find(
+      (session) => session.sessionId === runtime.sessionId,
+    );
+
+    return mergeSessionAttentionSubjects(
+      subjectFromSessionRuntime(runtime),
+      subjectFromSessionDescriptor(matchingSession),
+    );
+  }
+
+  async function isSessionVisibleInAnyFocusedWindow(
+    sessionId: string,
+  ): Promise<boolean> {
+    const normalizedSessionId = sessionId.trim();
+    if (normalizedSessionId.length === 0) {
+      return false;
+    }
+
+    if (
+      isWindowFocused &&
+      activeSessionId?.trim() === normalizedSessionId &&
+      isMainWindow
+    ) {
+      return true;
+    }
+
+    const floatingLabel = toFloatingSessionWindowLabel(normalizedSessionId);
+    const windows = await getAllWindows().catch(() => []);
+
+    for (const window of windows) {
+      if (window.label !== floatingLabel) {
+        continue;
+      }
+
+      const focused = await window.isFocused().catch(() => false);
+      if (focused) {
+        return true;
+      }
+    }
+
+    return false;
+  }
+
+  async function markVisibleSessionSeen(): Promise<void> {
+    if (!isWindowFocused) {
+      return;
+    }
+
+    const visibleSession = isFloatingSessionWindow
+      ? boundSessionId
+        ? (sessionsStore.sessions.find(
+            (session) => session.sessionId === boundSessionId,
+          ) ?? null)
+        : null
+      : activeSession;
+
+    const subject = getAttentionSubjectForDescriptor(visibleSession);
+    if (!sessionAttentionStore.needsReview(subject)) {
+      return;
+    }
+
+    await sessionAttentionStore.markSeen(subject);
+  }
+
+  $effect(() => {
+    const shouldTrackVisibleSession =
+      (isFloatingSessionWindow && boundSessionId) ||
+      (!isFloatingSessionWindow && activeSessionId);
+
+    if (!shouldTrackVisibleSession || !isWindowFocused) {
+      return;
+    }
+
+    void markVisibleSessionSeen().catch(() => undefined);
   });
 
   function handleScroll(): void {
@@ -508,6 +671,9 @@
       await settingsStore.setLastSelectedScope(normalizedTarget);
       sessionsStore.setActiveSession(existing.sessionId);
       await ensureRuntime(existing);
+      await sessionAttentionStore
+        .markSeen(getAttentionSubjectForHistory(history))
+        .catch(() => undefined);
       requestAnimationFrame(() => scrollToBottom(false));
       return;
     }
@@ -516,6 +682,9 @@
     await settingsStore.setLastSelectedScope(normalizedTarget);
 
     await createSession(projectDir, history.filePath);
+    await sessionAttentionStore
+      .markSeen(getAttentionSubjectForHistory(history))
+      .catch(() => undefined);
   }
 
   async function onRemoveHistory(
@@ -525,6 +694,7 @@
     const normalizedProjectDir = normalizeScopePath(projectDir);
     const normalizedFilePath = history.filePath.trim();
     const normalizedSessionId = history.sessionId.trim();
+    const attentionSubject = getAttentionSubjectForHistory(history);
 
     const openSession = sessionsStore.sessions.find(
       (session) => session.sessionFile?.trim() === normalizedFilePath,
@@ -550,6 +720,9 @@
       normalizedSessionId,
       normalizedFilePath,
     );
+    await sessionAttentionStore
+      .removeSubject(attentionSubject)
+      .catch(() => undefined);
 
     await recoverSessionSelectionAfterScopeMutation();
   }
@@ -557,6 +730,7 @@
   async function onRemoveScope(projectDir: string): Promise<void> {
     // Normalize project dir for comparison (remove trailing slashes)
     const normalizedProjectDir = projectDir.replace(/[\\/]+$/, "");
+    const scopeHistory = scopeHistoryByProject[normalizedProjectDir] ?? [];
 
     // Close all sessions for this scope via backend
     const sessionsToClose = sessionsStore.sessions.filter(
@@ -580,6 +754,13 @@
 
     // Delete the scope (session files) via backend
     await projectScopesStore.deleteScope(normalizedProjectDir);
+    await Promise.allSettled(
+      scopeHistory.map((history) =>
+        sessionAttentionStore.removeSubject(
+          getAttentionSubjectForHistory(history),
+        ),
+      ),
+    );
 
     await recoverSessionSelectionAfterScopeMutation();
   }
@@ -795,8 +976,12 @@
     const settingsLoad = settingsStore.load().catch((error) => {
       console.warn("Failed to load settings:", error);
     });
+    const sessionAttentionLoad = sessionAttentionStore.load().catch((error) => {
+      console.warn("Failed to load session attention state:", error);
+    });
 
     void settingsLoad;
+    void sessionAttentionLoad;
 
     try {
       await Promise.race([
@@ -843,15 +1028,18 @@
       sessionsBootstrapped = true;
     }
 
-    await settingsLoad;
+    await Promise.allSettled([settingsLoad, sessionAttentionLoad]);
 
     disposeWindowFocusChanged = await getCurrentWindow()
       .onFocusChanged((event) => {
+        isWindowFocused = event.payload;
+
         if (!event.payload) {
           return;
         }
 
         void settingsStore.load().catch(() => undefined);
+        void markVisibleSessionSeen().catch(() => undefined);
       })
       .catch(() => null);
 
@@ -860,6 +1048,45 @@
       getActiveSessionId: () => sessionsStore.activeSessionId,
       handleRuntimeEvent: (runtime, event) => {
         handleAgentEvent(runtime, event);
+
+        if (event.type !== "agent_end") {
+          return;
+        }
+
+        if (!isMainWindow) {
+          if (
+            isSessionVisibleInCurrentWindow({
+              runtime,
+              activeSessionId: sessionsStore.activeSessionId,
+              isWindowFocused,
+              isFloatingSessionWindow,
+              boundSessionId,
+            })
+          ) {
+            void sessionAttentionStore
+              .markSeen(getAttentionSubjectForRuntime(runtime))
+              .catch(() => undefined);
+          }
+          return;
+        }
+
+        const attentionSubject = getAttentionSubjectForRuntime(runtime);
+        if (!attentionSubject) {
+          return;
+        }
+
+        void (async () => {
+          const visibleSomewhere = await isSessionVisibleInAnyFocusedWindow(
+            runtime.sessionId,
+          );
+
+          if (visibleSomewhere) {
+            await sessionAttentionStore.markSeen(attentionSubject);
+            return;
+          }
+
+          await sessionAttentionStore.markCompleted(attentionSubject);
+        })().catch(() => undefined);
       },
       markSessionSidebarSyncPending: (sessionId) => {
         pendingSessionSidebarSync.add(sessionId);
@@ -908,6 +1135,8 @@
   {activeSessionFile}
   {busySessionIds}
   {busySessionFiles}
+  {reviewSessionIds}
+  {reviewSessionFiles}
   {projectDirInput}
   sessionsCreating={sessionsStore.creating}
   {sidebarCollapsed}
