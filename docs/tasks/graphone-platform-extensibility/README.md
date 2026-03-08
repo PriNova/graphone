@@ -37,9 +37,9 @@ Use `00-sequenced-implementation-roadmap.md` as the single execution-order track
 
 Current execution note:
 
-- Phase 1A/1B (durable host recovery ledger + desktop recovery consumption) is in progress locally.
-- Recovery remains intentionally coarse-grained for now so failure modes can be continued or reverted early without blocking later service/client work.
-- The current desktop affordance reuses the existing scope/history sidebar instead of introducing a second recovery workflow surface.
+- The earlier durable host recovery ledger slice was reverted.
+- Treat this plan set as reset to a fresh baseline with **no Graphone-owned recovery ledger currently active**.
+- Recommended restart point is the service/runtime boundary work (capabilities + reflection), then client extraction and browser transport.
 
 ---
 

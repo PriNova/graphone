@@ -16,15 +16,20 @@ It exists to answer three practical questions:
 
 ## Status
 
-**Current recommended starting point:** Phase 1 — durable host recovery ledger
+**Program reset note (2026-03-07):**
+
+- The earlier durable recovery-ledger implementation slice was reverted.
+- This roadmap is reset to a fresh baseline.
+- The new recommended start point is service/runtime boundary hardening (capabilities + reflection), not host recovery ledger work.
+
+**Current recommended starting point:** Phase 1 — service capabilities + runtime reflection.
 
 Reason:
 
 - it strengthens the canonical runtime boundary in `services/agent-host`
-- it directly addresses accidental session/sidecar termination recovery
-- it is additive and low-risk
-- it does not block current desktop behavior
-- it creates the recovery foundation needed before broader transport/client refactors
+- it unlocks frontend service-client extraction with explicit contracts
+- it reduces implicit behavior and guesswork in clients
+- it sets up browser transport work without coupling to desktop-only assumptions
 
 ---
 
@@ -32,11 +37,12 @@ Reason:
 
 1. **Use strangler-fig sequencing.** Prefer additive seams and adapters over rewrites.
 2. **Keep Graphone working at every meaningful stage.** Desktop flow should remain usable while new boundaries are introduced.
-3. **Put runtime/session recovery in the host service boundary, not in the frontend.**
-4. **Reuse pi persistence semantics.** Do not build a second message/session store in Graphone.
-5. **Track agent progress coarsely, not token-by-token.** Persist recoverable execution checkpoints, not transient stream noise.
+3. **Keep runtime ownership in `services/agent-host`, not in frontend/Tauri glue.**
+4. **Reuse pi persistence/resource semantics.** Do not build a parallel message/session/resource loader in Graphone.
+5. **Treat recovery as a later hardening concern for now.** Do not block service/client extraction on a new durability design.
 6. **Do browser mode only after service and client boundaries exist.**
 7. **Do Graphone executable plugins only after declarative UI contracts are stable.**
+8. **Keep protocol and transport changes explicitly versioned/capability-gated.**
 
 ---
 
@@ -44,14 +50,15 @@ Reason:
 
 | Phase | Name | Primary workstreams | Goal | Status |
 | --- | --- | --- | --- | --- |
-| 1 | Durable host recovery ledger | WS-A, WS-B (slice) | Recover hosted sessions/runs after accidental termination | In progress (Phase 1A) |
-| 2 | Service capabilities + runtime reflection | WS-B | Make runtime/service metadata explicit to clients | Planned |
-| 3 | Frontend service client extraction | WS-D | Move core runtime access behind a service client boundary | Planned |
-| 4 | Desktop shell adapter extraction | WS-E | Isolate Tauri/native shell behavior from shared UI | Planned |
-| 5 | HTTP + WebSocket service transport | WS-C | Expose the same host runtime to browser-capable clients | Planned |
-| 6 | Browser mode v1 | WS-F | Run the main workbench in a browser against the service | Planned |
-| 7 | Declarative Graphone UI extensibility | WS-G | Formalize Graphone UI metadata/rendering contracts | Planned |
-| 8 | Graphone plugin foundation | WS-H | Add a small local workbench plugin API | Planned |
+| 0 | Baseline reset | WS-A, WS-D (cleanup) | Remove reverted ledger assumptions and reset docs/tracker | Completed |
+| 1 | Service capabilities + runtime reflection | WS-A, WS-B | Make runtime/service metadata explicit to clients | Planned |
+| 2 | Frontend service client extraction | WS-D | Move core runtime access behind a service client boundary | Planned |
+| 3 | Desktop shell adapter extraction | WS-E | Isolate Tauri/native shell behavior from shared UI | Planned |
+| 4 | HTTP + WebSocket service transport | WS-C | Expose the same host runtime to browser-capable clients | Planned |
+| 5 | Browser mode v1 | WS-F | Run the main workbench in a browser against the service | Planned |
+| 6 | Declarative Graphone UI extensibility | WS-G | Formalize Graphone UI metadata/rendering contracts | Planned |
+| 7 | Graphone plugin foundation | WS-H | Add a small local workbench plugin API | Planned |
+| 8 | Host recovery strategy revisit (hardening) | WS-A, WS-B, WS-D | Reintroduce crash/restart continuity using a validated design | Backlog |
 
 ---
 
@@ -66,129 +73,31 @@ Reason:
 
 ---
 
-## Phase 1 — Durable host recovery ledger
+## Phase 0 — Baseline reset
 
 ## Goal
 
-Persist enough Graphone-owned supervisory state so that if a hosted session or sidecar dies unexpectedly, Graphone can reopen the pi session file and continue from the last durable checkpoint.
+Reset the roadmap and execution tracker after reverting the ledger experiment.
 
-## Why first
+## Completed outcomes
 
-Today, pi already persists the conversation via `sessionFile`, but Graphone loses in-memory hosting state when the sidecar dies.
+- remove assumptions that a host recovery ledger is active
+- reset “current status” language to reflect fresh-start planning
+- keep sequencing focused on service/client/browser architecture first
 
-This phase closes that gap without changing the fundamental architecture.
+## Exit criteria
 
-## Scope
-
-Add a small host-side recovery/ledger layer in `services/agent-host`.
-
-Suggested file:
-
-- `services/agent-host/src/session-ledger.ts`
-
-Suggested tracked state:
-
-### Session-level
-
-- `graphoneSessionId`
-- `sessionFile`
-- `cwd`
-- `createdAt`
-- `updatedAt`
-- `status`
-- `lastKnownModel`
-- `activeRunId?`
-- `lastError?`
-- `activeToolName?`
-
-### Run-level
-
-- `runId`
-- `sessionId`
-- `kind` (`prompt` / `steer` / `follow_up`)
-- `startedAt`
-- `updatedAt`
-- `endedAt?`
-- `status`
-- `promptPreview`
-- `activeToolName?`
-- `lastCheckpoint`
-
-Suggested statuses:
-
-- `idle`
-- `running`
-- `tool_running`
-- `aborting`
-- `completed`
-- `failed`
-- `interrupted`
-
-## Resume semantics
-
-For this program, **resume** means:
-
-- reopen the last durable pi session state from `sessionFile`
-- mark any non-terminal in-flight run as `interrupted`
-- allow the user to continue with a new prompt/follow-up from that point
-
-It does **not** mean resuming mid-token or mid-tool syscall exactly where execution stopped.
-
-## Acceptance criteria
-
-- [x] Host persists supervisory session/run metadata outside process memory
-- [x] Sidecar/session crash leaves recoverable session metadata behind
-- [x] On restart, Graphone can list recoverable sessions tied to `sessionFile`
-- [x] In-flight work is marked `interrupted`, not silently forgotten
-- [ ] Existing desktop flow still works
-
-## Recommended first implementation slice
-
-1. Add the ledger module
-2. Write coarse checkpoints from `HostRuntime`
-3. Rehydrate ledger entries on startup
-4. Surface recovery state through host responses
-5. Add desktop UI affordance for interrupted/recoverable sessions later, after host data exists
-
-### Phase 1A/1B status — 2026-03-06
-
-Implemented locally in `services/agent-host` and the desktop web client:
-
-- added a durable host-owned ledger module at `services/agent-host/src/session-ledger.ts`
-- persisted coarse session/run checkpoints to `~/.pi/agent/graphone/session-ledger.json`
-- marked non-terminal runs `interrupted` on host restart
-- surfaced ledger-backed `recoverableSessions` through `list_sessions`
-- attached per-session recovery summaries to live hosted session info
-- added focused ledger tests under `services/agent-host/test/session-ledger.test.ts`
-- updated desktop bootstrap/sidebar flows to consume recoverable session files before starting unrelated fresh sessions
-- exposed interrupted/recoverable session state in the session sidebar so the next agent or user can continue from the last durable checkpoint
-
-Deliberate narrowing for early continuation/revert safety:
-
-- recovery remains **coarse-grained** only (reopen `sessionFile`, continue with a new prompt)
-- no mid-token or mid-tool resume attempt
-- queued steer/follow-up intent is checkpointed coarsely rather than modeled as a full durable host queue
-- desktop recovery UI stays inside the existing scope/history affordance instead of introducing a new workflow surface yet
-
-Continuation notes for the next agent:
-
-- run a desktop-mode manual smoke once a GUI session is available, specifically: crash/kill sidecar, relaunch, reopen interrupted session from sidebar, continue with a new prompt
-- decide whether queued continuation requests need a richer durable host queue model or can remain coarse
-- only after that manual smoke should Phase 1 be marked fully complete in the tracker
-
-Rollback notes for the next agent:
-
-- the recovery slice is still additive/strangler-safe and isolated mainly to `services/agent-host` plus sidebar/bootstrap consumption in the web client
-- if this slice must be reverted early, remove the `session-ledger.ts` integration points, revert the desktop `recoverableSessions` consumption, and delete `~/.pi/agent/graphone/session-ledger.json`
-- no pi runtime loader semantics were changed
+- [x] No roadmap step assumes `session-ledger.ts` exists
+- [x] Tracker reflects fresh-start status
+- [x] Next implementation recommendation is unambiguous
 
 ---
 
-## Phase 2 — Service capabilities + runtime reflection
+## Phase 1 — Service capabilities + runtime reflection
 
 ## Goal
 
-Make the host self-describing enough that clients do not have to guess what the runtime supports or what pi loaded.
+Make the host self-describing enough that clients do not have to guess what runtime features or resources are available.
 
 ## Scope
 
@@ -209,7 +118,7 @@ Implement/add:
 
 ---
 
-## Phase 3 — Frontend service client extraction
+## Phase 2 — Frontend service client extraction
 
 ## Goal
 
@@ -234,7 +143,7 @@ Migrate shared code off direct `invoke(...)`/`listen(...)` usage for core sessio
 
 ---
 
-## Phase 4 — Desktop shell adapter extraction
+## Phase 3 — Desktop shell adapter extraction
 
 ## Goal
 
@@ -258,7 +167,7 @@ Move Tauri-specific windowing and focus code there.
 
 ---
 
-## Phase 5 — HTTP + WebSocket service transport
+## Phase 4 — HTTP + WebSocket service transport
 
 ## Goal
 
@@ -280,7 +189,7 @@ Add:
 
 ---
 
-## Phase 6 — Browser mode v1
+## Phase 5 — Browser mode v1
 
 ## Goal
 
@@ -305,7 +214,7 @@ Keep v1 narrow:
 
 ---
 
-## Phase 7 — Declarative Graphone UI extensibility
+## Phase 6 — Declarative Graphone UI extensibility
 
 ## Goal
 
@@ -328,7 +237,7 @@ Formalize:
 
 ---
 
-## Phase 8 — Graphone plugin foundation
+## Phase 7 — Graphone plugin foundation
 
 ## Goal
 
@@ -352,18 +261,41 @@ Start narrowly with contribution points like:
 
 ---
 
+## Phase 8 — Host recovery strategy revisit (hardening)
+
+## Goal
+
+Reintroduce session/run continuity after crash/restart using a validated design that does not destabilize core architecture work.
+
+## Scope
+
+Evaluate and implement one pragmatic strategy after Phases 1-4 are stable, for example:
+
+- minimal host-owned checkpoint index tied to `sessionFile`
+- runtime-derived session continuity from existing persisted state
+- coarse run interruption markers without full durable queue complexity
+
+## Acceptance criteria
+
+- [ ] Chosen approach is documented with explicit failure semantics
+- [ ] Recovery does not require duplicating pi message/session persistence
+- [ ] Recovery data model is simple enough to keep rollback cheap
+- [ ] Desktop and browser clients consume recovery metadata through the same service contract
+
+---
+
 ## Phase dependencies
 
 Use this simplified dependency view:
 
 - Phase 1 -> Phase 2
 - Phase 2 -> Phase 3
-- Phase 3 -> Phase 4
-- Phase 2 + Phase 3 -> Phase 5
-- Phase 4 + Phase 5 -> Phase 6
-- Phase 7 -> Phase 8
+- Phase 1 + Phase 2 -> Phase 4
+- Phase 3 + Phase 4 -> Phase 5
+- Phase 6 -> Phase 7
+- Phase 1 + Phase 2 + Phase 4 -> Phase 8
 
-Phase 7 can start in parallel with Phases 2-5 if the team stays within declarative rendering contracts.
+Phase 6 can start in parallel with Phases 1-4 if the team stays within declarative rendering contracts.
 
 ---
 
@@ -373,14 +305,15 @@ Update this table as work progresses.
 
 | Phase | Owner | Branch/PR | Started | Completed | Notes |
 | --- | --- | --- | --- | --- | --- |
-| 1 | Active | local working tree | 2026-03-06 |  | Phase 1A/1B landed across `services/agent-host` and desktop web: durable ledger, restart interruption marking, additive `recoverableSessions`, sidebar/bootstrap recovery consumption; remaining explicit close-out = manual desktop smoke. Rollback = remove ledger + desktop recovery consumption and delete `~/.pi/agent/graphone/session-ledger.json` |
-| 2 | Unassigned |  |  |  | Capabilities + reflection |
-| 3 | Unassigned |  |  |  | Frontend service client extraction |
-| 4 | Unassigned |  |  |  | Desktop shell adapter |
-| 5 | Unassigned |  |  |  | HTTP + WebSocket transport |
-| 6 | Unassigned |  |  |  | Browser mode v1 |
-| 7 | Unassigned |  |  |  | Declarative UI extensibility |
-| 8 | Unassigned |  |  |  | Plugin foundation |
+| 0 | Completed | docs refresh | 2026-03-07 | 2026-03-07 | Planning reset after ledger revert |
+| 1 | Unassigned |  |  |  | Capabilities + reflection baseline |
+| 2 | Unassigned |  |  |  | Frontend service client extraction |
+| 3 | Unassigned |  |  |  | Desktop shell adapter |
+| 4 | Unassigned |  |  |  | HTTP + WebSocket transport |
+| 5 | Unassigned |  |  |  | Browser mode v1 |
+| 6 | Unassigned |  |  |  | Declarative UI extensibility |
+| 7 | Unassigned |  |  |  | Plugin foundation |
+| 8 | Backlog |  |  |  | Recovery hardening revisit (post-boundary stabilization) |
 
 ---
 
@@ -407,5 +340,4 @@ When choosing what to do next, prefer work that:
 3. reduces Tauri coupling in shared UI
 4. keeps browser mode easier later
 5. formalizes declarative extension points before executable ones
-
-That keeps the implementation aligned with the architecture and with the recovery requirement.
+6. delays risky recovery redesign until core service/client seams are stable

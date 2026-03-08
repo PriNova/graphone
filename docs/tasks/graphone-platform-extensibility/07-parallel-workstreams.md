@@ -423,7 +423,7 @@ For maximum parallelism, assign in this order:
 7. WS-F
 8. WS-H
 
-This assignment order should be applied within the higher-level program sequence defined in [`00-sequenced-implementation-roadmap.md`](./00-sequenced-implementation-roadmap.md). In particular, the current recommended first implementation slice is the host recovery ledger in Phase 1.
+This assignment order should be applied within the higher-level program sequence defined in [`00-sequenced-implementation-roadmap.md`](./00-sequenced-implementation-roadmap.md). In particular, the fresh-start recommendation is to begin with WS-A/WS-B capabilities + reflection baseline work, then move into client extraction.
 
 ### Why
 
