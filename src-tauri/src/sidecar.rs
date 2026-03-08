@@ -2,6 +2,7 @@ use std::collections::HashMap;
 use std::env;
 use std::ffi::OsString;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tauri::{AppHandle, Emitter};
@@ -24,6 +25,10 @@ use crate::state::SidecarState;
 use crate::types::{RpcCommand, RpcResponse, SessionEventEnvelope};
 
 const GRAPHONE_HOST_FLAG: &str = "--graphone-host";
+const MAX_AGENT_EVENT_CHARS: usize = 60_000;
+const MAX_AGENT_EVENT_CHUNK_SOURCE_BYTES: usize = 16_000;
+
+static AGENT_EVENT_CHUNK_COUNTER: AtomicU64 = AtomicU64::new(1);
 
 fn path_entries_match(lhs: &Path, rhs: &Path) -> bool {
     #[cfg(windows)]
@@ -69,6 +74,42 @@ fn with_prepended_runtime_path(
     runtime_dir: &Path,
 ) -> tauri_plugin_shell::process::Command {
     command.env("PATH", prepend_path_directory(runtime_dir))
+}
+
+fn split_utf8_by_max_bytes(value: &str, max_bytes: usize) -> Vec<String> {
+    if value.is_empty() {
+        return Vec::new();
+    }
+
+    let mut chunks = Vec::new();
+    let mut start = 0usize;
+
+    while start < value.len() {
+        let mut end = (start + max_bytes).min(value.len());
+        while end > start && !value.is_char_boundary(end) {
+            end -= 1;
+        }
+
+        if end == start {
+            end = value[start..]
+                .char_indices()
+                .nth(1)
+                .map(|(offset, _)| start + offset)
+                .unwrap_or(value.len());
+        }
+
+        chunks.push(value[start..end].to_string());
+        start = end;
+    }
+
+    chunks
+}
+
+fn next_agent_event_chunk_id() -> String {
+    format!(
+        "agent-event-chunk-{}",
+        AGENT_EVENT_CHUNK_COUNTER.fetch_add(1, Ordering::Relaxed)
+    )
 }
 
 #[cfg(not(target_os = "linux"))]
@@ -459,9 +500,8 @@ impl EventHandler {
             }
         }
 
-        // Guard against WebView IPC payload truncation (~64KB on some platforms).
-        const MAX_AGENT_EVENT_CHARS: usize = 60_000;
-
+        // Guard against WebView IPC payload truncation (~64KB on some platforms)
+        // by chunking oversized payloads before they cross the WebView boundary.
         if top_level_type == Some("session_event") {
             match serde_json::from_value::<SessionEventEnvelope>(json.clone()) {
                 Ok(envelope) => {
@@ -494,22 +534,10 @@ impl EventHandler {
             logger::log(format!("Sidecar stdout: {}", shorten_for_log(&raw, 2000)));
         }
 
-        if raw.len() > MAX_AGENT_EVENT_CHARS {
-            logger::log(format!(
-                "Skipping emit of oversized agent-event payload (len={})",
-                raw.len()
-            ));
-            return;
-        }
-
-        if let Err(e) = app.emit("agent-event", raw) {
-            logger::log(format!("Failed to emit agent event: {}", e));
-        }
+        Self::emit_agent_event_payload(app, raw, "agent-event");
     }
 
     fn emit_session_event(app: &AppHandle, session_id: &str, event: serde_json::Value) {
-        const MAX_AGENT_EVENT_CHARS: usize = 60_000;
-
         let payload = serde_json::json!({
             "sessionId": session_id,
             "event": event,
@@ -526,14 +554,6 @@ impl EventHandler {
             }
         };
 
-        if payload_string.len() > MAX_AGENT_EVENT_CHARS {
-            logger::log(format!(
-                "Skipping emit of oversized session_event payload (len={})",
-                payload_string.len()
-            ));
-            return;
-        }
-
         let should_log = payload
             .get("event")
             .and_then(|value| value.get("type"))
@@ -547,8 +567,72 @@ impl EventHandler {
             ));
         }
 
-        if let Err(error) = app.emit("agent-event", payload_string) {
-            logger::log(format!("Failed to emit agent event: {}", error));
+        Self::emit_agent_event_payload(app, payload_string, "session_event");
+    }
+
+    fn emit_agent_event_payload(app: &AppHandle, payload_string: String, payload_kind: &str) {
+        if payload_string.len() <= MAX_AGENT_EVENT_CHARS {
+            if let Err(error) = app.emit("agent-event", payload_string) {
+                logger::log(format!("Failed to emit agent event: {}", error));
+            }
+            return;
+        }
+
+        let chunks = split_utf8_by_max_bytes(&payload_string, MAX_AGENT_EVENT_CHUNK_SOURCE_BYTES);
+        let chunk_count = chunks.len();
+        let chunk_id = next_agent_event_chunk_id();
+
+        logger::log(format!(
+            "Chunking oversized {} payload (len={}, chunks={})",
+            payload_kind,
+            payload_string.len(),
+            chunk_count
+        ));
+
+        for (chunk_index, payload_chunk) in chunks.into_iter().enumerate() {
+            let chunk_payload = serde_json::json!({
+                "type": "agent_event_chunk",
+                "chunkId": chunk_id.clone(),
+                "chunkIndex": chunk_index,
+                "chunkCount": chunk_count,
+                "payloadChunk": payload_chunk,
+            });
+
+            let chunk_payload_string = match serde_json::to_string(&chunk_payload) {
+                Ok(value) => value,
+                Err(error) => {
+                    logger::log(format!(
+                        "Failed to serialize {} chunk {}/{}: {}",
+                        payload_kind,
+                        chunk_index + 1,
+                        chunk_count,
+                        error
+                    ));
+                    return;
+                }
+            };
+
+            if chunk_payload_string.len() > MAX_AGENT_EVENT_CHARS {
+                logger::log(format!(
+                    "Skipping {} chunk {}/{} because serialized chunk payload is still oversized (len={})",
+                    payload_kind,
+                    chunk_index + 1,
+                    chunk_count,
+                    chunk_payload_string.len()
+                ));
+                return;
+            }
+
+            if let Err(error) = app.emit("agent-event", chunk_payload_string) {
+                logger::log(format!(
+                    "Failed to emit {} chunk {}/{}: {}",
+                    payload_kind,
+                    chunk_index + 1,
+                    chunk_count,
+                    error
+                ));
+                return;
+            }
         }
     }
 

@@ -455,7 +455,14 @@ export class MessagesStore {
       return;
     }
 
-    this.applyToolResult(normalized, true);
+    const existing = this.toolResultsByCallId[normalized.toolCallId];
+    const preferred =
+      existing &&
+      !MessagesStore.shouldReplaceStoredToolResult(existing, normalized)
+        ? existing
+        : normalized;
+
+    this.applyToolResult(preferred, true);
   }
 
   upsertToolPartialResult(result: ToolResultMessage): void {
@@ -465,6 +472,34 @@ export class MessagesStore {
     }
 
     this.applyToolResult(normalized, false);
+  }
+
+  private static estimateToolResultPayloadSize(result: {
+    content: ToolResultMessage["content"];
+    details?: unknown;
+  }): number {
+    try {
+      return JSON.stringify({
+        content: result.content,
+        details: result.details,
+      }).length;
+    } catch {
+      return 0;
+    }
+  }
+
+  private static shouldReplaceStoredToolResult(
+    existing: ToolResultMessage,
+    incoming: ToolResultMessage,
+  ): boolean {
+    const existingSize = MessagesStore.estimateToolResultPayloadSize(existing);
+    const incomingSize = MessagesStore.estimateToolResultPayloadSize(incoming);
+
+    if (incomingSize !== existingSize) {
+      return incomingSize > existingSize;
+    }
+
+    return incoming.timestamp >= existing.timestamp;
   }
 
   getToolResult(toolCallId: string): ToolResultMessage | undefined {
