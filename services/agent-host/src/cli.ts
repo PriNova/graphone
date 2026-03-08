@@ -1,12 +1,12 @@
 #!/usr/bin/env node
 
-import * as readline from "node:readline";
 import { delimiter, dirname } from "node:path";
 
 import { main as runPiCliMain } from "@mariozechner/pi-coding-agent";
 
 import { handleHostCommand } from "./commands.js";
 import { HostRuntime } from "./host-runtime.js";
+import { attachJsonlLineReader, serializeJsonLine } from "./jsonl.js";
 import {
   failure,
   type HostCommand,
@@ -58,7 +58,7 @@ class LineWriter {
   private writing = false;
 
   writeObject(value: HostResponse | SessionEventEnvelope): void {
-    this.queue.push(`${JSON.stringify(value)}\n`);
+    this.queue.push(serializeJsonLine(value));
     this.flush();
   }
 
@@ -98,12 +98,7 @@ function runHostMode(): void {
   });
   const startupPromise = runtime.initialize();
 
-  const rl = readline.createInterface({
-    input: process.stdin,
-    output: process.stdout,
-    terminal: false,
-  });
-
+  let detachInput = () => {};
   let shuttingDown = false;
   let shouldShutdownAfterQueue = false;
   let commandQueue = startupPromise;
@@ -114,6 +109,8 @@ function runHostMode(): void {
     }
 
     shuttingDown = true;
+    detachInput();
+    process.stdin.pause();
     try {
       await runtime.shutdown();
     } finally {
@@ -159,7 +156,7 @@ function runHostMode(): void {
     }
   }
 
-  rl.on("line", (line) => {
+  detachInput = attachJsonlLineReader(process.stdin, (line) => {
     commandQueue = commandQueue
       .then(() => processLine(line))
       .then(async () => {
@@ -173,7 +170,7 @@ function runHostMode(): void {
       });
   });
 
-  rl.on("close", () => {
+  process.stdin.on("end", () => {
     commandQueue.finally(() => {
       void requestShutdown();
     });

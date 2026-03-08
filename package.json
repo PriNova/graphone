@@ -39,7 +39,7 @@
   },
   "license": "MIT",
   "dependencies": {
-    "@mariozechner/pi-coding-agent": "^0.56.2",
+    "@mariozechner/pi-coding-agent": "0.57.1",
     "@tauri-apps/api": "^2",
     "@tauri-apps/plugin-opener": "^2",
     "@tauri-apps/plugin-store": "^2",
