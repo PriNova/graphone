@@ -31,6 +31,7 @@ Graphone provides a desktop interface for the pi-mono coding agent using Tauri's
 Contributor notes:
 
 - See `CONTRIBUTING.md` for repository workflow and staging guidance.
+- Keep `CHANGELOG.md` updated: add user-visible changes under `Unreleased`, then move them into a versioned section when preparing a tagged release/version bump.
 
 ---
 

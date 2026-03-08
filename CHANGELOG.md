@@ -1,0 +1,147 @@
+# Changelog
+
+## [Unreleased]
+
+## [0.2.4] - 2026-03-08
+
+### Added
+
+- Added a persistent light/dark appearance setting, including settings UI, startup theme bootstrap, cross-window sync, and native window theme mirroring.
+- Added unseen session review indicators in the sidebar for sessions that complete outside the current view, with persisted state when Graphone observed the completion.
+
+## [0.2.3] - 2026-03-08
+
+### Added
+
+- Added stable UUIDv4 internal session IDs for more reliable session and window identity handling.
+
+### Changed
+
+- Updated the bundled `@mariozechner/pi-coding-agent` runtime to `0.57.1` and aligned the host transport with strict LF-only JSONL framing.
+
+### Fixed
+
+- Fixed oversized agent IPC payload handling by chunking large messages instead of sending oversized frames.
+- Fixed HTML tool result rendering for SVG-heavy visualizations.
+
+## [0.2.2] - 2026-03-06
+
+### Added
+
+- Added full expansion for truncated tool results so long outputs can be inspected without losing detail.
+
+### Changed
+
+- Moved provider model catalog sync to startup so model metadata is refreshed earlier in app startup.
+- Removed translucent desktop surfaces for a more consistent desktop presentation.
+- Updated the bundled `@mariozechner/pi-coding-agent` runtime to `0.56.2`.
+
+### Fixed
+
+- Fixed chat column alignment and scroll gutter issues in the main chat layout.
+
+## [0.2.1] - 2026-03-05
+
+### Added
+
+- Added runtime provider model catalog sync into `models.json`.
+- Added OpenAI Codex to runtime model discovery.
+- Added root Tauri build helper scripts for easier desktop build flows.
+
+### Changed
+
+- Refreshed the model registry before model operations and improved model refresh diagnostics.
+
+## [0.2.0] - 2026-03-05
+
+### Changed
+
+- Switched Graphone to the Graphone-local host sidecar multiplexer architecture, consolidating desktop runtime ownership around the host sidecar.
+- Hid title headers in floating session windows for a cleaner dedicated chat surface.
+
+### Fixed
+
+- Improved tool output streaming and chat scroll behavior in active sessions.
+
+## [0.1.10] - 2026-03-04
+
+### Added
+
+- Added floating session windows backed by the canonical chat surface.
+- Added a settings overlay and extension inventory across the desktop app and host runtime.
+
+### Changed
+
+- Replaced compact capsule views with the floating session window workflow.
+- Updated the bundled `@mariozechner/pi-coding-agent` runtime to `0.55.4`.
+
+## [0.1.9] - 2026-03-03
+
+### Added
+
+- Added HTML tool result rendering in chat.
+- Added visible auto-compaction summaries in the Graphone chat surface.
+
+### Changed
+
+- Split runtime and session flows more cleanly across the desktop app, host, and Tauri shell.
+
+## [0.1.8] - 2026-02-28
+
+### Added
+
+- Added multi-window session workflow for the desktop app.
+
+## [0.1.7] - 2026-02-27
+
+### Added
+
+- Added multi-session workflow support.
+
+## [0.1.6] - 2026-02-26
+
+### Changed
+
+- Stabilized compact-mode layout behavior and Linux host interop wording.
+
+### Fixed
+
+- Fixed compact activity previews to include the preceding assistant turn.
+
+## [0.1.5] - 2026-02-23
+
+### Added
+
+- Added login and logout flow support.
+
+## [0.1.4] - 2026-02-23
+
+### Changed
+
+- Stabilized compact rail motion in compact mode.
+
+### Fixed
+
+- Fixed compact activity rail tool chip borders.
+
+## [0.1.3] - 2026-02-23
+
+## [0.1.2] - 2026-02-23
+
+## [0.1.1] - 2026-02-23
+
+### Added
+
+- Added the initial Tauri + Svelte desktop application scaffold and Graphone sidecar integration.
+- Added Linux and Windows desktop build flows, including portable Windows runtime staging and cross-compilation support.
+- Added slash commands, model/provider display, model scoping, thinking-level controls, current working directory display, and persistent UI state.
+- Added multi-session host architecture with session lifecycle RPC, session sidebar/history/restore flows, inline tool results, markdown rendering, and new chat controls.
+- Added image attachments, compact mode workflow, status bar token usage, thinking block collapsing, and safe markdown/code highlighting.
+
+### Changed
+
+- Moved the desktop runtime to a host-driven multi-session architecture with strict NDJSON communication between frontend, Tauri shell, and sidecar.
+
+### Fixed
+
+- Improved streaming reliability, scroll pinning, prompt UI behavior, idempotent session start handling, sidecar backpressure handling, release logging behavior, and Linux sidecar packaging/startup.
