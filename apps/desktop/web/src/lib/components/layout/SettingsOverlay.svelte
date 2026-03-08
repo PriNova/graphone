@@ -1,7 +1,9 @@
 <script lang="ts">
   import type { RegisteredExtensionSummary } from "$lib/stores/agent.svelte";
+  import type { UiTheme } from "$lib/theme/app-theme";
 
   interface Props {
+    theme?: UiTheme;
     toolResultsCollapsedByDefault?: boolean;
     thinkingCollapsedByDefault?: boolean;
     isExtensionsLoading?: boolean;
@@ -9,11 +11,13 @@
     globalExtensions?: RegisteredExtensionSummary[];
     localExtensions?: RegisteredExtensionSummary[];
     extensionLoadDiagnostics?: Array<{ path: string; error: string }>;
+    onthemechange?: (theme: UiTheme) => void | Promise<void>;
     ontoolresultscollapsedchange?: (collapsed: boolean) => void | Promise<void>;
     onthinkingcollapsedchange?: (collapsed: boolean) => void | Promise<void>;
   }
 
   let {
+    theme = "dark",
     toolResultsCollapsedByDefault = true,
     thinkingCollapsedByDefault = true,
     isExtensionsLoading = false,
@@ -21,9 +25,13 @@
     globalExtensions = [],
     localExtensions = [],
     extensionLoadDiagnostics = [],
+    onthemechange,
     ontoolresultscollapsedchange,
     onthinkingcollapsedchange,
   }: Props = $props();
+
+  const appearanceHint =
+    "Choose whether Graphone uses the light or dark theme.";
   const toolResultsCollapseHint =
     "When enabled, new tool result blocks start collapsed.";
   const thinkingCollapseHint =
@@ -51,6 +59,16 @@
     return bits.length > 0 ? bits.join(" • ") : "No commands or tools";
   }
 
+  async function handleThemeChange(event: Event): Promise<void> {
+    const target = event.currentTarget as HTMLInputElement;
+    if (
+      target.checked &&
+      (target.value === "light" || target.value === "dark")
+    ) {
+      await onthemechange?.(target.value);
+    }
+  }
+
   async function handleToolResultsCollapsedChange(event: Event): Promise<void> {
     const target = event.currentTarget as HTMLInputElement;
     await ontoolresultscollapsedchange?.(target.checked);
@@ -72,6 +90,52 @@
   </header>
 
   <div class="flex-1 min-h-0 overflow-y-auto p-6 space-y-6">
+    <section class="rounded-lg border border-border bg-card p-4">
+      <h3 class="text-sm font-semibold text-foreground" title={appearanceHint}>
+        Appearance
+      </h3>
+
+      <div class="mt-4 grid gap-3 sm:grid-cols-2">
+        <label
+          class="flex items-start gap-2.5 rounded border border-border bg-surface p-3"
+        >
+          <input
+            type="radio"
+            name="theme"
+            value="dark"
+            class="mt-0.5 h-4 w-4 border-border"
+            checked={theme === "dark"}
+            onchange={handleThemeChange}
+          />
+          <span>
+            <span class="block text-sm text-foreground">Dark</span>
+            <span class="block text-xs text-muted-foreground">
+              Dark surfaces with light text.
+            </span>
+          </span>
+        </label>
+
+        <label
+          class="flex items-start gap-2.5 rounded border border-border bg-surface p-3"
+        >
+          <input
+            type="radio"
+            name="theme"
+            value="light"
+            class="mt-0.5 h-4 w-4 border-border"
+            checked={theme === "light"}
+            onchange={handleThemeChange}
+          />
+          <span>
+            <span class="block text-sm text-foreground">Light</span>
+            <span class="block text-xs text-muted-foreground">
+              Light surfaces with dark text.
+            </span>
+          </span>
+        </label>
+      </div>
+    </section>
+
     <section class="rounded-lg border border-border bg-card p-4">
       <h3 class="text-sm font-semibold text-foreground">Message Blocks</h3>
 

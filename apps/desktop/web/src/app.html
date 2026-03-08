@@ -1,10 +1,29 @@
 <!doctype html>
-<html lang="en" class="dark">
+<html lang="en">
   <head>
     <meta charset="utf-8" />
+    <script>
+      (() => {
+        const storageKey = "graphone.ui.theme";
+        let theme = "dark";
+
+        try {
+          const stored = window.localStorage.getItem(storageKey);
+          if (stored === "light" || stored === "dark") {
+            theme = stored;
+          }
+        } catch {
+          // Ignore localStorage failures and fall back to the default theme.
+        }
+
+        document.documentElement.classList.toggle("dark", theme === "dark");
+        document.documentElement.setAttribute("data-theme", theme);
+        document.documentElement.style.colorScheme = theme;
+      })();
+    </script>
     <link rel="icon" href="%sveltekit.assets%/favicon.png" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Tauri + SvelteKit + Typescript App</title>
+    <title>Graphone</title>
     %sveltekit.head%
   </head>
   <body data-sveltekit-preload-data="hover">

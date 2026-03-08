@@ -14,6 +14,7 @@
   import type { SessionDescriptor } from "$lib/stores/sessions.svelte";
   import type { Message, PromptImageAttachment } from "$lib/types/agent";
   import type { SessionRuntime } from "$lib/types/session";
+  import type { UiTheme } from "$lib/theme/app-theme";
 
   interface Props {
     projectScopes?: string[];
@@ -56,6 +57,7 @@
     globalExtensions?: RegisteredExtensionSummary[];
     localExtensions?: RegisteredExtensionSummary[];
     extensionLoadDiagnostics?: Array<{ path: string; error: string }>;
+    theme?: UiTheme;
     toolResultsCollapsedByDefault?: boolean;
     thinkingCollapsedByDefault?: boolean;
     showSidebar?: boolean;
@@ -100,6 +102,7 @@
     onmodelchange?: (provider: string, modelId: string) => void | Promise<void>;
     onthinkingchange?: (level: ThinkingLevel) => void | Promise<void>;
     onmodelfilterchange?: (mode: "all" | "enabled") => void | Promise<void>;
+    onthemechange?: (theme: UiTheme) => void | Promise<void>;
     ontoolresultscollapsedchange?: (collapsed: boolean) => void | Promise<void>;
     onthinkingcollapsedchange?: (collapsed: boolean) => void | Promise<void>;
   }
@@ -145,6 +148,7 @@
     globalExtensions = [],
     localExtensions = [],
     extensionLoadDiagnostics = [],
+    theme = "dark",
     toolResultsCollapsedByDefault = true,
     thinkingCollapsedByDefault = true,
     showSidebar = true,
@@ -173,6 +177,7 @@
     onmodelchange,
     onthinkingchange,
     onmodelfilterchange,
+    onthemechange,
     ontoolresultscollapsedchange,
     onthinkingcollapsedchange,
   }: Props = $props();
@@ -429,6 +434,7 @@
 
     {#if settingsOpen}
       <SettingsOverlay
+        {theme}
         {toolResultsCollapsedByDefault}
         {thinkingCollapsedByDefault}
         {isExtensionsLoading}
@@ -436,6 +442,7 @@
         {globalExtensions}
         {localExtensions}
         {extensionLoadDiagnostics}
+        {onthemechange}
         {ontoolresultscollapsedchange}
         {onthinkingcollapsedchange}
       />

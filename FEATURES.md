@@ -37,6 +37,8 @@ This page helps you quickly understand what to expect from **Graphone** today, e
 ### Settings & extension visibility
 
 - Settings overlay for message block defaults
+- Light/dark appearance toggle in Settings
+- Theme selection persists across app restarts and syncs across open Graphone windows
 - Registered extensions list in Settings, grouped by **Global** (`~/.pi/agent`) and **Local** (`.pi`) scope
 - Extension load diagnostics visible in Settings (when extension loading reports errors)
 

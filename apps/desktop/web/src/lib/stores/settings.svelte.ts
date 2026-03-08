@@ -1,9 +1,16 @@
 import { LazyStore } from "@tauri-apps/plugin-store";
+import {
+  getBootstrappedUiTheme,
+  isUiTheme,
+  type UiTheme,
+} from "$lib/theme/app-theme";
 
 /**
  * UI settings that persist across app restarts.
  */
 export interface UiSettings {
+  /** App theme preference */
+  theme: UiTheme;
   /** Project scope paths that are collapsed in the sidebar */
   collapsedScopes: string[];
   /** The last selected project scope path */
@@ -17,6 +24,7 @@ export interface UiSettings {
 }
 
 const DEFAULT_SETTINGS: UiSettings = {
+  theme: "dark",
   collapsedScopes: [],
   lastSelectedScope: "",
   modelFilter: "enabled",
@@ -40,6 +48,7 @@ export class SettingsStore {
     autoSave: 100, // Auto-save with 100ms debounce
   });
 
+  theme = $state<UiTheme>(getBootstrappedUiTheme());
   collapsedScopes = $state<string[]>([]);
   lastSelectedScope = $state<string>("");
   modelFilter = $state<"all" | "enabled">("enabled");
@@ -66,18 +75,22 @@ export class SettingsStore {
       await this.store.init();
 
       const [
+        theme,
         collapsedScopes,
         lastSelectedScope,
         modelFilter,
         toolResultsCollapsedByDefault,
         thinkingCollapsedByDefault,
       ] = await Promise.all([
+        this.store.get<UiTheme>("ui.theme"),
         this.store.get<string[]>("ui.collapsedScopes"),
         this.store.get<string>("ui.lastSelectedScope"),
         this.store.get<"all" | "enabled">("ui.modelFilter"),
         this.store.get<boolean>("ui.toolResultsCollapsedByDefault"),
         this.store.get<boolean>("ui.thinkingCollapsedByDefault"),
       ]);
+
+      this.theme = isUiTheme(theme) ? theme : this.theme;
 
       this.collapsedScopes = Array.isArray(collapsedScopes)
         ? collapsedScopes.filter((s) => typeof s === "string")
@@ -116,6 +129,7 @@ export class SettingsStore {
    */
   async save(): Promise<void> {
     try {
+      await this.store.set("ui.theme", this.theme);
       await this.store.set("ui.collapsedScopes", this.collapsedScopes);
       await this.store.set("ui.lastSelectedScope", this.lastSelectedScope);
       await this.store.set("ui.modelFilter", this.modelFilter);
@@ -133,6 +147,17 @@ export class SettingsStore {
       this.error = err instanceof Error ? err.message : String(err);
       console.error("Failed to save settings:", err);
     }
+  }
+
+  // --- Theme ---
+
+  async setTheme(theme: UiTheme): Promise<void> {
+    this.theme = theme;
+    await this.store.set("ui.theme", theme);
+  }
+
+  setThemeState(theme: UiTheme): void {
+    this.theme = theme;
   }
 
   // --- Collapsed Scopes ---
@@ -195,6 +220,7 @@ export class SettingsStore {
    * Reset all settings to defaults.
    */
   async reset(): Promise<void> {
+    this.theme = DEFAULT_SETTINGS.theme;
     this.collapsedScopes = DEFAULT_SETTINGS.collapsedScopes;
     this.lastSelectedScope = DEFAULT_SETTINGS.lastSelectedScope;
     this.modelFilter = DEFAULT_SETTINGS.modelFilter;

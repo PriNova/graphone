@@ -41,6 +41,7 @@
   } from "$lib/stores/sessions.svelte";
   import { sessionAttentionStore } from "$lib/stores/sessionAttention.svelte";
   import { settingsStore } from "$lib/stores/settings.svelte";
+  import { broadcastUiTheme, type UiTheme } from "$lib/theme/app-theme";
   import type { PromptImageAttachment } from "$lib/types/agent";
   import type { SessionRuntime } from "$lib/types/session";
   import {
@@ -867,6 +868,11 @@
     await settingsStore.setModelFilter(mode);
   }
 
+  async function onThemeChange(theme: UiTheme): Promise<void> {
+    await settingsStore.setTheme(theme);
+    await broadcastUiTheme(theme);
+  }
+
   async function onToolResultsCollapsedChange(
     collapsed: boolean,
   ): Promise<void> {
@@ -1161,6 +1167,7 @@
   {isSettingModel}
   {isSettingThinking}
   modelFilter={settingsStore.modelFilter}
+  theme={settingsStore.theme}
   toolResultsCollapsedByDefault={settingsStore.toolResultsCollapsedByDefault}
   thinkingCollapsedByDefault={settingsStore.thinkingCollapsedByDefault}
   {chatHasMessages}
@@ -1202,6 +1209,7 @@
   onmodelchange={onModelChange}
   onthinkingchange={onThinkingChange}
   onmodelfilterchange={onModelFilterChange}
+  onthemechange={onThemeChange}
   ontoolresultscollapsedchange={onToolResultsCollapsedChange}
   onthinkingcollapsedchange={onThinkingCollapsedChange}
 />

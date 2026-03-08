@@ -1,5 +1,7 @@
 @import "tailwindcss";
 
+@custom-variant dark (&:where(.dark, .dark *));
+
 @theme {
   /* Disable all builtin colors - we use our own palette */
   --color-*: initial;
@@ -102,8 +104,8 @@
 
 @layer base {
   :root {
-    /* Force dark color-scheme for native form controls (select dropdowns, etc.) */
-    color-scheme: dark;
+    /* Match native form controls to the active light theme by default */
+    color-scheme: light;
 
     /* Core colors - Light mode */
     --background: #fafaf8;
@@ -148,6 +150,7 @@
   /* Dark mode - explicit selector for forced dark mode */
   :root.dark,
   html.dark {
+    color-scheme: dark;
     --background: #0b0d0b;
     --foreground: #f6fff5;
     --border: #242824;
