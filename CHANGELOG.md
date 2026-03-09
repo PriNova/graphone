@@ -2,6 +2,20 @@
 
 ## [Unreleased]
 
+## [0.2.5] - 2026-03-09
+
+### Added
+
+- Added `!command` / `!!command` prompt behavior with live bash execution rendering in chat and persisted bash execution history.
+
+### Changed
+
+- Improved streaming thinking blocks so active reasoning clearly shows a running state while it is still in progress.
+
+### Fixed
+
+- Fixed Windows bang-command shell behavior by aligning `!` / `!!` execution with pi's bash shell resolution.
+
 ## [0.2.4] - 2026-03-08
 
 ### Added
