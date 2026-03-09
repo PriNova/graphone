@@ -1,6 +1,6 @@
 # Graphone Feature Availability (User Guide)
 
-_Last updated: 2026-03-08_
+_Last updated: 2026-03-09_
 
 This page helps you quickly understand what to expect from **Graphone** today, especially if you already know the pi terminal app (TUI).
 
@@ -79,6 +79,10 @@ This page helps you quickly understand what to expect from **Graphone** today, e
 
 - Image attachments in the prompt composer (paste, drag/drop, file picker)
 
+### Input command flow
+
+- `!command` / `!!command` prompt behavior
+
 ---
 
 ## 🟡 Available with limitations
@@ -123,7 +127,6 @@ This page helps you quickly understand what to expect from **Graphone** today, e
 ### Input command flow
 
 - `@` file reference picker in the input box
-- `!command` / `!!command` prompt behavior
 
 ### Advanced command/workflow parity
 

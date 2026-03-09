@@ -1,3 +1,4 @@
+import { spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
@@ -9,9 +10,11 @@ import type { ImageContent } from "@mariozechner/pi-ai";
 import {
   AuthStorage,
   createAgentSession,
+  getShellConfig,
   ModelRegistry,
   SessionManager,
   type AgentSession,
+  type BashOperations,
 } from "@mariozechner/pi-coding-agent";
 
 import {
@@ -93,6 +96,14 @@ interface ModelCatalogSyncResult {
   errors: Array<{ provider: string; error: string }>;
 }
 
+interface BashCommandResult {
+  output: string;
+  exitCode: number | undefined;
+  cancelled: boolean;
+  truncated: boolean;
+  fullOutputPath?: string;
+}
+
 interface DiscoveredModelCatalogEntry {
   id: string;
   name?: string;
@@ -108,6 +119,120 @@ const DISCOVERABLE_APIS = new Set([
   "openai-responses",
   "openai-codex-responses",
 ]);
+
+function createSessionScopedBashOperations(cwd: string): BashOperations {
+  return {
+    exec: async (command, _cwd, options) => {
+      const { shell, args } = getShellConfig();
+
+      return await new Promise<{ exitCode: number | null }>(
+        (resolve, reject) => {
+          const child = spawn(shell, [...args, command], {
+            cwd,
+            env: {
+              ...process.env,
+              ...(options.env ?? {}),
+            },
+            stdio: ["ignore", "pipe", "pipe"],
+            detached: process.platform !== "win32",
+          });
+
+          let settled = false;
+          let abortTimer: ReturnType<typeof setTimeout> | null = null;
+
+          const finalize = (callback: () => void): void => {
+            if (settled) {
+              return;
+            }
+
+            settled = true;
+
+            if (abortTimer) {
+              clearTimeout(abortTimer);
+              abortTimer = null;
+            }
+
+            if (options.signal) {
+              options.signal.removeEventListener("abort", abortHandler);
+            }
+
+            callback();
+          };
+
+          const abortHandler = (): void => {
+            if (child.exitCode !== null || child.killed) {
+              return;
+            }
+
+            if (process.platform === "win32") {
+              child.kill();
+              return;
+            }
+
+            const pid = child.pid;
+            if (!pid) {
+              child.kill();
+              return;
+            }
+
+            try {
+              process.kill(-pid, "SIGTERM");
+            } catch {
+              child.kill("SIGTERM");
+            }
+
+            abortTimer = setTimeout(() => {
+              if (child.exitCode !== null || child.killed) {
+                return;
+              }
+
+              try {
+                process.kill(-pid, "SIGKILL");
+              } catch {
+                child.kill("SIGKILL");
+              }
+            }, 250);
+          };
+
+          if (options.signal) {
+            if (options.signal.aborted) {
+              abortHandler();
+            } else {
+              options.signal.addEventListener("abort", abortHandler, {
+                once: true,
+              });
+            }
+          }
+
+          child.stdout?.on("data", (data: Buffer) => {
+            options.onData(data);
+          });
+
+          child.stderr?.on("data", (data: Buffer) => {
+            options.onData(data);
+          });
+
+          child.once("error", (error) => {
+            finalize(() => reject(error));
+          });
+
+          child.once("close", (code) => {
+            finalize(() => resolve({ exitCode: code }));
+          });
+        },
+      );
+    },
+  };
+}
+
+function wrapBashOperationsWithCwd(
+  operations: BashOperations,
+  cwd: string,
+): BashOperations {
+  return {
+    exec: (command, _cwd, options) => operations.exec(command, cwd, options),
+  };
+}
 
 export class HostRuntime {
   private readonly sessions = new Map<string, HostedSession>();
@@ -296,6 +421,130 @@ export class HostRuntime {
   async abort(sessionId: string): Promise<void> {
     const session = this.requireSession(sessionId, "abort");
     await session.abort();
+  }
+
+  async bash(
+    sessionId: string,
+    command: string,
+    excludeFromContext = false,
+  ): Promise<BashCommandResult> {
+    const hosted = this.requireHostedSession(sessionId, "bash");
+    const session = hosted.session;
+
+    if (session.isBashRunning) {
+      throw new Error("A bash command is already running for this session.");
+    }
+
+    const emitBashEvent = (event: Record<string, unknown>): void => {
+      this.emitSessionEvent({
+        type: "session_event",
+        sessionId,
+        event,
+      });
+    };
+
+    emitBashEvent({
+      type: "bash_execution_start",
+      command,
+      excludeFromContext,
+      timestamp: Date.now(),
+    });
+
+    const extensionRunner = session.extensionRunner;
+    const eventResult = extensionRunner?.hasHandlers("user_bash")
+      ? await extensionRunner.emitUserBash({
+          type: "user_bash",
+          command,
+          excludeFromContext,
+          cwd: hosted.cwd,
+        })
+      : undefined;
+
+    if (eventResult?.result) {
+      session.recordBashResult(command, eventResult.result, {
+        excludeFromContext,
+      });
+
+      emitBashEvent({
+        type: "bash_execution_end",
+        command,
+        output: eventResult.result.output,
+        exitCode: eventResult.result.exitCode,
+        cancelled: eventResult.result.cancelled,
+        truncated: eventResult.result.truncated,
+        fullOutputPath: eventResult.result.fullOutputPath,
+        excludeFromContext,
+        timestamp: Date.now(),
+      });
+
+      return {
+        output: eventResult.result.output,
+        exitCode: eventResult.result.exitCode,
+        cancelled: eventResult.result.cancelled,
+        truncated: eventResult.result.truncated,
+        fullOutputPath: eventResult.result.fullOutputPath,
+      };
+    }
+
+    const operations = eventResult?.operations
+      ? wrapBashOperationsWithCwd(eventResult.operations, hosted.cwd)
+      : createSessionScopedBashOperations(hosted.cwd);
+
+    try {
+      const result = await session.executeBash(
+        command,
+        (chunk) => {
+          if (chunk.length === 0) {
+            return;
+          }
+
+          emitBashEvent({
+            type: "bash_execution_update",
+            chunk,
+          });
+        },
+        {
+          excludeFromContext,
+          operations,
+        },
+      );
+
+      emitBashEvent({
+        type: "bash_execution_end",
+        command,
+        output: result.output,
+        exitCode: result.exitCode,
+        cancelled: result.cancelled,
+        truncated: result.truncated,
+        fullOutputPath: result.fullOutputPath,
+        excludeFromContext,
+        timestamp: Date.now(),
+      });
+
+      return {
+        output: result.output,
+        exitCode: result.exitCode,
+        cancelled: result.cancelled,
+        truncated: result.truncated,
+        fullOutputPath: result.fullOutputPath,
+      };
+    } catch (error) {
+      emitBashEvent({
+        type: "bash_execution_end",
+        command,
+        output: "",
+        cancelled: false,
+        truncated: false,
+        excludeFromContext,
+        timestamp: Date.now(),
+      });
+      throw error;
+    }
+  }
+
+  async abortBash(sessionId: string): Promise<void> {
+    const session = this.requireSession(sessionId, "abort_bash");
+    session.abortBash();
   }
 
   async newSession(sessionId: string): Promise<{ cancelled: boolean }> {
@@ -1453,10 +1702,10 @@ export class HostRuntime {
     };
   }
 
-  private requireSession(
+  private requireHostedSession(
     sessionId: string | undefined,
     command: string,
-  ): AgentSession {
+  ): HostedSession {
     const normalized = sessionId?.trim();
     if (!normalized) {
       throw new Error(`sessionId is required for ${command}`);
@@ -1467,6 +1716,13 @@ export class HostRuntime {
       throw new Error(`Unknown sessionId: ${normalized}`);
     }
 
-    return hosted.session;
+    return hosted;
+  }
+
+  private requireSession(
+    sessionId: string | undefined,
+    command: string,
+  ): AgentSession {
+    return this.requireHostedSession(sessionId, command).session;
   }
 }

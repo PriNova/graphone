@@ -66,6 +66,14 @@ interface NewSessionResponseData {
   cancelled?: unknown;
 }
 
+interface BashCommandResponseData {
+  output?: unknown;
+  exitCode?: unknown;
+  cancelled?: unknown;
+  truncated?: unknown;
+  fullOutputPath?: unknown;
+}
+
 interface RegisteredExtensionsResponseData {
   global?: unknown;
   local?: unknown;
@@ -78,6 +86,7 @@ export class AgentStore {
 
   sessionStarted = $state(false);
   isLoading = $state(false);
+  isBashRunning = $state(false);
   isModelsLoading = $state(false);
   isSettingModel = $state(false);
   error = $state<string | null>(null);
@@ -393,12 +402,73 @@ export class AgentStore {
     );
   }
 
+  async sendBashCommand(
+    command: string,
+    excludeFromContext = false,
+  ): Promise<{
+    output: string;
+    exitCode?: number;
+    cancelled: boolean;
+    truncated: boolean;
+    fullOutputPath?: string;
+  }> {
+    if (!this.sessionStarted) {
+      throw new Error("Agent session not started");
+    }
+
+    if (this.isBashRunning) {
+      throw new Error("A bash command is already running for this session.");
+    }
+
+    this.isBashRunning = true;
+    this.isLoading = true;
+
+    try {
+      const data = await invokeAgentRpc<BashCommandResponseData>(
+        "send_bash_command",
+        {
+          command,
+          sessionId: this.sessionId,
+          excludeFromContext,
+        },
+        "Failed to execute bash command",
+      );
+
+      return {
+        output: typeof data?.output === "string" ? data.output : "",
+        exitCode:
+          typeof data?.exitCode === "number" && Number.isFinite(data.exitCode)
+            ? data.exitCode
+            : undefined,
+        cancelled: data?.cancelled === true,
+        truncated: data?.truncated === true,
+        fullOutputPath:
+          typeof data?.fullOutputPath === "string"
+            ? data.fullOutputPath
+            : undefined,
+      };
+    } finally {
+      this.isBashRunning = false;
+      this.isLoading = false;
+    }
+  }
+
   async abort(): Promise<void> {
     await invokeAgentCommand(
       "abort_agent",
       { sessionId: this.sessionId },
       "Failed to abort agent",
     ).catch(console.error);
+    this.isLoading = false;
+  }
+
+  async abortBash(): Promise<void> {
+    await invokeAgentRpc<unknown>(
+      "abort_bash",
+      { sessionId: this.sessionId },
+      "Failed to abort bash command",
+    ).catch(console.error);
+    this.isBashRunning = false;
     this.isLoading = false;
   }
 

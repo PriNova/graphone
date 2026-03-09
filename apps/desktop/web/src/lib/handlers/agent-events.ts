@@ -522,6 +522,44 @@ export function handleToolExecutionEnd(
   }
 }
 
+export function handleBashExecutionStart(
+  runtime: SessionRuntimeForEvents,
+  event: Extract<AgentEvent, { type: "bash_execution_start" }>,
+): void {
+  runtime.messages.startStreamingBashExecution({
+    command: event.command,
+    excludeFromContext: event.excludeFromContext,
+    timestamp: event.timestamp,
+  });
+}
+
+export function handleBashExecutionUpdate(
+  runtime: SessionRuntimeForEvents,
+  event: Extract<AgentEvent, { type: "bash_execution_update" }>,
+): void {
+  runtime.messages.appendStreamingBashOutput(event.chunk);
+}
+
+export function handleBashExecutionEnd(
+  runtime: SessionRuntimeForEvents,
+  event: Extract<AgentEvent, { type: "bash_execution_end" }>,
+): void {
+  runtime.messages.finalizeStreamingBashExecution({
+    command: event.command,
+    output: event.output,
+    exitCode: event.exitCode,
+    cancelled: event.cancelled,
+    truncated: event.truncated,
+    fullOutputPath: event.fullOutputPath,
+    excludeFromContext: event.excludeFromContext,
+    timestamp: event.timestamp,
+  });
+
+  runtime.agent.refreshState().catch((error) => {
+    console.warn("Failed to refresh agent state after bash execution:", error);
+  });
+}
+
 // Main event router
 export function handleAgentEvent(
   runtime: SessionRuntimeForEvents,
@@ -566,6 +604,18 @@ export function handleAgentEvent(
 
     case "tool_execution_end":
       handleToolExecutionEnd(runtime, event);
+      break;
+
+    case "bash_execution_start":
+      handleBashExecutionStart(runtime, event);
+      break;
+
+    case "bash_execution_update":
+      handleBashExecutionUpdate(runtime, event);
+      break;
+
+    case "bash_execution_end":
+      handleBashExecutionEnd(runtime, event);
       break;
 
     case "auto_compaction_start":

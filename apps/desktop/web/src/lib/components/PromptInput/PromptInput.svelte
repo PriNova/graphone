@@ -1,6 +1,7 @@
 <script lang="ts">
   import { invoke } from "@tauri-apps/api/core";
   import { cn } from "$lib/utils/cn";
+  import { parseBangCommand } from "$lib/handlers/commands";
   import {
     parseSlashCommand,
     isKnownSlashCommand,
@@ -243,6 +244,28 @@
   const commandHandler = $derived(
     parsedCommand ? getCommandHandler(parsedCommand.command) : null,
   );
+
+  const bangPrefixMode = $derived.by(() => {
+    const trimmed = internalValue.trim();
+    if (trimmed.startsWith("!!")) {
+      return "exclude" as const;
+    }
+    if (trimmed.startsWith("!")) {
+      return "include" as const;
+    }
+    return null;
+  });
+
+  const parsedBangCommand = $derived(parseBangCommand(internalValue));
+  const bangHintLabel = $derived.by(() => {
+    if (bangPrefixMode === "exclude") {
+      return "Bash • excluded from context";
+    }
+    if (bangPrefixMode === "include") {
+      return "Bash • included in context";
+    }
+    return "";
+  });
 
   // Filter matching commands for autocomplete (show all matches, scrollable)
   const matchingCommands = $derived.by(() => {
@@ -880,13 +903,78 @@
     {/if}
 
     <div class="relative">
+      {#if bangPrefixMode}
+        <div class="px-3 pt-2 pb-0.5">
+          <span
+            class={cn(
+              "inline-flex max-w-[calc(100%-7rem)] items-center gap-1.5 rounded-full border px-2 py-1 text-[11px] font-medium transition-colors",
+              bangPrefixMode === "include"
+                ? "border-success/30 bg-success/8 text-success"
+                : "border-border bg-surface-active text-muted-foreground",
+              !parsedBangCommand && "opacity-80",
+            )}
+          >
+            {#if bangPrefixMode === "include"}
+              <svg
+                class="w-3.5 h-3.5 shrink-0"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+              >
+                <path
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  stroke-width="2"
+                  d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7S1 12 1 12z"
+                />
+                <circle cx="12" cy="12" r="3" stroke-width="2" />
+              </svg>
+            {:else}
+              <svg
+                class="w-3.5 h-3.5 shrink-0"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+              >
+                <path
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  stroke-width="2"
+                  d="M3 3l18 18"
+                />
+                <path
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  stroke-width="2"
+                  d="M10.58 10.58a2 2 0 002.83 2.83"
+                />
+                <path
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  stroke-width="2"
+                  d="M9.88 4.24A10.94 10.94 0 0112 4c5 0 9.27 3.11 11 7.5a11.8 11.8 0 01-4.04 5.19"
+                />
+                <path
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  stroke-width="2"
+                  d="M6.61 6.61A10.93 10.93 0 001 11.5C2.73 15.89 7 19 12 19a10.94 10.94 0 004.24-.85"
+                />
+              </svg>
+            {/if}
+            <span class="truncate">{bangHintLabel}</span>
+          </span>
+        </div>
+      {/if}
+
       <textarea
         bind:this={textareaRef}
         bind:value={internalValue}
         {placeholder}
         {disabled}
         class={cn(
-          "w-full min-h-11 max-h-[40vh] py-2.5 px-4 pr-32 bg-transparent border-none outline-none resize-none text-foreground overflow-y-auto text-base leading-6",
+          "w-full min-h-11 max-h-[40vh] px-4 pr-32 bg-transparent border-none outline-none resize-none text-foreground overflow-y-auto text-base leading-6",
+          bangPrefixMode ? "pt-1 pb-2.5" : "py-2.5",
           "placeholder:text-muted-foreground/60",
           disabled && "cursor-not-allowed",
         )}

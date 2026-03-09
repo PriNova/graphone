@@ -54,12 +54,37 @@ export interface AssistantMessage {
   timestamp: number;
 }
 
+export interface BashExecutionMessage {
+  role: "bashExecution";
+  command: string;
+  output: string;
+  exitCode?: number;
+  cancelled: boolean;
+  truncated: boolean;
+  fullOutputPath?: string;
+  excludeFromContext?: boolean;
+  timestamp: number;
+}
+
 export type Message =
   | { id: string; type: "user"; content: UserContentBlock[]; timestamp: Date }
   | {
       id: string;
       type: "assistant";
       content: ContentBlock[];
+      timestamp: Date;
+      isStreaming?: boolean;
+    }
+  | {
+      id: string;
+      type: "bashExecution";
+      command: string;
+      output: string;
+      exitCode?: number;
+      cancelled: boolean;
+      truncated: boolean;
+      fullOutputPath?: string;
+      excludeFromContext?: boolean;
       timestamp: Date;
       isStreaming?: boolean;
     };
@@ -78,8 +103,15 @@ export function isToolCall(block: ContentBlock): block is ToolCall {
 }
 
 interface AgentEventMessagePayload {
-  role: "user" | "assistant" | "toolResult";
+  role: "user" | "assistant" | "toolResult" | "bashExecution";
   content?: string | unknown[];
+  command?: string;
+  output?: string;
+  exitCode?: number;
+  cancelled?: boolean;
+  truncated?: boolean;
+  fullOutputPath?: string;
+  excludeFromContext?: boolean;
   timestamp?: number;
   toolCallId?: string;
   toolName?: string;
@@ -169,6 +201,30 @@ export interface ToolExecutionEndEvent {
   isError: boolean;
 }
 
+export interface BashExecutionStartEvent {
+  type: "bash_execution_start";
+  command: string;
+  excludeFromContext?: boolean;
+  timestamp?: number;
+}
+
+export interface BashExecutionUpdateEvent {
+  type: "bash_execution_update";
+  chunk: string;
+}
+
+export interface BashExecutionEndEvent {
+  type: "bash_execution_end";
+  command: string;
+  output: string;
+  exitCode?: number;
+  cancelled: boolean;
+  truncated: boolean;
+  fullOutputPath?: string;
+  excludeFromContext?: boolean;
+  timestamp?: number;
+}
+
 export interface AutoCompactionStartEvent {
   type: "auto_compaction_start";
   reason: "threshold" | "overflow";
@@ -211,6 +267,9 @@ export type AgentEvent =
   | ToolExecutionStartEvent
   | ToolExecutionUpdateEvent
   | ToolExecutionEndEvent
+  | BashExecutionStartEvent
+  | BashExecutionUpdateEvent
+  | BashExecutionEndEvent
   | AutoCompactionStartEvent
   | AutoCompactionEndEvent
   | AutoRetryStartEvent

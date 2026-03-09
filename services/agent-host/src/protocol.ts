@@ -6,6 +6,8 @@ export type HostCommandType =
   | "steer"
   | "follow_up"
   | "abort"
+  | "bash"
+  | "abort_bash"
   | "new_session"
   | "get_messages"
   | "get_state"
@@ -56,6 +58,13 @@ export interface SessionMessageCommand extends HostCommandBase {
   images?: HostImageAttachment[];
 }
 
+export interface BashCommand extends HostCommandBase {
+  type: "bash";
+  command?: string;
+  message?: string;
+  excludeFromContext?: boolean;
+}
+
 export interface SetModelCommand extends HostCommandBase {
   type: "set_model";
   provider: string;
@@ -81,6 +90,7 @@ export type HostCommand =
   | CreateSessionCommand
   | PromptCommand
   | SessionMessageCommand
+  | BashCommand
   | SetModelCommand
   | SetThinkingLevelCommand
   | OAuthProviderCommand
@@ -90,6 +100,7 @@ export type HostCommand =
         | "close_session"
         | "list_sessions"
         | "abort"
+        | "abort_bash"
         | "new_session"
         | "get_messages"
         | "get_state"

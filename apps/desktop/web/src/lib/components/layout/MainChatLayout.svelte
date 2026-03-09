@@ -1,5 +1,9 @@
 <script lang="ts">
-  import { AssistantMessage, UserMessage } from "$lib/components/Messages";
+  import {
+    AssistantMessage,
+    BashExecutionMessage,
+    UserMessage,
+  } from "$lib/components/Messages";
   import SettingsOverlay from "$lib/components/layout/SettingsOverlay.svelte";
   import { PromptInput } from "$lib/components/PromptInput";
   import { SessionSidebar } from "$lib/components/SessionSidebar";
@@ -358,6 +362,17 @@
                   <UserMessage
                     content={message.content}
                     timestamp={message.timestamp}
+                  />
+                {:else if message.type === "bashExecution"}
+                  <BashExecutionMessage
+                    command={message.command}
+                    output={message.output}
+                    exitCode={message.exitCode}
+                    cancelled={message.cancelled}
+                    truncated={message.truncated}
+                    fullOutputPath={message.fullOutputPath}
+                    excludeFromContext={message.excludeFromContext}
+                    isStreaming={message.isStreaming}
                   />
                 {:else}
                   <AssistantMessage

@@ -9,6 +9,7 @@
   import {
     handlePromptSubmit,
     handleSlashCommand,
+    parseBangCommand,
   } from "$lib/handlers/commands";
   import {
     isSessionVisibleInCurrentWindow,
@@ -25,6 +26,7 @@
   } from "$lib/session/scope-history";
   import {
     ensureRuntime as ensureSessionRuntime,
+    loadMessages,
     removeRuntimeForSession,
     type SessionRuntimeMap,
   } from "$lib/session/runtime-manager";
@@ -811,16 +813,53 @@
     images?: PromptImageAttachment[],
   ): Promise<void> {
     if (!activeRuntime) return;
+
+    const bangCommand = parseBangCommand(prompt);
+    if (bangCommand) {
+      if ((images?.length ?? 0) > 0) {
+        activeRuntime.messages.addErrorMessage(
+          "Image attachments are not supported for !/!! bash commands.",
+        );
+        return;
+      }
+
+      try {
+        await activeRuntime.agent.sendBashCommand(
+          bangCommand.command,
+          bangCommand.excludeFromContext,
+        );
+        await loadMessages(activeRuntime);
+      } catch (error) {
+        activeRuntime.messages.clearStreamingBashExecution();
+        activeRuntime.messages.addErrorMessage(
+          error instanceof Error ? error.message : String(error),
+        );
+      }
+      return;
+    }
+
     maybeTrackOptimisticFirstPrompt(activeRuntime, prompt);
     await handlePromptSubmit(activeRuntime, prompt, images);
   }
 
   function onCancel(): void {
+    if (activeRuntime?.agent.isBashRunning) {
+      void activeRuntime.agent.abortBash();
+      return;
+    }
+
     activeRuntime?.agent.abort();
   }
 
   async function onNewChat(): Promise<void> {
     if (!activeRuntime || !chatHasMessages) {
+      return;
+    }
+
+    if (activeRuntime.agent.isBashRunning) {
+      activeRuntime.messages.addErrorMessage(
+        "Abort the running bash command before starting a new chat.",
+      );
       return;
     }
 
@@ -891,6 +930,13 @@
     if (!activeRuntime) return;
 
     if (command === "new") {
+      if (activeRuntime.agent.isBashRunning) {
+        activeRuntime.messages.addErrorMessage(
+          "Abort the running bash command before starting a new chat.",
+        );
+        return;
+      }
+
       if (activeRuntime.agent.isLoading) {
         clearOptimisticFirstPrompt(activeRuntime.sessionId);
 

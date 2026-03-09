@@ -219,6 +219,39 @@ pub async fn send_prompt(
     crate::sidecar::RpcClient::send_command(state.inner(), cmd).await
 }
 
+#[tauri::command]
+pub async fn send_bash_command(
+    state: State<'_, Arc<Mutex<SidecarState>>>,
+    command: String,
+    session_id: String,
+    exclude_from_context: Option<bool>,
+) -> Result<RpcResponse, String> {
+    let session_id = require_session_id(session_id, "bash")?;
+
+    let trimmed_command = command.trim().to_string();
+    if trimmed_command.is_empty() {
+        return Err("command must be a non-empty string".to_string());
+    }
+
+    let cmd = RpcCommand {
+        id: Some(crypto_random_uuid()),
+        r#type: "bash".to_string(),
+        session_id: Some(session_id),
+        cwd: None,
+        message: Some(trimmed_command),
+        provider: None,
+        model_id: None,
+        streaming_behavior: exclude_from_context
+            .filter(|value| *value)
+            .map(|_| "excludeFromContext".to_string()),
+        session_file: None,
+        level: None,
+        images: None,
+    };
+
+    sidecar_lifecycle::send_command_with_response(state.inner(), cmd, 3600).await
+}
+
 /// Abort the current agent operation
 #[tauri::command]
 pub async fn abort_agent(
@@ -242,6 +275,30 @@ pub async fn abort_agent(
     };
 
     crate::sidecar::RpcClient::send_command(state.inner(), cmd).await
+}
+
+#[tauri::command]
+pub async fn abort_bash(
+    state: State<'_, Arc<Mutex<SidecarState>>>,
+    session_id: String,
+) -> Result<RpcResponse, String> {
+    let session_id = require_session_id(session_id, "abort_bash")?;
+
+    let cmd = RpcCommand {
+        id: Some(crypto_random_uuid()),
+        r#type: "abort_bash".to_string(),
+        session_id: Some(session_id),
+        cwd: None,
+        message: None,
+        provider: None,
+        model_id: None,
+        streaming_behavior: None,
+        session_file: None,
+        level: None,
+        images: None,
+    };
+
+    sidecar_lifecycle::send_command_with_response(state.inner(), cmd, 5).await
 }
 
 /// Create a new session

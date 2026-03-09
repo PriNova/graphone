@@ -603,16 +603,18 @@
           {@const hasEditDiff = !!editDiffLines && editDiffLines.length > 0}
           {@const callSummary = getToolCallSummary(block)}
           {@const collapsed = isToolCollapsed(block.id)}
-          {@const isLiveBashOutput =
-            block.name === "bash" && pending && hasResult}
+          {@const isBashOutput = block.name === "bash" && hasResult}
           {@const isReadResult = block.name === "read" && !isError}
           {@const isTruncated = !!truncated?.truncated}
-          {@const canExpandResult = isTruncated || hasToolResultHtml}
+          {@const canExpandResult =
+            !isBashOutput && (isTruncated || hasToolResultHtml)}
           {@const showFullResult =
             canExpandResult && isToolResultExpanded(block.id)}
-          {@const displayedResultText = showFullResult
-            ? (resultText ?? truncated?.text ?? "")
-            : (truncated?.text ?? "")}
+          {@const displayedResultText = isBashOutput
+            ? (resultText ?? "")
+            : showFullResult
+              ? (resultText ?? truncated?.text ?? "")
+              : (truncated?.text ?? "")}
           <div
             class={cn(
               "border rounded overflow-hidden",
@@ -735,11 +737,11 @@
                     {/each}
                   </div>
                 </div>
-              {:else if isLiveBashOutput}
+              {:else if isBashOutput}
                 <div
                   class="max-h-75 overflow-y-auto"
                   use:autoScrollToBottomOnUpdate={{
-                    enabled: true,
+                    enabled: pending,
                     token: resultText?.length ?? 0,
                   }}
                 >
@@ -761,7 +763,7 @@
                 <pre
                   class="p-3 font-mono text-[0.8125rem] leading-normal text-foreground whitespace-pre-wrap wrap-break-word m-0 max-h-75 overflow-y-auto">{displayedResultText}</pre>
               {/if}
-              {#if (truncated.truncated || hasToolResultHtml) && !hasEditDiff && !isLiveBashOutput}
+              {#if (truncated.truncated || hasToolResultHtml) && !hasEditDiff && !isBashOutput}
                 <div
                   class={cn(
                     "px-3 py-1.5 text-xs border-t",

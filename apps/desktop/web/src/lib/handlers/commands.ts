@@ -40,6 +40,26 @@ export type CommandResult =
   | { type: "submit"; text: string }
   | { type: "error"; message: string };
 
+export interface BangCommandInput {
+  command: string;
+  excludeFromContext: boolean;
+}
+
+export function parseBangCommand(input: string): BangCommandInput | null {
+  const trimmed = input.trim();
+  if (!trimmed.startsWith("!")) {
+    return null;
+  }
+
+  if (trimmed.startsWith("!!")) {
+    const command = trimmed.slice(2).trim();
+    return command.length > 0 ? { command, excludeFromContext: true } : null;
+  }
+
+  const command = trimmed.slice(1).trim();
+  return command.length > 0 ? { command, excludeFromContext: false } : null;
+}
+
 function sanitizeDisplayText(text: string): string {
   return text
     .replace(ANSI_ESCAPE_PATTERN, "")

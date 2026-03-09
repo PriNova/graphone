@@ -145,6 +145,32 @@ export async function handleHostCommand(
         return success(requestId, "abort");
       }
 
+      case "bash": {
+        const sessionId = requireSessionId(command);
+        const bashCommand = requireNonEmptyString(
+          (command as { command?: unknown; message?: unknown }).command ??
+            (command as { command?: unknown; message?: unknown }).message,
+          "command",
+        );
+        const excludeFromContext =
+          (command as { excludeFromContext?: unknown }).excludeFromContext ===
+            true ||
+          (command as { streamingBehavior?: unknown }).streamingBehavior ===
+            "excludeFromContext";
+
+        return success(
+          requestId,
+          "bash",
+          await runtime.bash(sessionId, bashCommand, excludeFromContext),
+        );
+      }
+
+      case "abort_bash": {
+        const sessionId = requireSessionId(command);
+        await runtime.abortBash(sessionId);
+        return success(requestId, "abort_bash");
+      }
+
       case "new_session": {
         const sessionId = requireSessionId(command);
         return success(

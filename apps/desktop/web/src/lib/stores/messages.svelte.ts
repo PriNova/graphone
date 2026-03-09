@@ -1,4 +1,5 @@
 import type {
+  BashExecutionMessage,
   ContentBlock,
   Message,
   PromptImageAttachment,
@@ -10,6 +11,7 @@ import type {
 export class MessagesStore {
   messages = $state<Message[]>([]);
   streamingMessageId = $state<string | null>(null);
+  bashStreamingMessageId = $state<string | null>(null);
 
   // Optimistic user-message rendering (important for large attachment payloads,
   // where remote echo events may be delayed or dropped by the platform IPC layer).
@@ -83,6 +85,8 @@ export class MessagesStore {
     this.toolResultsByCallId = {};
     this.pendingToolCallIds = {};
     this.pendingToolResultsById.clear();
+    this.streamingMessageId = null;
+    this.bashStreamingMessageId = null;
   }
 
   setStreamingMessageId(id: string | null): void {
@@ -102,6 +106,8 @@ export class MessagesStore {
   ): void {
     this.pendingToolResultsById.clear();
     this.pendingToolCallIds = {};
+    this.streamingMessageId = null;
+    this.bashStreamingMessageId = null;
 
     const loadedMessages: Message[] = [];
     const toolResultsByCallId = new Map<string, ToolResultMessage>();
@@ -157,6 +163,27 @@ export class MessagesStore {
           content,
           timestamp,
           isStreaming: false,
+        });
+        continue;
+      }
+
+      if (msg.role === "bashExecution") {
+        const bashExecution = MessagesStore.coerceBashExecutionMessage(msg);
+        if (!bashExecution) {
+          continue;
+        }
+
+        loadedMessages.push({
+          id: crypto.randomUUID(),
+          type: "bashExecution",
+          command: bashExecution.command,
+          output: bashExecution.output,
+          exitCode: bashExecution.exitCode,
+          cancelled: bashExecution.cancelled,
+          truncated: bashExecution.truncated,
+          fullOutputPath: bashExecution.fullOutputPath,
+          excludeFromContext: bashExecution.excludeFromContext,
+          timestamp,
         });
         continue;
       }
@@ -279,7 +306,8 @@ export class MessagesStore {
     if (!targetId) return;
 
     const message = this.messages.find(
-      (m) => m.id === targetId && m.type === "assistant",
+      (m): m is Extract<Message, { type: "assistant" }> =>
+        m.id === targetId && m.type === "assistant",
     );
     if (message) {
       message.content = content;
@@ -305,6 +333,138 @@ export class MessagesStore {
       }
     }
     this.streamingMessageId = null;
+  }
+
+  startStreamingBashExecution(args: {
+    command: string;
+    excludeFromContext?: boolean;
+    timestamp?: number;
+  }): string {
+    const timestamp =
+      typeof args.timestamp === "number" && Number.isFinite(args.timestamp)
+        ? new Date(args.timestamp)
+        : new Date();
+
+    const existingId = this.bashStreamingMessageId;
+    const existing = existingId
+      ? this.messages.find(
+          (message): message is Extract<Message, { type: "bashExecution" }> =>
+            message.id === existingId && message.type === "bashExecution",
+        )
+      : undefined;
+
+    if (existing) {
+      existing.command = args.command;
+      existing.output = "";
+      existing.exitCode = undefined;
+      existing.cancelled = false;
+      existing.truncated = false;
+      existing.fullOutputPath = undefined;
+      existing.excludeFromContext = args.excludeFromContext === true;
+      existing.timestamp = timestamp;
+      existing.isStreaming = true;
+      return existing.id;
+    }
+
+    const id = crypto.randomUUID();
+    this.bashStreamingMessageId = id;
+    this.addMessage({
+      id,
+      type: "bashExecution",
+      command: args.command,
+      output: "",
+      exitCode: undefined,
+      cancelled: false,
+      truncated: false,
+      fullOutputPath: undefined,
+      excludeFromContext: args.excludeFromContext === true,
+      timestamp,
+      isStreaming: true,
+    });
+    return id;
+  }
+
+  appendStreamingBashOutput(chunk: string): void {
+    if (typeof chunk !== "string" || chunk.length === 0) {
+      return;
+    }
+
+    const targetId = this.bashStreamingMessageId;
+    if (!targetId) {
+      return;
+    }
+
+    const message = this.messages.find(
+      (entry): entry is Extract<Message, { type: "bashExecution" }> =>
+        entry.id === targetId && entry.type === "bashExecution",
+    );
+    if (message) {
+      message.output += chunk;
+    }
+  }
+
+  finalizeStreamingBashExecution(result: {
+    command: string;
+    output: string;
+    exitCode?: number;
+    cancelled: boolean;
+    truncated: boolean;
+    fullOutputPath?: string;
+    excludeFromContext?: boolean;
+    timestamp?: number;
+  }): void {
+    const timestamp =
+      typeof result.timestamp === "number" && Number.isFinite(result.timestamp)
+        ? new Date(result.timestamp)
+        : new Date();
+
+    const targetId = this.bashStreamingMessageId;
+    const message = targetId
+      ? this.messages.find(
+          (entry): entry is Extract<Message, { type: "bashExecution" }> =>
+            entry.id === targetId && entry.type === "bashExecution",
+        )
+      : undefined;
+
+    if (message) {
+      message.command = result.command;
+      message.output = result.output;
+      message.exitCode = result.exitCode;
+      message.cancelled = result.cancelled;
+      message.truncated = result.truncated;
+      message.fullOutputPath = result.fullOutputPath;
+      message.excludeFromContext = result.excludeFromContext === true;
+      message.timestamp = timestamp;
+      message.isStreaming = false;
+      this.bashStreamingMessageId = null;
+      return;
+    }
+
+    this.addMessage({
+      id: crypto.randomUUID(),
+      type: "bashExecution",
+      command: result.command,
+      output: result.output,
+      exitCode: result.exitCode,
+      cancelled: result.cancelled,
+      truncated: result.truncated,
+      fullOutputPath: result.fullOutputPath,
+      excludeFromContext: result.excludeFromContext === true,
+      timestamp,
+      isStreaming: false,
+    });
+    this.bashStreamingMessageId = null;
+  }
+
+  clearStreamingBashExecution(): void {
+    const targetId = this.bashStreamingMessageId;
+    this.bashStreamingMessageId = null;
+
+    if (!targetId) {
+      return;
+    }
+
+    this.messages = this.messages.filter((message) => message.id !== targetId);
   }
 
   setToolCallPending(toolCallId: string, pending: boolean): void {
@@ -713,6 +873,48 @@ export class MessagesStore {
       content: MessagesStore.convertToolResultContent(payload.content),
       details: payload.details,
       isError: payload.isError === true,
+      timestamp,
+    };
+  }
+
+  static coerceBashExecutionMessage(payload: {
+    command?: unknown;
+    output?: unknown;
+    exitCode?: unknown;
+    cancelled?: unknown;
+    truncated?: unknown;
+    fullOutputPath?: unknown;
+    excludeFromContext?: unknown;
+    timestamp?: unknown;
+  }): BashExecutionMessage | null {
+    const command =
+      typeof payload.command === "string" ? payload.command.trim() : "";
+    if (command.length === 0) {
+      return null;
+    }
+
+    const timestamp =
+      typeof payload.timestamp === "number" &&
+      Number.isFinite(payload.timestamp)
+        ? payload.timestamp
+        : Date.now();
+
+    return {
+      role: "bashExecution",
+      command,
+      output: typeof payload.output === "string" ? payload.output : "",
+      exitCode:
+        typeof payload.exitCode === "number" &&
+        Number.isFinite(payload.exitCode)
+          ? payload.exitCode
+          : undefined,
+      cancelled: payload.cancelled === true,
+      truncated: payload.truncated === true,
+      fullOutputPath:
+        typeof payload.fullOutputPath === "string"
+          ? payload.fullOutputPath
+          : undefined,
+      excludeFromContext: payload.excludeFromContext === true,
       timestamp,
     };
   }
