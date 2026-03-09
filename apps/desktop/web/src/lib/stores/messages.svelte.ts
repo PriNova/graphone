@@ -298,6 +298,11 @@ export class MessagesStore {
     );
     if (message) {
       message.isStreaming = false;
+      for (const block of message.content) {
+        if (block.type === "thinking") {
+          block.isRunning = false;
+        }
+      }
     }
     this.streamingMessageId = null;
   }

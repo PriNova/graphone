@@ -23,6 +23,7 @@ export interface ToolCall {
 export interface ThinkingBlock {
   type: "thinking";
   thinking: string;
+  isRunning?: boolean;
 }
 
 export interface TextBlock {

@@ -262,7 +262,7 @@ function applyAssistantMessageDelta(
 
     case "thinking_start":
       ensureContentIndex(content, index);
-      content[index] = { type: "thinking", thinking: "" };
+      content[index] = { type: "thinking", thinking: "", isRunning: true };
       return true;
 
     case "thinking_delta": {
@@ -271,12 +271,14 @@ function applyAssistantMessageDelta(
       if (block?.type === "thinking") {
         // Direct mutation - no new object
         block.thinking += assistantEvent.delta ?? "";
+        block.isRunning = true;
         return true;
       }
       // Fallback: create new block if not thinking
       content[index] = {
         type: "thinking",
         thinking: assistantEvent.delta ?? "",
+        isRunning: true,
       };
       return true;
     }
@@ -286,6 +288,7 @@ function applyAssistantMessageDelta(
       content[index] = {
         type: "thinking",
         thinking: assistantEvent.content ?? assistantEvent.thinking ?? "",
+        isRunning: false,
       };
       return true;
     }
@@ -368,7 +371,13 @@ export function handleMessageUpdate(
       }
     } else {
       if (block?.type !== "thinking") {
-        currentContent[index] = { type: "thinking", thinking: "" };
+        currentContent[index] = {
+          type: "thinking",
+          thinking: "",
+          isRunning: true,
+        };
+      } else {
+        block.isRunning = true;
       }
     }
 
