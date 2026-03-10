@@ -2,6 +2,27 @@
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-03-10
+
+### Added
+
+- Added a dedicated macOS local-build pipeline with GitHub Actions artifacts for both Apple Silicon (`arm64`) and Intel (`x64`) test builds.
+- Added local macOS Tauri bundle overrides and entitlements for ad-hoc signed `.app` builds.
+
+### Changed
+
+- Updated the macOS sidecar/runtime packaging flow so Graphone bundles required host runtime assets under app resources and resolves them reliably at startup.
+- Updated CI macOS artifact checks to validate required sidecar runtime assets before publishing artifacts.
+
+### Fixed
+
+- Fixed macOS bundle signing failures caused by placing non-code runtime data in code-sign-sensitive locations.
+- Fixed macOS sidecar runtime pathing and environment bootstrapping so packaged builds correctly locate `package.json`, docs/examples, theme/export assets, and externalized native module dependencies.
+
+### Credits
+
+- 🚀 Huge shout-out to **David Ichim** for hands-on macOS validation and rapid iteration feedback during this release: https://github.com/ichim-david
+
 ## [0.2.5] - 2026-03-09
 
 ### Added
