@@ -249,6 +249,96 @@ jobs:
           path: dist/windows/*.zip
           if-no-files-found: error
 
+  build-macos-local-artifacts:
+    name: Build macOS local app (.zip) (${{ matrix.label }})
+    if: startsWith(github.ref, 'refs/tags/v') || (github.event_name == 'workflow_dispatch' && github.event.inputs.release_tag != '')
+    runs-on: ${{ matrix.runs_on }}
+    timeout-minutes: 120
+    needs:
+      - checks-linux
+      - checks-windows-target
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - label: Apple Silicon
+            runs_on: macos-15
+            artifact_suffix: arm64
+          - label: Intel
+            runs_on: macos-15-intel
+            artifact_suffix: x64
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.release_tag != '' && github.event.inputs.release_tag || github.ref }}
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+
+      - name: Install npm dependencies
+        run: npm ci
+
+      - name: Install Rust (stable)
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Rust cache
+        uses: swatinem/rust-cache@v2
+        with:
+          workspaces: './src-tauri -> target'
+
+      - name: Build ad-hoc signed macOS app bundle
+        run: npm run build:macos:local:app
+
+      - name: Verify bundled sidecar runtime assets
+        run: |
+          APP_PATH="src-tauri/target/release/bundle/macos/graphone.app"
+          RUNTIME_DIR="$APP_PATH/Contents/Resources/sidecar-runtime"
+
+          test -d "$APP_PATH"
+          test -f "$RUNTIME_DIR/package.json"
+          test -f "$RUNTIME_DIR/README.md"
+          test -f "$RUNTIME_DIR/CHANGELOG.md"
+          test -f "$RUNTIME_DIR/photon_rs_bg.wasm"
+          test -d "$RUNTIME_DIR/theme"
+          test -d "$RUNTIME_DIR/export-html"
+          test -d "$RUNTIME_DIR/docs"
+          test -d "$RUNTIME_DIR/examples"
+          test -d "$RUNTIME_DIR/node_modules"
+
+      - name: Verify app bundle signature
+        run: |
+          APP_PATH="src-tauri/target/release/bundle/macos/graphone.app"
+          test -d "$APP_PATH"
+          codesign --verify --deep --strict --verbose=2 "$APP_PATH"
+
+      - name: Package macOS app bundle
+        run: |
+          VERSION="${{ github.event_name == 'workflow_dispatch' && github.event.inputs.release_tag != '' && github.event.inputs.release_tag || github.ref_name }}"
+          VERSION="${VERSION#v}"
+          APP_PATH="src-tauri/target/release/bundle/macos/graphone.app"
+          ZIP_NAME="graphone_${VERSION}_macos_${{ matrix.artifact_suffix }}_app.zip"
+
+          test -d "$APP_PATH"
+          xattr -cr "$APP_PATH" || true
+
+          mkdir -p dist/macos
+          ditto -c -k --keepParent "$APP_PATH" "dist/macos/$ZIP_NAME"
+
+      - name: Upload macOS release assets
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-macos-${{ matrix.artifact_suffix }}-${{ github.event_name == 'workflow_dispatch' && github.event.inputs.release_tag != '' && github.event.inputs.release_tag || github.ref_name }}
+          path: dist/macos/*.zip
+          if-no-files-found: error
+
   publish-release:
     name: Publish GitHub Release assets
     if: startsWith(github.ref, 'refs/tags/v') || (github.event_name == 'workflow_dispatch' && github.event.inputs.release_tag != '')
@@ -256,6 +346,7 @@ jobs:
     needs:
       - build-linux-bundles
       - build-windows-portable
+      - build-macos-local-artifacts
 
     steps:
       - name: Download built assets
