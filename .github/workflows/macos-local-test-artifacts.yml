@@ -1,0 +1,127 @@
+name: macOS Local Test Artifacts
+
+on:
+  pull_request:
+    branches:
+      - main
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: macos-local-test-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  NODE_VERSION: '22'
+
+jobs:
+  build-macos-local-app:
+    name: Build local macOS app (${{ matrix.label }})
+    runs-on: ${{ matrix.runs_on }}
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - label: Apple Silicon
+            runs_on: macos-15
+            artifact_suffix: arm64
+          - label: Intel
+            runs_on: macos-15-intel
+            artifact_suffix: x64
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+
+      - name: Install npm dependencies
+        run: npm ci
+
+      - name: Install Rust (stable)
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Rust cache
+        uses: swatinem/rust-cache@v2
+        with:
+          workspaces: './src-tauri -> target'
+
+      - name: Build ad-hoc signed macOS app bundle
+        run: npm run build:macos:local:app
+
+      - name: Verify bundled sidecar runtime assets
+        run: |
+          APP_PATH="src-tauri/target/release/bundle/macos/graphone.app"
+          RUNTIME_DIR="$APP_PATH/Contents/Resources/sidecar-runtime"
+
+          test -d "$APP_PATH"
+          test -f "$RUNTIME_DIR/package.json"
+          test -f "$RUNTIME_DIR/README.md"
+          test -f "$RUNTIME_DIR/CHANGELOG.md"
+          test -f "$RUNTIME_DIR/photon_rs_bg.wasm"
+          test -d "$RUNTIME_DIR/theme"
+          test -d "$RUNTIME_DIR/export-html"
+          test -d "$RUNTIME_DIR/docs"
+          test -d "$RUNTIME_DIR/examples"
+          test -d "$RUNTIME_DIR/node_modules"
+
+      - name: Verify app bundle signature
+        run: |
+          APP_PATH="src-tauri/target/release/bundle/macos/graphone.app"
+          test -d "$APP_PATH"
+          codesign --verify --deep --strict --verbose=2 "$APP_PATH"
+
+      - name: Prepare app artifact contents
+        run: |
+          APP_PATH="src-tauri/target/release/bundle/macos/graphone.app"
+
+          test -d "$APP_PATH"
+          xattr -cr "$APP_PATH" || true
+
+          mkdir -p dist
+          cp -R "$APP_PATH" dist/
+
+          cat > dist/README.txt <<'EOF'
+          Graphone macOS local test build
+
+          Contents after extracting the GitHub artifact:
+          - graphone.app
+
+          Recommended tester flow:
+          1. Download the artifact from GitHub Actions.
+          2. Extract it once.
+          3. Move graphone.app somewhere convenient, such as Desktop or Applications.
+          4. If macOS blocks the app, run:
+             xattr -cr graphone.app
+          5. Then launch it with:
+             open graphone.app
+
+          Notes:
+          - There is no second zip to extract.
+          - This build uses ad-hoc signing only.
+          - It is not notarized.
+          - On some Macs, Privacy & Security approval may still be required.
+          EOF
+
+      - name: Upload macOS local app artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: graphone-macos-local-${{ matrix.artifact_suffix }}-${{ github.sha }}
+          path: |
+            dist/graphone.app
+            dist/README.txt
+          if-no-files-found: error
+          retention-days: 14

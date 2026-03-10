@@ -5,6 +5,8 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
+#[cfg(not(target_os = "linux"))]
+use tauri::Manager;
 use tauri::{AppHandle, Emitter};
 use tauri_plugin_shell::process::CommandEvent;
 use tauri_plugin_shell::ShellExt;
@@ -113,7 +115,19 @@ fn next_agent_event_chunk_id() -> String {
 }
 
 #[cfg(not(target_os = "linux"))]
-fn resolve_non_linux_sidecar_runtime_dir() -> Option<PathBuf> {
+fn resolve_non_linux_sidecar_runtime_dir(app: &AppHandle) -> Option<PathBuf> {
+    #[cfg(target_os = "macos")]
+    {
+        if let Ok(resource_dir) = app.path().resource_dir() {
+            let macos_runtime_dir = resource_dir.join("sidecar-runtime");
+            if macos_runtime_dir.exists() {
+                return Some(macos_runtime_dir);
+            }
+
+            return Some(resource_dir);
+        }
+    }
+
     let current_exe = env::current_exe().ok()?;
     let exe_dir = current_exe.parent()?;
 
@@ -158,7 +172,7 @@ impl SidecarManager {
 
         #[cfg(not(target_os = "linux"))]
         {
-            let sidecar_runtime_dir = resolve_non_linux_sidecar_runtime_dir()
+            let sidecar_runtime_dir = resolve_non_linux_sidecar_runtime_dir(app)
                 .ok_or_else(|| "Failed to resolve sidecar runtime directory".to_string())?;
 
             logger::log(format!(
@@ -166,10 +180,15 @@ impl SidecarManager {
                 sidecar_runtime_dir.display()
             ));
 
+            let node_path = sidecar_runtime_dir.join("node_modules");
+
             let command = app
                 .shell()
                 .sidecar("pi")
                 .map_err(|e| format!("Failed to create sidecar: {}", e))?
+                .current_dir(&sidecar_runtime_dir)
+                .env("PI_PACKAGE_DIR", &sidecar_runtime_dir)
+                .env("NODE_PATH", &node_path)
                 .arg(GRAPHONE_HOST_FLAG);
 
             Ok(with_prepended_runtime_path(command, &sidecar_runtime_dir))

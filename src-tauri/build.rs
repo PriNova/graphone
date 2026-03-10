@@ -432,6 +432,14 @@ fn resolve_koffi_triplet(target_os: &str, target_triple: &str) -> Option<&'stati
         return Some("linux_x64");
     }
 
+    if target_os == "macos" && target_triple == "aarch64-apple-darwin" {
+        return Some("darwin_arm64");
+    }
+
+    if target_os == "macos" && target_triple == "x86_64-apple-darwin" {
+        return Some("darwin_x64");
+    }
+
     None
 }
 

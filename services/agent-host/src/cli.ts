@@ -1,11 +1,8 @@
 #!/usr/bin/env node
 
-import { delimiter, dirname } from "node:path";
-
-import { main as runPiCliMain } from "@mariozechner/pi-coding-agent";
+import { basename, delimiter, dirname, join } from "node:path";
 
 import { handleHostCommand } from "./commands.js";
-import { HostRuntime } from "./host-runtime.js";
 import { attachJsonlLineReader, serializeJsonLine } from "./jsonl.js";
 import {
   failure,
@@ -90,7 +87,37 @@ class LineWriter {
   }
 }
 
-function runHostMode(): void {
+function applyBunPackageDirExecPathOverride(): void {
+  const packageDir = process.env.PI_PACKAGE_DIR?.trim();
+  if (!packageDir || !process.versions.bun) {
+    return;
+  }
+
+  const execName = basename(process.execPath || "pi");
+  const overrideExecPath = join(packageDir, execName);
+
+  try {
+    process.execPath = overrideExecPath;
+    return;
+  } catch {
+    // Fall through to defineProperty fallback.
+  }
+
+  try {
+    Object.defineProperty(process, "execPath", {
+      value: overrideExecPath,
+      configurable: true,
+      enumerable: true,
+      writable: true,
+    });
+  } catch {
+    // Best-effort only.
+  }
+}
+
+async function runHostMode(): Promise<void> {
+  const { HostRuntime } = await import("./host-runtime.js");
+
   const writer = new LineWriter();
 
   const runtime = new HostRuntime((event) => {
@@ -185,13 +212,16 @@ function runHostMode(): void {
   });
 }
 
-function runPiCliMode(args: string[]): void {
+async function runPiCliMode(args: string[]): Promise<void> {
   process.title = "pi";
-  void runPiCliMain(args);
+  const { main: runPiCliMain } = await import("@mariozechner/pi-coding-agent");
+  await runPiCliMain(args);
 }
 
-function main(): void {
-  prependPathEntry(dirname(process.execPath));
+async function main(): Promise<void> {
+  const realExecDir = dirname(process.execPath);
+  prependPathEntry(realExecDir);
+  applyBunPackageDirExecPathOverride();
 
   const argv = process.argv.slice(2);
   const hostMode = argv.includes(GRAPHONE_HOST_FLAG);
@@ -205,11 +235,16 @@ function main(): void {
       process.argv[1] ?? "cli.js",
       ...passthroughArgs,
     ];
-    runHostMode();
+    await runHostMode();
     return;
   }
 
-  runPiCliMode(passthroughArgs);
+  await runPiCliMode(passthroughArgs);
 }
 
-main();
+void main().catch((error) => {
+  const message =
+    error instanceof Error ? (error.stack ?? error.message) : String(error);
+  console.error(`[pi-host-sidecar] fatal: ${message}`);
+  process.exit(1);
+});
