@@ -23,6 +23,8 @@
     isStreaming = false,
   }: Props = $props();
 
+  let collapsed = $state(false);
+
   interface AutoScrollPayload {
     enabled: boolean;
     token: number;
@@ -52,6 +54,7 @@
   }
 
   const hasOutput = $derived(output.length > 0);
+  const hasFooter = $derived(!isStreaming && (truncated || !!fullOutputPath));
   const statusLabel = $derived.by(() => {
     if (isStreaming) return "Running...";
     if (cancelled) return "Cancelled";
@@ -66,12 +69,20 @@
   <div
     class="w-full bg-surface border border-border rounded-lg overflow-hidden wrap-break-word"
   >
-    <div
-      class="flex items-center gap-2 px-4 py-2 bg-surface-active border-b border-border text-xs uppercase tracking-wider text-muted-foreground font-semibold"
+    <button
+      type="button"
+      aria-expanded={!collapsed}
+      class={cn(
+        "flex w-full items-center gap-2 px-4 py-2 bg-surface-active text-xs uppercase tracking-wider text-muted-foreground font-semibold transition-colors cursor-pointer hover:bg-surface-hover",
+        !collapsed && "border-b border-border",
+      )}
+      onclick={() => {
+        collapsed = !collapsed;
+      }}
     >
       <span class="shrink-0">Bash</span>
       <span
-        class="min-w-0 flex-1 normal-case font-normal tracking-normal text-foreground truncate"
+        class="min-w-0 flex-1 truncate normal-case font-normal tracking-normal text-foreground text-left"
       >
         {command}
       </span>
@@ -144,34 +155,50 @@
       >
         {statusLabel}
       </span>
-    </div>
-
-    {#if hasOutput || isStreaming}
-      <div
-        class="max-h-75 overflow-y-auto"
-        use:autoScrollToBottomOnUpdate={{
-          enabled: isStreaming,
-          token: output.length,
-        }}
+      <svg
+        class="w-3.5 h-3.5 shrink-0 transition-transform duration-200"
+        class:rotate-90={!collapsed}
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
       >
-        <pre
-          class="p-4 m-0 font-mono text-[0.8125rem] leading-normal text-foreground whitespace-pre-wrap wrap-break-word">{output}</pre>
-      </div>
-    {:else}
-      <div class="px-4 py-3 text-sm text-muted-foreground">(no output)</div>
-    {/if}
+        <path
+          stroke-linecap="round"
+          stroke-linejoin="round"
+          stroke-width="2"
+          d="M9 5l7 7-7 7"
+        />
+      </svg>
+    </button>
 
-    {#if !isStreaming && (truncated || fullOutputPath)}
-      <div
-        class="px-4 py-2 border-t border-border text-xs text-muted-foreground bg-surface"
-      >
-        {#if truncated}
-          <span>Output truncated.</span>
-        {/if}
-        {#if fullOutputPath}
-          <span class:ml-1={truncated}>Full output: {fullOutputPath}</span>
-        {/if}
-      </div>
+    {#if !collapsed}
+      {#if hasOutput || isStreaming}
+        <div
+          class="max-h-75 overflow-y-auto"
+          use:autoScrollToBottomOnUpdate={{
+            enabled: isStreaming,
+            token: output.length,
+          }}
+        >
+          <pre
+            class="p-4 m-0 font-mono text-[0.8125rem] leading-normal text-foreground whitespace-pre-wrap wrap-break-word">{output}</pre>
+        </div>
+      {:else}
+        <div class="px-4 py-3 text-sm text-muted-foreground">(no output)</div>
+      {/if}
+
+      {#if hasFooter}
+        <div
+          class="px-4 py-2 border-t border-border text-xs text-muted-foreground bg-surface"
+        >
+          {#if truncated}
+            <span>Output truncated.</span>
+          {/if}
+          {#if fullOutputPath}
+            <span class:ml-1={truncated}>Full output: {fullOutputPath}</span>
+          {/if}
+        </div>
+      {/if}
     {/if}
   </div>
 </div>
