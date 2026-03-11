@@ -6,9 +6,9 @@ This page summarizes what Graphone supports today.
 
 ## Platform availability
 
-- ✅ Linux desktop builds and release artifacts
-- ✅ Windows desktop builds and release artifacts
-- ✅ macOS desktop builds, local `.app` / `.dmg` packaging, and release artifacts for Apple Silicon and Intel
+- ✅ Linux desktop builds and release downloads
+- ✅ Windows desktop builds and release downloads
+- ✅ macOS local builds and release downloads for Apple Silicon and Intel
 
 ## Status legend
 
@@ -22,107 +22,90 @@ This page summarizes what Graphone supports today.
 
 - Multi-session chat experience
 - Start a new chat while another session is still generating
-- Session persistence and reopening from sidebar history
-- Project-scoped session history
+- Session history in the sidebar, including reopening older chats
+- Project-based chat organization
 - Streaming assistant responses
-- Stop/cancel current generation
+- Stop/cancel the current response
 - Markdown rendering in assistant responses
-- Tool activity display with readable formatting
-- Tool result rich HTML rendering via `ToolResultMessage.details._html` (sanitized)
+- Readable tool output in chat
+- Floating session windows for active or historical chats
+- More reliable startup that reopens your last valid project or chat when available
 
-### Windows and layout
+### Input and commands
 
-- Main workspace with sidebar + chat surface
-- Floating session windows for active or historical sessions
-- Native decorated/resizable floating windows
-- Shared chat/message rendering surface across workspace and floating windows
-
-### Settings and controls
-
-- Model selection from available providers/models
-- Thinking level selection when supported by the model
-- Settings overlay for message block defaults
-- Light/dark appearance toggle
-- Theme selection persists across restarts and syncs across open Graphone windows
-
-### Extensions and runtime
-
-- Registered extensions list in Settings, grouped by global (`~/.pi/agent`) and local (`.pi`) scope
-- Extension load diagnostics in Settings when available
-- Bundled `pi` sidecar runtime included with desktop builds
-- Bundled sidecar supports Graphone host mode and normal pi CLI behavior
-- Runtime PATH is prepended process-locally so extension subprocesses can resolve bundled `pi`
-
-### Authentication and safety
-
-- OAuth login/logout command flow in the GUI (`/login`, `/logout`)
-- Active generations are aborted during app shutdown
-
-### Attachments and input
-
-- Image attachments in the composer (paste, drag/drop, file picker)
+- Image attachments in the composer (paste, drag and drop, file picker)
 - `!command` / `!!command` prompt behavior
+- Expand/collapse controls for bash command output
+- Stop/cancel for running bash commands
+
+### Settings and personalization
+
+- Model selection from available models
+- Thinking level selection when supported by the model
+- Settings for message display defaults
+- Light/dark appearance toggle
+- Theme selection that persists across restarts and stays in sync across open windows
+- Model availability settings follow project preferences first, then home defaults
+
+### Extensions and account
+
+- Extension list in Settings
+- Extension load status in Settings when available
+- Login/logout flow in the app
+
+### Safety
+
+- Active generations are stopped during app shutdown
 
 ## 🟡 Available with limitations
 
 ### Image support limits
 
-- Image attachments are model-dependent
+- Image attachments depend on the selected model
 - Sending is blocked on text-only models
-- Limited to 4 images/message and 5MB/image
-- Supported payloads: PNG, JPEG, GIF, WebP
+- Limited to 4 images per message and 5MB per image
+- Supported formats: PNG, JPEG, GIF, and WebP
 
 ### Templates, skills, and extensions
 
 - Prompt templates and skills can work, but there is no full management UI yet
-- Extensions are visible in Settings, but enable/disable/package management UX is still limited
-- Graphone does not yet expose all interactive extension UI capabilities available in the terminal app
+- Extensions are visible in Settings, but management in the app is still limited
+- Some extension experiences available in the terminal app are not yet exposed in Graphone
 
-### Model catalog sync
+### Model discovery
 
-- Runtime model catalog sync currently works best with providers exposing OpenAI-style model listing endpoints
-- OpenAI Codex-backed model catalogs can be synced into `~/.pi/agent/models.json`
-- Anthropic, Google, Bedrock, and other provider-specific catalogs are not yet fully auto-discovered at runtime
+- Automatic model discovery works best with some providers
+- Some providers may still require manual setup
 
-### Tool result HTML rendering
+### Session history and windows
 
-- Rich tool-result HTML is sanitized before rendering
-- Script execution is blocked
-
-### Session resume parity
-
-- Session resume works through sidebar/history flow
-- Full command-level parity is still incomplete
-- Unseen-completion indicators persist across restarts only for completions Graphone observed while open
-
-### Floating session windows
-
-- Floating windows are bound to specific sessions
-- If the session is no longer available, the window shows an unavailable-state message
+- Session resume works through the sidebar and history flow
+- Floating windows stay tied to a specific chat
+- If that chat is no longer available, the window shows an unavailable message
 
 ## ❌ Not available yet
 
-### Input and picker parity
+### Input and picker support
 
 - `@` file reference picker in the input box
 
-### Advanced command parity
+### Advanced command support
 
-- Full queued message behavior parity
-- Full parity for advanced commands such as:
+- Full queued message behavior
+- Full support for advanced commands such as:
   - `/settings`, `/scoped-models`, `/fork`, `/tree`, `/resume`
   - `/export`, `/share`, `/copy`, `/name`, `/session`
   - `/compact`, `/reload`, `/hotkeys`, `/changelog`, `/quit`
 
 ### Keyboard and branching workflows
 
-- TUI-style keyboard shortcut parity
-- Full tree-branch navigation and branch summary workflow parity
+- Full terminal-style keyboard shortcut coverage
+- Full tree and branch navigation workflow
 
-### TUI configuration parity
+### Terminal-app parity
 
-- Full theme/settings/package management parity with the TUI
+- Full theme, settings, and package management coverage from the terminal app
 
 ## Summary
 
-Graphone already covers the main day-to-day desktop workflow well: sessions, streaming, tools, history, floating windows, and bundled sidecar runtime across Linux, macOS, and Windows.
+Graphone already covers the main day-to-day desktop workflow well: sessions, streaming, tools, history, floating windows, and desktop releases across Linux, Windows, and macOS.

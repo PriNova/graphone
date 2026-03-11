@@ -2,6 +2,23 @@
 
 ## [Unreleased]
 
+## [0.3.1] - 2026-03-11
+
+### Added
+
+- Added macOS release downloads for Apple Silicon and Intel.
+- Added expand/collapse controls for `!command` and `!!command` output panels.
+
+### Changed
+
+- Improved startup behavior so Graphone returns to your last valid project or chat more predictably.
+- Improved how model availability settings fall back from project preferences to home defaults.
+
+### Fixed
+
+- Fixed Stop so it can cancel long-running `!command` and `!!command` runs more reliably.
+- Fixed cases where startup could fall back to an unintended project when a previous scope was no longer available.
+
 ## [0.3.0] - 2026-03-10
 
 ### Added
