@@ -5,7 +5,7 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
-#[cfg(not(target_os = "linux"))]
+#[cfg(target_os = "macos")]
 use tauri::Manager;
 use tauri::{AppHandle, Emitter};
 use tauri_plugin_shell::process::CommandEvent;
@@ -149,20 +149,29 @@ fn next_agent_event_chunk_id() -> String {
     )
 }
 
-#[cfg(not(target_os = "linux"))]
+#[cfg(target_os = "macos")]
 fn resolve_non_linux_sidecar_runtime_dir(app: &AppHandle) -> Option<PathBuf> {
-    #[cfg(target_os = "macos")]
-    {
-        if let Ok(resource_dir) = app.path().resource_dir() {
-            let macos_runtime_dir = resource_dir.join("sidecar-runtime");
-            if macos_runtime_dir.exists() {
-                return Some(macos_runtime_dir);
-            }
-
-            return Some(resource_dir);
+    if let Ok(resource_dir) = app.path().resource_dir() {
+        let macos_runtime_dir = resource_dir.join("sidecar-runtime");
+        if macos_runtime_dir.exists() {
+            return Some(macos_runtime_dir);
         }
+
+        return Some(resource_dir);
     }
 
+    let current_exe = env::current_exe().ok()?;
+    let exe_dir = current_exe.parent()?;
+
+    if exe_dir.ends_with("deps") {
+        return Some(exe_dir.parent().unwrap_or(exe_dir).to_path_buf());
+    }
+
+    Some(exe_dir.to_path_buf())
+}
+
+#[cfg(all(not(target_os = "linux"), not(target_os = "macos")))]
+fn resolve_non_linux_sidecar_runtime_dir() -> Option<PathBuf> {
     let current_exe = env::current_exe().ok()?;
     let exe_dir = current_exe.parent()?;
 
@@ -208,7 +217,12 @@ impl SidecarManager {
 
         #[cfg(not(target_os = "linux"))]
         {
+            #[cfg(target_os = "macos")]
             let sidecar_runtime_dir = resolve_non_linux_sidecar_runtime_dir(app)
+                .ok_or_else(|| "Failed to resolve sidecar runtime directory".to_string())?;
+
+            #[cfg(all(not(target_os = "linux"), not(target_os = "macos")))]
+            let sidecar_runtime_dir = resolve_non_linux_sidecar_runtime_dir()
                 .ok_or_else(|| "Failed to resolve sidecar runtime directory".to_string())?;
 
             logger::log(format!(
