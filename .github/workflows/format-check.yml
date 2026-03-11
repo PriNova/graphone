@@ -27,6 +27,9 @@ jobs:
       - name: Check Prettier formatting (Svelte, TypeScript & Markdown)
         run: npx prettier --check --no-error-on-unmatched-pattern 'apps/desktop/web/src/**/*.svelte' 'apps/desktop/web/src/**/*.ts' 'services/agent-host/src/**/*.ts' '*.md' 'docs/**/*.md'
 
+      - name: Type check frontend
+        run: npm run check
+
       - name: Install Rust (stable)
         uses: dtolnay/rust-toolchain@stable
         with:
