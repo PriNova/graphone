@@ -211,6 +211,33 @@ If you get "Windows cannot find..." errors when running `npm run run:windows`:
 
 ---
 
+## macOS shows a Gatekeeper warning when opening `Graphone.app`
+
+If you build or download an ad-hoc signed local macOS bundle, Gatekeeper may warn that the app is from an unidentified developer.
+
+A common workaround is to remove the quarantine attribute from the app bundle:
+
+```bash
+xattr -dr com.apple.quarantine /path/to/Graphone.app
+```
+
+If needed, you can also inspect current attributes first:
+
+```bash
+xattr /path/to/Graphone.app
+```
+
+A Finder fallback that sometimes works without changing attributes:
+
+1. In Finder, locate `Graphone.app`
+2. Right-click the app
+3. Choose **Open**
+4. Confirm the prompt
+
+Then try opening the app again.
+
+---
+
 ## Still having issues?
 
 1. Check the [README.md](README.md) for setup and build instructions

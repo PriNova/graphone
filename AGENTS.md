@@ -26,6 +26,8 @@
 - `npm run build:windows` - Full Windows NSIS installer build (includes type check)
 - `npm run build:windows:exe` - Build Windows .exe only (no installer needed)
 - `npm run build:windows:portable` - Build Windows .exe + stage portable runtime folder with sidecar assets
+- `npm run build:macos:local` - Build local ad-hoc signed macOS `.app` + `.dmg`
+- `npm run build:macos:local:app` - Build local ad-hoc signed macOS `.app` only
 - `npm run build:all` - Build Linux + Windows
 - `npm run run:windows` - Build (if needed), stage portable runtime, and launch the Windows app via host interop (if available)
 
@@ -56,7 +58,9 @@ graphone/
 │   ├── .cargo/config.toml       # lld linker settings per-target
 │   ├── build.rs                 # Auto-builds host sidecar binary with bun
 │   ├── Cargo.toml
-│   └── tauri.conf.json          # externalBin: ["binaries/pi"]
+│   ├── tauri.conf.json          # base bundle config (Windows/macOS)
+│   ├── tauri.linux.conf.json    # Linux resource-based sidecar bundle override
+│   └── tauri.macos.local.conf.json # Local macOS ad-hoc signing/resource bundle config
 ├── services/
 │   └── agent-host/              # Graphone host sidecar source
 ├── tooling/
