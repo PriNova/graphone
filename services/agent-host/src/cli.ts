@@ -130,6 +130,48 @@ async function runHostMode(): Promise<void> {
   let shouldShutdownAfterQueue = false;
   let commandQueue = startupPromise;
 
+  function parseCommandLine(
+    line: string,
+  ):
+    | { command: HostCommand; failureResponse?: never }
+    | { command?: never; failureResponse: HostResponse } {
+    try {
+      const parsed: unknown = JSON.parse(line);
+
+      if (
+        !parsed ||
+        typeof parsed !== "object" ||
+        typeof (parsed as { type?: unknown }).type !== "string"
+      ) {
+        return {
+          failureResponse: failure(
+            undefined,
+            "parse",
+            "Command must be a JSON object with a string 'type' field",
+          ),
+        };
+      }
+
+      return { command: parsed as HostCommand };
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      return {
+        failureResponse: failure(
+          undefined,
+          "parse",
+          `Failed to parse command: ${message}`,
+        ),
+      };
+    }
+  }
+
+  function isOutOfBandCommand(command: HostCommand): boolean {
+    // Keep normal commands serialized so session mutations stay ordered,
+    // but let bash cancellation bypass the queue. Otherwise an abort request
+    // sits behind the long-running bash command it is supposed to stop.
+    return command.type === "abort_bash";
+  }
+
   async function requestShutdown(): Promise<void> {
     if (shuttingDown) {
       return;
@@ -145,36 +187,7 @@ async function runHostMode(): Promise<void> {
     }
   }
 
-  async function processLine(line: string): Promise<void> {
-    let command: HostCommand;
-
-    try {
-      const parsed: unknown = JSON.parse(line);
-
-      if (
-        !parsed ||
-        typeof parsed !== "object" ||
-        typeof (parsed as { type?: unknown }).type !== "string"
-      ) {
-        writer.writeObject(
-          failure(
-            undefined,
-            "parse",
-            "Command must be a JSON object with a string 'type' field",
-          ),
-        );
-        return;
-      }
-
-      command = parsed as HostCommand;
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      writer.writeObject(
-        failure(undefined, "parse", `Failed to parse command: ${message}`),
-      );
-      return;
-    }
-
+  async function processCommand(command: HostCommand): Promise<void> {
     const response = await handleHostCommand(runtime, command);
     writer.writeObject(response);
 
@@ -184,8 +197,31 @@ async function runHostMode(): Promise<void> {
   }
 
   detachInput = attachJsonlLineReader(process.stdin, (line) => {
+    const parsed = parseCommandLine(line);
+    if (!parsed.command) {
+      writer.writeObject(parsed.failureResponse);
+      return;
+    }
+
+    const { command } = parsed;
+
+    if (isOutOfBandCommand(command)) {
+      void startupPromise
+        .then(async () => {
+          await processCommand(command);
+        })
+        .catch((error) => {
+          const message =
+            error instanceof Error ? error.message : String(error);
+          writer.writeObject(failure(undefined, "internal", message));
+        });
+      return;
+    }
+
     commandQueue = commandQueue
-      .then(() => processLine(line))
+      .then(async () => {
+        await processCommand(command);
+      })
       .then(async () => {
         if (shouldShutdownAfterQueue) {
           await requestShutdown();
