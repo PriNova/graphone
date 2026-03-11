@@ -54,7 +54,7 @@ pub fn run() {
         .plugin(tauri_plugin_store::Builder::new().build())
         .manage(sidecar_state)
         .invoke_handler(tauri::generate_handler![
-            commands::get_working_directory,
+            commands::path_exists,
             commands::open_external_url,
             commands::list_session_project_scopes,
             commands::delete_project_scope,

@@ -127,7 +127,7 @@
     collapsedScopes = [],
     activeSession = null,
     startupError = null,
-    emptyStateText = "Create a session to start chatting.",
+    emptyStateText = "Select a project scope or enter a project directory to start chatting.",
     activeRuntime = null,
     messages = [],
     activePromptDraft = "",

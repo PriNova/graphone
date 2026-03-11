@@ -160,13 +160,16 @@ export class ProjectScopesStore {
     return this.historyByScope[scope] ?? [];
   }
 
-  async refresh(): Promise<void> {
+  async refresh(seedScopes: string[] = []): Promise<void> {
     this.loading = true;
     this.error = null;
 
     try {
       const response = await invoke<SessionProjectScopesResponse>(
         "list_session_project_scopes",
+        {
+          seedScopes,
+        },
       );
       this.scopes = normalizeScopes(response?.scopes);
       this.historyByScope = normalizeHistories(response?.histories);
@@ -179,11 +182,14 @@ export class ProjectScopesStore {
     }
   }
 
-  async deleteScope(projectDir: string): Promise<number> {
+  async deleteScope(
+    projectDir: string,
+    seedScopes: string[] = [],
+  ): Promise<number> {
     const deletedCount = await invoke<number>("delete_project_scope", {
       projectDir,
     });
-    await this.refresh();
+    await this.refresh(seedScopes);
     return deletedCount;
   }
 
@@ -191,6 +197,7 @@ export class ProjectScopesStore {
     projectDir: string,
     sessionId: string,
     filePath: string,
+    seedScopes: string[] = [],
   ): Promise<boolean> {
     const response = await invoke<DeleteProjectSessionResponse>(
       "delete_project_session",
@@ -203,7 +210,7 @@ export class ProjectScopesStore {
 
     const deleted = response?.deleted;
     const wasDeleted = typeof deleted === "boolean" ? deleted : false;
-    await this.refresh();
+    await this.refresh(seedScopes);
     return wasDeleted;
   }
 }

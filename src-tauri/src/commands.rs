@@ -19,8 +19,10 @@ pub use session_scopes::{DeleteProjectSessionResponse, SessionProjectScopesRespo
 pub use settings::EnabledModelsResponse;
 
 #[tauri::command]
-pub fn list_session_project_scopes() -> SessionProjectScopesResponse {
-    session_scopes::list_session_project_scopes()
+pub fn list_session_project_scopes(
+    seed_scopes: Option<Vec<String>>,
+) -> SessionProjectScopesResponse {
+    session_scopes::list_session_project_scopes(seed_scopes)
 }
 
 #[tauri::command]
@@ -37,12 +39,15 @@ pub fn delete_project_session(
     session_scopes::delete_project_session(project_dir, session_id, file_path)
 }
 
-/// Get the current working directory (the directory in which the app executes).
+/// Check whether a project directory currently exists on disk.
 #[tauri::command]
-pub fn get_working_directory() -> Result<String, String> {
-    std::env::current_dir()
-        .map(|p| p.to_string_lossy().to_string())
-        .map_err(|e| format!("Failed to determine current working directory: {e}"))
+pub fn path_exists(path: String) -> bool {
+    let trimmed = path.trim();
+    if trimmed.is_empty() {
+        return false;
+    }
+
+    std::path::Path::new(trimmed).is_dir()
 }
 
 /// Open an external URL in the system browser.
@@ -96,7 +101,7 @@ pub fn open_external_url(app: AppHandle, url: String) -> Result<(), String> {
 
 /// Get enabledModels patterns from pi settings.
 ///
-/// Precedence: project settings (`<projectDir>/.pi/settings.json`) override global settings (`~/.pi/agent/settings.json`).
+/// Precedence: project settings (`<projectDir>/.pi/settings.json`) override home settings (`~/.pi/settings.json`), which override agent settings (`~/.pi/agent/settings.json`).
 #[tauri::command]
 pub fn get_enabled_models(project_dir: Option<String>) -> EnabledModelsResponse {
     settings::get_enabled_models(project_dir)

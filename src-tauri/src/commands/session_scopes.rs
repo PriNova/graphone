@@ -113,7 +113,7 @@ fn local_session_roots_for_scope(scope: &str) -> Vec<SessionRoot> {
     ]
 }
 
-fn candidate_session_roots() -> Vec<SessionRoot> {
+fn candidate_session_roots(seed_scopes: &[String]) -> Vec<SessionRoot> {
     let mut roots = Vec::new();
 
     if let Some(home) = dirs::home_dir() {
@@ -138,16 +138,12 @@ fn candidate_session_roots() -> Vec<SessionRoot> {
         });
     }
 
-    // Local/project-level roots for the current app cwd.
-    if let Ok(cwd) = std::env::current_dir() {
-        roots.push(SessionRoot {
-            path: cwd.join(".pi").join("sessions"),
-            source: SessionRootSource::Local,
-        });
-        roots.push(SessionRoot {
-            path: cwd.join(".pi").join("agent").join("sessions"),
-            source: SessionRootSource::Local,
-        });
+    for scope in seed_scopes {
+        let normalized = normalize_path_for_comparison(scope);
+        if normalized.is_empty() {
+            continue;
+        }
+        roots.extend(local_session_roots_for_scope(&normalized));
     }
 
     let mut dedup = HashMap::<String, SessionRoot>::new();
@@ -369,8 +365,8 @@ fn build_session_sort_key(path: &Path, timestamp: Option<&str>) -> String {
     format!("{modified_millis:020}")
 }
 
-fn load_session_scope_histories() -> Vec<SessionScopeHistory> {
-    let mut pending_roots = candidate_session_roots();
+fn load_session_scope_histories(seed_scopes: &[String]) -> Vec<SessionScopeHistory> {
+    let mut pending_roots = candidate_session_roots(seed_scopes);
     let mut seen_roots = HashSet::<String>::new();
     let mut discovered_scopes = HashSet::<String>::new();
 
@@ -458,8 +454,14 @@ fn load_session_scope_histories() -> Vec<SessionScopeHistory> {
 
 /// List unique project folders discovered from persisted pi session files, along
 /// with grouped history entries from global + local session stores.
-pub fn list_session_project_scopes() -> SessionProjectScopesResponse {
-    let histories = load_session_scope_histories();
+///
+/// `seed_scopes` lets the UI explicitly seed local project roots (for example,
+/// the last selected scope) without relying on the app process cwd.
+pub fn list_session_project_scopes(
+    seed_scopes: Option<Vec<String>>,
+) -> SessionProjectScopesResponse {
+    let seed_scopes = seed_scopes.unwrap_or_default();
+    let histories = load_session_scope_histories(&seed_scopes);
     let scopes = histories
         .iter()
         .map(|history| history.scope.clone())
@@ -490,7 +492,7 @@ pub fn delete_project_scope(project_dir: String) -> Result<usize, String> {
         return Err("project_dir cannot be empty".to_string());
     }
 
-    let mut roots = candidate_session_roots();
+    let mut roots = candidate_session_roots(&[]);
     roots.extend(local_session_roots_for_scope(&normalized_scope));
 
     let mut seen_roots = HashSet::<String>::new();
@@ -628,7 +630,7 @@ pub fn delete_project_session(
         return Err("file_path must point to a .jsonl session file".to_string());
     }
 
-    let mut roots = candidate_session_roots();
+    let mut roots = candidate_session_roots(&[]);
     roots.extend(local_session_roots_for_scope(&normalized_scope));
 
     let mut seen_roots = HashSet::<String>::new();

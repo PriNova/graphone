@@ -50,6 +50,22 @@ function toTitleFromProjectDir(projectDir: string): string {
   return parts[parts.length - 1] ?? projectDir;
 }
 
+function formatCreateSessionError(message: string): string {
+  const trimmed = message.trim();
+  if (trimmed.length === 0) {
+    return "Failed to create session";
+  }
+
+  if (
+    trimmed.includes("Failed to run npm root -g") ||
+    trimmed.includes("npm install -g")
+  ) {
+    return "Graphone could not initialize sessions because npm was not available to load your configured pi packages/extensions. Launch Graphone from the desktop launcher wrapper or a shell where Node/npm is available.";
+  }
+
+  return trimmed;
+}
+
 export class SessionsStore {
   sessions = $state<SessionDescriptor[]>([]);
   activeSessionId = $state<string | null>(null);
@@ -105,7 +121,9 @@ export class SessionsStore {
           response && typeof response === "object"
             ? response.error
             : "Failed to create session";
-        throw new Error(error || "Failed to create session");
+        throw new Error(
+          formatCreateSessionError(error || "Failed to create session"),
+        );
       }
 
       const sessionId = response.data.sessionId;
@@ -137,9 +155,10 @@ export class SessionsStore {
 
       return descriptor;
     } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
+      const rawMessage = error instanceof Error ? error.message : String(error);
+      const message = formatCreateSessionError(rawMessage);
       this.error = message;
-      throw error;
+      throw new Error(message);
     } finally {
       this.creating = false;
     }

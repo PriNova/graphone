@@ -16,18 +16,16 @@ pub struct EnabledModelsResponse {
     pub source: String,
 }
 
-fn global_settings_path() -> Option<PathBuf> {
+fn home_settings_path() -> Option<PathBuf> {
+    dirs::home_dir().map(|h| h.join(".pi").join("settings.json"))
+}
+
+fn agent_settings_path() -> Option<PathBuf> {
     dirs::home_dir().map(|h| h.join(".pi").join("agent").join("settings.json"))
 }
 
 fn project_settings_path(project_dir: Option<&str>) -> Option<PathBuf> {
-    if let Some(dir) = project_dir {
-        return Some(PathBuf::from(dir).join(".pi").join("settings.json"));
-    }
-
-    std::env::current_dir()
-        .ok()
-        .map(|cwd| cwd.join(".pi").join("settings.json"))
+    project_dir.map(|dir| PathBuf::from(dir).join(".pi").join("settings.json"))
 }
 
 fn read_enabled_models_from_settings(path: &Path) -> (bool, Vec<String>) {
@@ -142,9 +140,21 @@ fn load_enabled_models(project_dir: Option<&str>) -> EnabledModelsResponse {
         }
     }
 
-    let global_path = global_settings_path();
-    if let Some(global_path) = global_path.as_ref() {
-        let (defined, patterns) = read_enabled_models_from_settings(global_path);
+    let home_path = home_settings_path();
+    if let Some(home_path) = home_path.as_ref() {
+        let (defined, patterns) = read_enabled_models_from_settings(home_path);
+        if defined {
+            return EnabledModelsResponse {
+                patterns,
+                defined,
+                source: "global".to_string(),
+            };
+        }
+    }
+
+    let agent_path = agent_settings_path();
+    if let Some(agent_path) = agent_path.as_ref() {
+        let (defined, patterns) = read_enabled_models_from_settings(agent_path);
         if defined {
             return EnabledModelsResponse {
                 patterns,
@@ -163,7 +173,7 @@ fn load_enabled_models(project_dir: Option<&str>) -> EnabledModelsResponse {
 
 /// Get enabledModels patterns from pi settings.
 ///
-/// Precedence: project settings (`<projectDir>/.pi/settings.json`) override global settings (`~/.pi/agent/settings.json`).
+/// Precedence: project settings (`<projectDir>/.pi/settings.json`) override home settings (`~/.pi/settings.json`), which override agent settings (`~/.pi/agent/settings.json`).
 pub fn get_enabled_models(project_dir: Option<String>) -> EnabledModelsResponse {
     load_enabled_models(project_dir.as_deref())
 }
@@ -180,25 +190,45 @@ pub fn set_enabled_models(
     let scope = scope.unwrap_or_else(|| "auto".to_string());
 
     let project_path = project_settings_path(project_dir.as_deref());
-    let global_path = global_settings_path();
+    let home_path = home_settings_path();
+    let agent_path = agent_settings_path();
 
     let target_path: PathBuf = match scope.as_str() {
         "project" => {
             project_path.ok_or_else(|| "Failed to determine project settings path".to_string())?
         }
         "global" => {
-            global_path.ok_or_else(|| "Failed to determine global settings path".to_string())?
+            agent_path.ok_or_else(|| "Failed to determine global settings path".to_string())?
         }
         "auto" => {
             if let Some(p) = project_path.as_ref() {
                 if p.exists() {
                     p.clone()
+                } else if let Some(home) = home_path.as_ref() {
+                    if home.exists() {
+                        home.clone()
+                    } else {
+                        agent_path
+                            .clone()
+                            .ok_or_else(|| "Failed to determine global settings path".to_string())?
+                    }
                 } else {
-                    global_path
+                    agent_path
+                        .clone()
+                        .ok_or_else(|| "Failed to determine global settings path".to_string())?
+                }
+            } else if let Some(home) = home_path.as_ref() {
+                if home.exists() {
+                    home.clone()
+                } else {
+                    agent_path
+                        .clone()
                         .ok_or_else(|| "Failed to determine global settings path".to_string())?
                 }
             } else {
-                global_path.ok_or_else(|| "Failed to determine global settings path".to_string())?
+                agent_path
+                    .clone()
+                    .ok_or_else(|| "Failed to determine global settings path".to_string())?
             }
         }
         other => {

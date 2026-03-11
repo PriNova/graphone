@@ -9,7 +9,6 @@ export interface SessionBootstrapDependencies {
   boundSessionId: string | null;
   requestedSessionId: string | null;
   requestedSessionFile: string | null;
-  loadCwd: () => Promise<void>;
   refreshProjectScopes: () => Promise<void>;
   refreshSessions: () => Promise<void>;
   getSessions: () => SessionDescriptor[];
@@ -17,7 +16,7 @@ export interface SessionBootstrapDependencies {
   setActiveSession: (sessionId: string) => void;
   ensureRuntime: (descriptor: SessionDescriptor) => Promise<void>;
   createSession: (projectDir: string, sessionFile?: string) => Promise<void>;
-  getWorkingDirectory: () => Promise<string>;
+  isProjectDirValid: (projectDir: string) => Promise<boolean>;
   getLastSelectedScope: () => string;
   getScopeHistory: (scope: string) => PersistedSessionHistoryItem[] | undefined;
   setProjectDirInput: (value: string) => void;
@@ -28,8 +27,6 @@ export interface SessionBootstrapDependencies {
 export async function bootstrapMainWindowSessions(
   dependencies: SessionBootstrapDependencies,
 ): Promise<void> {
-  await dependencies.loadCwd();
-
   await dependencies.refreshProjectScopes().catch(() => undefined);
   await dependencies.refreshSessions().catch(() => undefined);
 
@@ -38,34 +35,26 @@ export async function bootstrapMainWindowSessions(
   }
 
   if (dependencies.getSessions().length === 0) {
-    // Prefer the last selected scope from settings, fall back to cwd
-    const lastScope = dependencies.getLastSelectedScope();
-    const cwdFallback = await dependencies.getWorkingDirectory();
+    const lastScope = normalizeScopePath(dependencies.getLastSelectedScope());
 
-    // Use last selected scope if it exists and has known history.
-    let projectDir = cwdFallback;
-    if (lastScope && lastScope.trim().length > 0) {
-      try {
-        const scopeHistory = dependencies.getScopeHistory(lastScope);
-        const hasHistory = scopeHistory && scopeHistory.length > 0;
+    if (
+      lastScope.length > 0 &&
+      (await dependencies.isProjectDirValid(lastScope))
+    ) {
+      const scopeHistory = dependencies.getScopeHistory(lastScope);
+      const mostRecent = scopeHistory?.[0];
 
-        if (hasHistory) {
-          // Resume the most recent session for this scope
-          const mostRecent = scopeHistory[0];
-          if (mostRecent) {
-            await dependencies.createSession(lastScope, mostRecent.filePath);
-            return;
-          }
-        }
-
-        // No history - start fresh with the last selected scope
-        projectDir = lastScope;
-      } catch {
-        // Fall back to cwd if lastScope is invalid
+      if (mostRecent) {
+        await dependencies.createSession(lastScope, mostRecent.filePath);
+        return;
       }
+
+      await dependencies.createSession(lastScope);
+      return;
     }
 
-    await dependencies.createSession(projectDir);
+    dependencies.setProjectDirInput("");
+    return;
   } else {
     const requestedSessionId = dependencies.requestedSessionId?.trim() ?? "";
     if (requestedSessionId.length > 0) {
@@ -122,7 +111,6 @@ export async function bootstrapFloatingSessionWindow(
 ): Promise<void> {
   dependencies.setFloatingSessionMissing(false);
 
-  await dependencies.loadCwd();
   await dependencies.refreshSessions().catch(() => undefined);
 
   const requestedSessionFile = dependencies.requestedSessionFile?.trim() ?? "";

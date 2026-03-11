@@ -78,6 +78,41 @@ fn with_prepended_runtime_path(
     command.env("PATH", prepend_path_directory(runtime_dir))
 }
 
+fn resolve_npm_on_path_from(path_value: &OsString) -> Option<PathBuf> {
+    env::split_paths(path_value)
+        .map(|entry| {
+            #[cfg(windows)]
+            {
+                entry.join("npm.cmd")
+            }
+            #[cfg(not(windows))]
+            {
+                entry.join("npm")
+            }
+        })
+        .find(|candidate| candidate.is_file())
+}
+
+fn log_sidecar_launch_environment(runtime_dir: &Path) {
+    let inherited_path = env::var_os("PATH").unwrap_or_default();
+    let effective_path = prepend_path_directory(runtime_dir);
+    let inherited_npm = resolve_npm_on_path_from(&inherited_path)
+        .map(|path| path.display().to_string())
+        .unwrap_or_else(|| "<not found>".to_string());
+    let effective_npm = resolve_npm_on_path_from(&effective_path)
+        .map(|path| path.display().to_string())
+        .unwrap_or_else(|| "<not found>".to_string());
+
+    logger::log(format!(
+        "Sidecar launch env: runtime_dir={} inherited_npm={} effective_npm={} inherited_PATH={} effective_PATH={}",
+        runtime_dir.display(),
+        inherited_npm,
+        effective_npm,
+        inherited_path.to_string_lossy(),
+        effective_path.to_string_lossy()
+    ));
+}
+
 fn split_utf8_by_max_bytes(value: &str, max_bytes: usize) -> Vec<String> {
     if value.is_empty() {
         return Vec::new();
@@ -160,6 +195,7 @@ impl SidecarManager {
                 "Launching linux sidecar from extracted runtime: {}",
                 sidecar_binary.display()
             ));
+            log_sidecar_launch_environment(&sidecar_runtime_dir);
 
             let command = app
                 .shell()
@@ -179,6 +215,7 @@ impl SidecarManager {
                 "Launching sidecar from runtime directory: {}",
                 sidecar_runtime_dir.display()
             ));
+            log_sidecar_launch_environment(&sidecar_runtime_dir);
 
             let node_path = sidecar_runtime_dir.join("node_modules");
 

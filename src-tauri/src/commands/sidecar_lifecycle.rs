@@ -388,6 +388,15 @@ pub async fn create_session_internal(
     let requested_session_id = crypto_random_uuid();
     let mut last_error = "Failed to create session".to_string();
 
+    logger::log(format!(
+        "create_session requested: project_dir={} session_file={} provider={} model={} requested_session_id={}",
+        project_dir,
+        session_file.as_deref().unwrap_or("<none>"),
+        provider.as_deref().unwrap_or("<none>"),
+        model.as_deref().unwrap_or("<none>"),
+        requested_session_id,
+    ));
+
     for attempt in 1..=CREATE_SESSION_ATTEMPTS {
         let command = RpcCommand {
             id: Some(crypto_random_uuid()),
@@ -405,12 +414,48 @@ pub async fn create_session_internal(
 
         match send_command_with_response(state, command, CREATE_SESSION_TIMEOUT_SECS).await {
             Ok(response) => {
+                let response_error = response.error.as_deref().unwrap_or("<none>");
+                let response_session_id = response
+                    .data
+                    .as_ref()
+                    .and_then(|data| data.get("sessionId"))
+                    .and_then(|value| value.as_str())
+                    .unwrap_or("<none>");
+                let response_cwd = response
+                    .data
+                    .as_ref()
+                    .and_then(|data| data.get("cwd"))
+                    .and_then(|value| value.as_str())
+                    .unwrap_or("<none>");
+                let response_session_file = response
+                    .data
+                    .as_ref()
+                    .and_then(|data| data.get("sessionFile"))
+                    .and_then(|value| value.as_str())
+                    .unwrap_or("<none>");
+
+                logger::log(format!(
+                    "create_session response: attempt={}/{} success={} error={} session_id={} cwd={} session_file={}",
+                    attempt,
+                    CREATE_SESSION_ATTEMPTS,
+                    response.success,
+                    response_error,
+                    response_session_id,
+                    response_cwd,
+                    response_session_file,
+                ));
+
                 let mut state_guard = state.lock().await;
                 cache_session_from_create_response(&mut state_guard, &response);
                 return Ok(response);
             }
             Err(error) => {
                 last_error = error;
+
+                logger::log(format!(
+                    "create_session transport error: attempt={}/{} error={} requested_session_id={}",
+                    attempt, CREATE_SESSION_ATTEMPTS, last_error, requested_session_id
+                ));
 
                 let should_retry =
                     is_timeout_error(&last_error) && attempt < CREATE_SESSION_ATTEMPTS;

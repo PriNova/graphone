@@ -6,8 +6,7 @@ export interface SessionSelectionRecoveryDependencies {
   getActiveSession: () => SessionDescriptor | null;
   setActiveSession: (sessionId: string) => void;
   ensureRuntime: (descriptor: SessionDescriptor) => Promise<void>;
-  createSession: (projectDir: string) => Promise<void>;
-  getWorkingDirectoryFallback: () => Promise<string>;
+  setProjectDirInput: (value: string) => void;
   requestScrollToBottom: () => void;
 }
 
@@ -17,8 +16,7 @@ export async function recoverSessionSelectionAfterMutation(
   await dependencies.refreshSessions().catch(() => undefined);
 
   if (dependencies.getSessions().length === 0) {
-    const fallback = await dependencies.getWorkingDirectoryFallback();
-    await dependencies.createSession(fallback);
+    dependencies.setProjectDirInput("");
     return;
   }
 

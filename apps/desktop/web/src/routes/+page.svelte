@@ -31,7 +31,6 @@
     type SessionRuntimeMap,
   } from "$lib/session/runtime-manager";
   import type { ThinkingLevel } from "$lib/stores/agent.svelte";
-  import { cwdStore } from "$lib/stores/cwd.svelte";
   import {
     projectScopesStore,
     type PersistedSessionHistoryItem,
@@ -533,8 +532,30 @@
     });
   }
 
-  async function getWorkingDirectoryFallback(): Promise<string> {
-    return cwdStore.cwd ?? (await invoke<string>("get_working_directory"));
+  function getProjectScopeSeedScopes(): string[] {
+    const seedScopes = new Set<string>();
+
+    const lastSelected = normalizeScopePath(settingsStore.lastSelectedScope);
+    if (lastSelected.length > 0) {
+      seedScopes.add(lastSelected);
+    }
+
+    for (const session of sessionsStore.sessions) {
+      const scope = normalizeScopePath(session.projectDir);
+      if (scope.length > 0) {
+        seedScopes.add(scope);
+      }
+    }
+
+    return [...seedScopes];
+  }
+
+  async function isProjectDirValid(projectDir: string): Promise<boolean> {
+    try {
+      return await invoke<boolean>("path_exists", { path: projectDir });
+    } catch {
+      return false;
+    }
   }
 
   async function recoverSessionSelectionAfterScopeMutation(): Promise<void> {
@@ -547,8 +568,9 @@
       ensureRuntime: async (descriptor) => {
         await ensureRuntime(descriptor);
       },
-      createSession: async (projectDir) => createSession(projectDir),
-      getWorkingDirectoryFallback,
+      setProjectDirInput: (value) => {
+        projectDirInput = value;
+      },
       requestScrollToBottom: () => {
         requestAnimationFrame(() => scrollToBottom(false));
       },
@@ -573,9 +595,21 @@
 
   async function createSessionFromInput(): Promise<void> {
     const value = projectDirInput.trim();
-    const fallback = await getWorkingDirectoryFallback();
-    const projectDir = value.length > 0 ? value : fallback;
-    await createSession(projectDir);
+    if (value.length > 0) {
+      await createSession(value);
+      return;
+    }
+
+    const activeProjectDir = activeRuntime?.projectDir?.trim() ?? "";
+    if (activeProjectDir.length > 0) {
+      await createSession(activeProjectDir);
+      return;
+    }
+
+    const lastSelected = normalizeScopePath(settingsStore.lastSelectedScope);
+    if (lastSelected.length > 0 && (await isProjectDirValid(lastSelected))) {
+      await createSession(lastSelected);
+    }
   }
 
   async function popOutSession(descriptor: SessionDescriptor): Promise<void> {
@@ -722,6 +756,7 @@
       normalizedProjectDir,
       normalizedSessionId,
       normalizedFilePath,
+      getProjectScopeSeedScopes(),
     );
     await sessionAttentionStore
       .removeSubject(attentionSubject)
@@ -756,7 +791,17 @@
     }
 
     // Delete the scope (session files) via backend
-    await projectScopesStore.deleteScope(normalizedProjectDir);
+    await projectScopesStore.deleteScope(
+      normalizedProjectDir,
+      getProjectScopeSeedScopes(),
+    );
+
+    if (
+      normalizeScopePath(settingsStore.lastSelectedScope) ===
+      normalizedProjectDir
+    ) {
+      await settingsStore.setLastSelectedScope("");
+    }
     await Promise.allSettled(
       scopeHistory.map((history) =>
         sessionAttentionStore.removeSubject(
@@ -1023,8 +1068,6 @@
   });
 
   onMount(async () => {
-    // Never block startup on settings/plugin-store load.
-    // If store access stalls, keep bootstrapping sessions with defaults.
     const settingsLoad = settingsStore.load().catch((error) => {
       console.warn("Failed to load settings:", error);
     });
@@ -1032,8 +1075,7 @@
       console.warn("Failed to load session attention state:", error);
     });
 
-    void settingsLoad;
-    void sessionAttentionLoad;
+    await settingsLoad;
 
     try {
       await Promise.race([
@@ -1042,8 +1084,8 @@
           boundSessionId,
           requestedSessionId: windowContext.sessionId,
           requestedSessionFile: windowContext.sessionFile,
-          loadCwd: async () => cwdStore.load(),
-          refreshProjectScopes: async () => projectScopesStore.refresh(),
+          refreshProjectScopes: async () =>
+            projectScopesStore.refresh(getProjectScopeSeedScopes()),
           refreshSessions: async () => sessionsStore.refreshFromBackend(),
           getSessions: () => sessionsStore.sessions,
           getActiveSession: () => sessionsStore.activeSession,
@@ -1055,7 +1097,7 @@
           createSession: async (projectDir, sessionFile) => {
             await createSession(projectDir, sessionFile);
           },
-          getWorkingDirectory: async () => getWorkingDirectoryFallback(),
+          isProjectDirValid,
           getLastSelectedScope: () => settingsStore.lastSelectedScope,
           getScopeHistory: (scope) => projectScopesStore.historyByScope[scope],
           setProjectDirInput: (value) => {
@@ -1080,7 +1122,7 @@
       sessionsBootstrapped = true;
     }
 
-    await Promise.allSettled([settingsLoad, sessionAttentionLoad]);
+    await Promise.allSettled([sessionAttentionLoad]);
 
     disposeWindowFocusChanged = await getCurrentWindow()
       .onFocusChanged((event) => {
