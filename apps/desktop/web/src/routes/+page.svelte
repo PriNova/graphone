@@ -392,7 +392,11 @@
       return "This floating session is no longer available.";
     }
 
-    return "Create a session to start chatting.";
+    if (projectScopes.length === 0) {
+      return "No project session yet. Enter a project directory and create a session to start chatting.";
+    }
+
+    return "Select a project scope or create a session to start chatting.";
   });
 
   function getAttentionSubjectForDescriptor(

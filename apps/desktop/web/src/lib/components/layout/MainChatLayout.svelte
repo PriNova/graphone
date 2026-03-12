@@ -217,6 +217,22 @@
   function isToolPending(toolCallId: string): boolean {
     return activeRuntime?.messages.isToolCallPending(toolCallId) ?? false;
   }
+
+  const emptyChatPromptText = $derived.by(() => {
+    const missingProviderSetup =
+      activeRuntime &&
+      sessionStarted &&
+      !isModelsLoading &&
+      availableModels.length === 0 &&
+      currentModel.trim().length === 0 &&
+      currentProvider.trim().length === 0;
+
+    if (!missingProviderSetup) {
+      return "Start a conversation by typing below";
+    }
+
+    return "Start a conversation by typing below. No models are available yet — add a provider API key in ~/.pi/agent/auth.json (or via environment variables), or run /login first.";
+  });
 </script>
 
 <main class="relative flex w-full h-screen overflow-hidden">
@@ -416,7 +432,7 @@
           {:else if messages.length === 0}
             <div class="flex items-center justify-center h-full">
               <p class="text-muted-foreground text-sm">
-                Start a conversation by typing below
+                {emptyChatPromptText}
               </p>
             </div>
           {:else}
