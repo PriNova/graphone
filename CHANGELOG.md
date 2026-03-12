@@ -2,6 +2,22 @@
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-03-12
+
+### Added
+
+- Added VS Code-style open session tabs so you can switch between active chats more quickly.
+- Added a dedicated session tab presentation layer to keep tab labels and ordering consistent across the app.
+
+### Changed
+
+- Updated the main chat layout and home route to surface session tabs as part of the primary workspace.
+- Improved tab overflow scrolling so larger session sets remain easier to navigate.
+
+### Fixed
+
+- Fixed tab tooltip rendering and related header polish issues in the session tabs UI.
+
 ## [0.3.1] - 2026-03-11
 
 ### Added
