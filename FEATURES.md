@@ -22,6 +22,7 @@ This page summarizes what Graphone supports today.
 
 - Multi-session chat experience
 - Open chats in a tab bar and switch between them without losing your place
+- Reopen your previously open chat tabs on relaunch when they are still available
 - Start a new chat while another session is still generating
 - Session history in the sidebar, including reopening older chats
 - Project-based chat organization

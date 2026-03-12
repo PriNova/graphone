@@ -2,6 +2,21 @@
 
 ## [Unreleased]
 
+## [0.4.1] - 2026-03-12
+
+### Added
+
+- Added reopening of your open chat tabs on relaunch when they are still available.
+
+### Changed
+
+- Refined session tab visuals so active and inactive states feel more consistent across the app.
+- Improved automatic scrolling after you send a prompt so the latest conversation stays in view more reliably.
+
+### Fixed
+
+- Fixed inconsistent auto-scrolling when switching between sessions.
+
 ## [0.4.0] - 2026-03-12
 
 ### Added
