@@ -458,8 +458,10 @@
     }
   }
 
-  function scrollToBottom(smooth = true): void {
-    activeRuntime?.messages.scrollToBottom(messagesContainerRef, smooth);
+  // `force` is used when activating/opening a session so restored per-session
+  // pin state does not block the initial jump to the latest message.
+  function scrollToBottom(smooth = true, force = false): void {
+    activeRuntime?.messages.scrollToBottom(messagesContainerRef, smooth, force);
   }
 
   // Performance: Debounced scroll using RAF throttling.
@@ -685,7 +687,7 @@
     await ensureRuntime(nextDescriptor);
 
     if (activeBeforeClose === sessionId) {
-      requestAnimationFrame(() => scrollToBottom(false));
+      requestAnimationFrame(() => scrollToBottom(false, true));
     }
   }
 
@@ -729,7 +731,7 @@
         projectDirInput = value;
       },
       requestScrollToBottom: () => {
-        requestAnimationFrame(() => scrollToBottom(false));
+        requestAnimationFrame(() => scrollToBottom(false, true));
       },
     });
   }
@@ -747,7 +749,7 @@
     await ensureRuntime(descriptor);
     projectDirInput = "";
     scheduleSessionSidebarRefresh(250);
-    requestAnimationFrame(() => scrollToBottom(false));
+    requestAnimationFrame(() => scrollToBottom(false, true));
   }
 
   async function createSessionFromInput(): Promise<void> {
@@ -779,7 +781,7 @@
 
     sessionsStore.setActiveSession(sessionId);
     await ensureRuntime(descriptor);
-    requestAnimationFrame(() => scrollToBottom(false));
+    requestAnimationFrame(() => scrollToBottom(false, true));
   }
 
   async function onCloseSessionTab(sessionId: string): Promise<void> {
@@ -886,7 +888,7 @@
       await sessionAttentionStore
         .markSeen(getAttentionSubjectForHistory(history))
         .catch(() => undefined);
-      requestAnimationFrame(() => scrollToBottom(false));
+      requestAnimationFrame(() => scrollToBottom(false, true));
       return;
     }
 
@@ -1273,7 +1275,7 @@
             projectDirInput = value;
           },
           requestScrollToBottom: () => {
-            requestAnimationFrame(() => scrollToBottom(false));
+            requestAnimationFrame(() => scrollToBottom(false, true));
           },
           setFloatingSessionMissing: (missing) => {
             floatingSessionMissing = missing;

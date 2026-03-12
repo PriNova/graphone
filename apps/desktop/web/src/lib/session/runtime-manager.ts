@@ -86,11 +86,10 @@ export async function initializeRuntime(
 
 function warmRuntime(runtime: SessionRuntime): void {
   void Promise.allSettled([
-    loadMessages(runtime),
     runtime.agent.loadRegisteredExtensions(),
     runtime.agent.loadAvailableModels(),
   ]).then((results) => {
-    const [, extensionsResult, modelsResult] = results;
+    const [extensionsResult, modelsResult] = results;
 
     if (extensionsResult?.status === "rejected") {
       console.warn(
@@ -132,6 +131,10 @@ export async function ensureRuntime(
 
   const runtime = await initializeRuntime(descriptor);
   setRuntimes(setRuntimeForSession(runtimes, runtime));
+
+  // Load persisted history before returning so activation paths can reliably
+  // scroll to the latest message after opening a cold session/runtime.
+  await loadMessages(runtime);
   warmRuntime(runtime);
   return runtime;
 }
