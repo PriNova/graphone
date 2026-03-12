@@ -1,5 +1,9 @@
 <script lang="ts">
   import { SvelteSet } from "svelte/reactivity";
+  import {
+    sessionSidebarHistoryItemClass,
+    sessionSidebarHistorySourceClass,
+  } from "$lib/session/session-state-presentation";
   import type { PersistedSessionHistoryItem } from "$lib/stores/projectScopes.svelte";
   import { cn } from "$lib/utils/cn";
 
@@ -672,15 +676,11 @@
                   <div
                     class={cn(
                       "w-full rounded border px-1.5 py-1 text-left text-[11px] transition-colors group/session",
-                      historyBusy && historyActive
-                        ? "border-foreground bg-surface-active text-foreground border-l-4 border-l-success"
-                        : historyBusy
-                          ? "border-border hover:bg-surface-hover border-l-2 border-l-success"
-                          : historyActive
-                            ? "border-foreground bg-surface-active text-foreground"
-                            : historyNeedsReview
-                              ? "border-[#4da3ff] hover:bg-surface-hover border-l-2 border-l-[#4da3ff]"
-                              : "border-border hover:bg-surface-hover",
+                      sessionSidebarHistoryItemClass({
+                        isBusy: historyBusy,
+                        needsReview: historyNeedsReview,
+                        isActive: historyActive,
+                      }),
                     )}
                   >
                     <div class="flex items-center gap-2">
@@ -708,11 +708,11 @@
                             <span
                               class={cn(
                                 "font-mono text-[10px] shrink-0",
-                                historyBusy
-                                  ? "text-success font-semibold"
-                                  : historyActive
-                                    ? "text-foreground font-semibold"
-                                    : "text-muted-foreground",
+                                sessionSidebarHistorySourceClass({
+                                  isBusy: historyBusy,
+                                  needsReview: historyNeedsReview,
+                                  isActive: historyActive,
+                                }),
                               )}
                               title={`${historySourceName(history)} • ${historyBusy ? "Agent active" : "Agent idle"}${historyActive ? " • Current view" : ""}${historyNeedsReview ? " • Needs review" : ""}`}
                               aria-label={`${historySourceName(history)} source, ${historyBusy ? "agent active" : "agent idle"}${historyActive ? ", current visible session" : ""}${historyNeedsReview ? ", completed while away" : ""}`}

@@ -1,4 +1,8 @@
 <script lang="ts">
+  import {
+    sessionTabAccentClass,
+    sessionTabLabelClass,
+  } from "$lib/session/session-state-presentation";
   import type { SessionTabView } from "$lib/session/session-tab-presentation";
   import { cn } from "$lib/utils/cn";
 
@@ -28,8 +32,8 @@
 
   function tabContainerClass(isActive: boolean): string {
     return isActive
-      ? "border-border bg-background text-foreground shadow-xs"
-      : "border-transparent bg-surface text-muted-foreground hover:border-border hover:bg-surface-hover hover:text-foreground";
+      ? "border-border bg-background shadow-xs"
+      : "border-transparent bg-surface hover:border-border hover:bg-surface-hover";
   }
 
   function closeButtonClass(isActive: boolean): string {
@@ -81,14 +85,26 @@
       {/if}
 
       {#each tabs as tab (tab.sessionId)}
+        {@const isActive = activeSessionId === tab.sessionId}
         <div
           class={cn(
-            "group relative -mb-px flex h-10 min-w-[144px] max-w-[240px] shrink-0 items-center gap-1 rounded-t-lg border px-1.5 transition-[background-color,border-color,color,box-shadow]",
-            tabContainerClass(activeSessionId === tab.sessionId),
+            "group relative -mb-px flex h-10 min-w-[144px] max-w-[240px] shrink-0 items-center gap-1 rounded-t-lg border px-1.5 transition-[background-color,border-color,box-shadow]",
+            tabContainerClass(isActive),
           )}
           role="presentation"
         >
-          {#if activeSessionId === tab.sessionId}
+          <span
+            class={cn(
+              "absolute inset-x-3 top-0 h-0.5 rounded-full",
+              sessionTabAccentClass({
+                isBusy: tab.isBusy,
+                needsReview: tab.needsReview,
+              }),
+            )}
+            aria-hidden="true"
+          ></span>
+
+          {#if isActive}
             <span
               class="absolute inset-x-3 bottom-0 h-0.5 rounded-full bg-primary"
               aria-hidden="true"
@@ -97,38 +113,24 @@
 
           <button
             type="button"
-            class="flex min-w-0 flex-1 items-center gap-2 rounded-md px-1 py-1 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            class="flex min-w-0 flex-1 items-center rounded-md pr-1 pl-7 py-1 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
             role="tab"
-            aria-selected={activeSessionId === tab.sessionId}
+            aria-selected={isActive}
             aria-label={tab.accessibleLabel}
+            title={tab.tooltip}
             onclick={() => onselect?.(tab.sessionId)}
           >
             <span
-              class="flex h-4 w-4 shrink-0 items-center justify-center"
-              aria-hidden="true"
+              class={cn(
+                "truncate text-sm font-medium",
+                sessionTabLabelClass({
+                  isBusy: tab.isBusy,
+                  needsReview: tab.needsReview,
+                }),
+              )}
             >
-              {#if tab.isBusy}
-                <span class="h-2.5 w-2.5 rounded-full bg-emerald-500"></span>
-              {:else if tab.needsReview}
-                <span class="h-2.5 w-2.5 rounded-full bg-amber-500"></span>
-              {:else if tab.isDetached}
-                <svg
-                  class="h-3.5 w-3.5 text-muted-foreground"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  stroke-width="2"
-                >
-                  <path d="M14 5h5v5"></path>
-                  <path d="M10 14 19 5"></path>
-                  <path d="M19 14v5h-5"></path>
-                  <path d="M5 10V5h5"></path>
-                  <path d="M5 5l5 5"></path>
-                </svg>
-              {/if}
+              {tab.label}
             </span>
-
-            <span class="truncate text-sm font-medium">{tab.label}</span>
           </button>
 
           {#if onclose}
@@ -136,7 +138,7 @@
               type="button"
               class={cn(
                 "shrink-0 rounded-md p-1 text-muted-foreground transition-[opacity,background-color,color] hover:bg-secondary hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
-                closeButtonClass(activeSessionId === tab.sessionId),
+                closeButtonClass(isActive),
               )}
               aria-label={`Close ${tab.label}`}
               onclick={(event) => handleClose(event, tab.sessionId)}

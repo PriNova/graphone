@@ -1,3 +1,4 @@
+import { describeSessionAttentionTone } from "$lib/session/session-state-presentation";
 import type { PersistedSessionHistoryItem } from "$lib/stores/projectScopes.svelte";
 import type { SessionDescriptor } from "$lib/stores/sessions.svelte";
 
@@ -80,8 +81,24 @@ function toBaseMeta(
   };
 }
 
-function buildTooltip(meta: SessionTabBaseMeta, label: string): string {
-  return collapseWhitespace(label || meta.fullLabel);
+function buildTooltip(
+  meta: SessionTabBaseMeta,
+  label: string,
+  state: {
+    isBusy: boolean;
+    needsReview: boolean;
+    isDetached: boolean;
+  },
+): string {
+  const parts = [collapseWhitespace(label || meta.fullLabel)];
+
+  parts.push(describeSessionAttentionTone(state));
+
+  if (state.isDetached) {
+    parts.push("Detached");
+  }
+
+  return parts.join(" • ");
 }
 
 function buildAccessibleLabel(
@@ -184,7 +201,11 @@ export function deriveSessionTabs({
     return {
       sessionId: tab.session.sessionId,
       label,
-      tooltip: buildTooltip(tab, label),
+      tooltip: buildTooltip(tab, label, {
+        isBusy,
+        needsReview,
+        isDetached,
+      }),
       accessibleLabel: buildAccessibleLabel(label, {
         isBusy,
         needsReview,

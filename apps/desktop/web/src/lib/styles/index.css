@@ -28,6 +28,7 @@
   --color-success: var(--success);
   --color-success-surface: var(--success-surface);
   --color-success-surface-hover: var(--success-surface-hover);
+  --color-review: var(--review);
   --color-warning-surface: var(--warning-surface);
   --color-ring: var(--ring);
 
@@ -135,6 +136,7 @@
     --success: hsl(120, 58%, 40%);
     --success-surface: #e6f3e6;
     --success-surface-hover: #dcecdc;
+    --review: #4da3ff;
     --warning-surface: #f5efdc;
     --ring: var(--foreground);
 
@@ -168,6 +170,7 @@
     --destructive-surface-hover: #311b1c;
     --success-surface: #152316;
     --success-surface-hover: #1a2c1b;
+    --review: #4da3ff;
     --warning-surface: #2b2618;
   }
 
