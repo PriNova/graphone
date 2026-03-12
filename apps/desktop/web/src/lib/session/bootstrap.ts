@@ -2,6 +2,7 @@ import {
   normalizeScopePath,
   type PersistedSessionHistoryItem,
 } from "$lib/stores/projectScopes.svelte";
+import type { RestorableOpenSessionTab } from "$lib/stores/settings.svelte";
 import type { SessionDescriptor } from "$lib/stores/sessions.svelte";
 
 export interface SessionBootstrapDependencies {
@@ -15,13 +16,98 @@ export interface SessionBootstrapDependencies {
   getActiveSession: () => SessionDescriptor | null;
   setActiveSession: (sessionId: string) => void;
   ensureRuntime: (descriptor: SessionDescriptor) => Promise<void>;
-  createSession: (projectDir: string, sessionFile?: string) => Promise<void>;
+  createSession: (
+    projectDir: string,
+    sessionFile?: string,
+    options?: { activate?: boolean },
+  ) => Promise<SessionDescriptor>;
   isProjectDirValid: (projectDir: string) => Promise<boolean>;
   getLastSelectedScope: () => string;
+  getRestorableOpenSessionTabs: () => RestorableOpenSessionTab[];
+  getRestorableOpenSessionActiveIndex: () => number;
   getScopeHistory: (scope: string) => PersistedSessionHistoryItem[] | undefined;
   setProjectDirInput: (value: string) => void;
   requestScrollToBottom: () => void;
   setFloatingSessionMissing: (value: boolean) => void;
+}
+
+async function restoreOpenTabsFromSettings(
+  dependencies: SessionBootstrapDependencies,
+): Promise<boolean> {
+  const openTabs = dependencies.getRestorableOpenSessionTabs();
+  if (openTabs.length === 0) {
+    return false;
+  }
+
+  const restored: SessionDescriptor[] = [];
+
+  for (const tab of openTabs) {
+    const projectDir = normalizeScopePath(tab.projectDir);
+    if (
+      projectDir.length === 0 ||
+      !(await dependencies.isProjectDirValid(projectDir))
+    ) {
+      continue;
+    }
+
+    const requestedSessionFile = tab.sessionFile?.trim() ?? "";
+    const scopeHistory = dependencies.getScopeHistory(projectDir) ?? [];
+    const matchedHistory =
+      requestedSessionFile.length > 0
+        ? scopeHistory.find(
+            (history) => history.filePath.trim() === requestedSessionFile,
+          )
+        : undefined;
+
+    try {
+      const descriptor = await dependencies.createSession(
+        projectDir,
+        matchedHistory?.filePath,
+        { activate: false },
+      );
+      restored.push(descriptor);
+    } catch (error) {
+      if (requestedSessionFile.length === 0) {
+        console.warn("Failed to restore open session tab:", error);
+        continue;
+      }
+
+      try {
+        const descriptor = await dependencies.createSession(
+          projectDir,
+          undefined,
+          {
+            activate: false,
+          },
+        );
+        restored.push(descriptor);
+      } catch (fallbackError) {
+        console.warn("Failed to restore open session tab:", fallbackError);
+      }
+    }
+  }
+
+  if (restored.length === 0) {
+    return false;
+  }
+
+  const requestedActiveIndex =
+    dependencies.getRestorableOpenSessionActiveIndex();
+  const activeIndex = Math.min(
+    Math.max(requestedActiveIndex, 0),
+    restored.length - 1,
+  );
+  const activeDescriptor = restored[activeIndex] ?? restored[0];
+
+  if (!activeDescriptor) {
+    return false;
+  }
+
+  dependencies.setActiveSession(activeDescriptor.sessionId);
+  await dependencies.ensureRuntime(activeDescriptor);
+  dependencies.setProjectDirInput(activeDescriptor.projectDir);
+  dependencies.requestScrollToBottom();
+  return true;
 }
 
 export async function bootstrapMainWindowSessions(
@@ -35,6 +121,10 @@ export async function bootstrapMainWindowSessions(
   }
 
   if (dependencies.getSessions().length === 0) {
+    if (await restoreOpenTabsFromSettings(dependencies)) {
+      return;
+    }
+
     const lastScope = normalizeScopePath(dependencies.getLastSelectedScope());
 
     if (

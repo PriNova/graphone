@@ -6,6 +6,14 @@ import {
 } from "$lib/theme/app-theme";
 
 /**
+ * Serialized descriptor for an open session tab that can be restored on startup.
+ */
+export interface RestorableOpenSessionTab {
+  projectDir: string;
+  sessionFile?: string;
+}
+
+/**
  * UI settings that persist across app restarts.
  */
 export interface UiSettings {
@@ -21,6 +29,10 @@ export interface UiSettings {
   toolResultsCollapsedByDefault: boolean;
   /** Whether thinking blocks should start collapsed */
   thinkingCollapsedByDefault: boolean;
+  /** Open tabs to restore on next startup */
+  openSessionTabs: RestorableOpenSessionTab[];
+  /** Active tab index inside openSessionTabs */
+  activeOpenSessionTabIndex: number;
 }
 
 const DEFAULT_SETTINGS: UiSettings = {
@@ -30,9 +42,40 @@ const DEFAULT_SETTINGS: UiSettings = {
   modelFilter: "enabled",
   toolResultsCollapsedByDefault: true,
   thinkingCollapsedByDefault: true,
+  openSessionTabs: [],
+  activeOpenSessionTabIndex: 0,
 };
 
 const STORE_FILE = "settings.json";
+
+function toRestorableOpenSessionTabs(
+  value: unknown,
+): RestorableOpenSessionTab[] {
+  if (!Array.isArray(value)) {
+    return DEFAULT_SETTINGS.openSessionTabs;
+  }
+
+  return value
+    .map((entry): RestorableOpenSessionTab | null => {
+      if (!entry || typeof entry !== "object") {
+        return null;
+      }
+
+      const projectDir =
+        typeof entry.projectDir === "string" ? entry.projectDir.trim() : "";
+      if (projectDir.length === 0) {
+        return null;
+      }
+
+      const sessionFile =
+        typeof entry.sessionFile === "string" ? entry.sessionFile.trim() : "";
+
+      return sessionFile.length > 0
+        ? { projectDir, sessionFile }
+        : { projectDir };
+    })
+    .filter((entry): entry is RestorableOpenSessionTab => entry !== null);
+}
 
 /**
  * Persistent settings store using tauri-plugin-store.
@@ -58,6 +101,10 @@ export class SettingsStore {
   thinkingCollapsedByDefault = $state<boolean>(
     DEFAULT_SETTINGS.thinkingCollapsedByDefault,
   );
+  openSessionTabs = $state<RestorableOpenSessionTab[]>([]);
+  activeOpenSessionTabIndex = $state<number>(
+    DEFAULT_SETTINGS.activeOpenSessionTabIndex,
+  );
 
   /** Whether settings have been loaded from disk */
   loaded = $state(false);
@@ -81,6 +128,8 @@ export class SettingsStore {
         modelFilter,
         toolResultsCollapsedByDefault,
         thinkingCollapsedByDefault,
+        openSessionTabs,
+        activeOpenSessionTabIndex,
       ] = await Promise.all([
         this.store.get<UiTheme>("ui.theme"),
         this.store.get<string[]>("ui.collapsedScopes"),
@@ -88,6 +137,8 @@ export class SettingsStore {
         this.store.get<"all" | "enabled">("ui.modelFilter"),
         this.store.get<boolean>("ui.toolResultsCollapsedByDefault"),
         this.store.get<boolean>("ui.thinkingCollapsedByDefault"),
+        this.store.get<RestorableOpenSessionTab[]>("ui.openSessionTabs"),
+        this.store.get<number>("ui.activeOpenSessionTabIndex"),
       ]);
 
       this.theme = isUiTheme(theme) ? theme : this.theme;
@@ -116,6 +167,15 @@ export class SettingsStore {
           ? thinkingCollapsedByDefault
           : DEFAULT_SETTINGS.thinkingCollapsedByDefault;
 
+      this.openSessionTabs = toRestorableOpenSessionTabs(openSessionTabs);
+
+      this.activeOpenSessionTabIndex =
+        typeof activeOpenSessionTabIndex === "number" &&
+        Number.isInteger(activeOpenSessionTabIndex) &&
+        activeOpenSessionTabIndex >= 0
+          ? activeOpenSessionTabIndex
+          : DEFAULT_SETTINGS.activeOpenSessionTabIndex;
+
       this.loaded = true;
       this.error = null;
     } catch (err) {
@@ -140,6 +200,11 @@ export class SettingsStore {
       await this.store.set(
         "ui.thinkingCollapsedByDefault",
         this.thinkingCollapsedByDefault,
+      );
+      await this.store.set("ui.openSessionTabs", this.openSessionTabs);
+      await this.store.set(
+        "ui.activeOpenSessionTabIndex",
+        this.activeOpenSessionTabIndex,
       );
       await this.store.save();
       this.error = null;
@@ -214,6 +279,24 @@ export class SettingsStore {
     await this.store.set("ui.thinkingCollapsedByDefault", collapsed);
   }
 
+  // --- Open session tabs ---
+
+  async persistOpenSessionTabs(
+    tabs: RestorableOpenSessionTab[],
+    activeIndex: number,
+  ): Promise<void> {
+    const normalizedTabs = toRestorableOpenSessionTabs(tabs);
+    const normalizedActiveIndex =
+      Number.isInteger(activeIndex) && activeIndex >= 0 ? activeIndex : 0;
+
+    this.openSessionTabs = normalizedTabs;
+    this.activeOpenSessionTabIndex = normalizedActiveIndex;
+
+    await this.store.set("ui.openSessionTabs", normalizedTabs);
+    await this.store.set("ui.activeOpenSessionTabIndex", normalizedActiveIndex);
+    await this.store.save();
+  }
+
   // --- Reset ---
 
   /**
@@ -228,6 +311,8 @@ export class SettingsStore {
       DEFAULT_SETTINGS.toolResultsCollapsedByDefault;
     this.thinkingCollapsedByDefault =
       DEFAULT_SETTINGS.thinkingCollapsedByDefault;
+    this.openSessionTabs = DEFAULT_SETTINGS.openSessionTabs;
+    this.activeOpenSessionTabIndex = DEFAULT_SETTINGS.activeOpenSessionTabIndex;
     await this.store.clear();
     await this.store.save();
   }

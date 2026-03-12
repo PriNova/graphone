@@ -42,7 +42,10 @@
     type SessionDescriptor,
   } from "$lib/stores/sessions.svelte";
   import { sessionAttentionStore } from "$lib/stores/sessionAttention.svelte";
-  import { settingsStore } from "$lib/stores/settings.svelte";
+  import {
+    settingsStore,
+    type RestorableOpenSessionTab,
+  } from "$lib/stores/settings.svelte";
   import { broadcastUiTheme, type UiTheme } from "$lib/theme/app-theme";
   import type { PromptImageAttachment } from "$lib/types/agent";
   import type { SessionRuntime } from "$lib/types/session";
@@ -77,6 +80,7 @@
     Record<string, PromptImageAttachment[]>
   >({});
   let openSessionTabOrder = $state<string[]>([]);
+  let lastPersistedOpenTabsSignature = $state<string>("");
   let detachedSessionIds = $state<string[]>([]);
   let floatingSessionMissing = $state(false);
   let isWindowFocused = $state(
@@ -110,6 +114,40 @@
     return left.every((value, index) => value === right[index]);
   }
 
+  function getRestorableOpenSessionTabs(): RestorableOpenSessionTab[] {
+    const sessionsById = new Map(
+      sessions.map((session) => [session.sessionId, session] as const),
+    );
+
+    return openSessionTabOrder
+      .map((sessionId): RestorableOpenSessionTab | null => {
+        const session = sessionsById.get(sessionId);
+        if (!session) {
+          return null;
+        }
+
+        const projectDir = normalizeScopePath(session.projectDir);
+        if (projectDir.length === 0) {
+          return null;
+        }
+
+        const sessionFile = session.sessionFile?.trim() ?? "";
+        return sessionFile.length > 0
+          ? { projectDir, sessionFile }
+          : { projectDir };
+      })
+      .filter((entry): entry is RestorableOpenSessionTab => entry !== null);
+  }
+
+  function getRestorableOpenSessionActiveIndex(): number {
+    if (!activeSessionId) {
+      return 0;
+    }
+
+    const activeIndex = openSessionTabOrder.indexOf(activeSessionId);
+    return activeIndex >= 0 ? activeIndex : 0;
+  }
+
   $effect(() => {
     const validSessionIds = new Set(
       sessions.map((session) => session.sessionId),
@@ -131,6 +169,27 @@
     if (!areSessionIdListsEqual(openSessionTabOrder, nextOrder)) {
       openSessionTabOrder = nextOrder;
     }
+  });
+
+  $effect(() => {
+    if (!isMainWindow || !settingsStore.loaded || !sessionsBootstrapped) {
+      return;
+    }
+
+    const tabs = getRestorableOpenSessionTabs();
+    const activeIndex = getRestorableOpenSessionActiveIndex();
+    const signature = JSON.stringify({ tabs, activeIndex });
+
+    if (signature === lastPersistedOpenTabsSignature) {
+      return;
+    }
+
+    lastPersistedOpenTabsSignature = signature;
+    void settingsStore
+      .persistOpenSessionTabs(tabs, activeIndex)
+      .catch((error) => {
+        console.warn("Failed to persist open session tabs:", error);
+      });
   });
 
   const orderedSessionTabs = $derived.by(() => {
@@ -739,17 +798,24 @@
   async function createSession(
     projectDir: string,
     sessionFile?: string,
-  ): Promise<void> {
+    options?: { activate?: boolean },
+  ): Promise<SessionDescriptor> {
     const descriptor = await sessionsStore.createSession(
       projectDir,
       undefined,
       undefined,
       sessionFile,
+      options,
     );
     await ensureRuntime(descriptor);
     projectDirInput = "";
     scheduleSessionSidebarRefresh(250);
-    requestAnimationFrame(() => scrollToBottom(false, true));
+
+    if (options?.activate ?? true) {
+      requestAnimationFrame(() => scrollToBottom(false, true));
+    }
+
+    return descriptor;
   }
 
   async function createSessionFromInput(): Promise<void> {
@@ -1270,11 +1336,14 @@
           ensureRuntime: async (descriptor) => {
             await ensureRuntime(descriptor);
           },
-          createSession: async (projectDir, sessionFile) => {
-            await createSession(projectDir, sessionFile);
+          createSession: async (projectDir, sessionFile, options) => {
+            return await createSession(projectDir, sessionFile, options);
           },
           isProjectDirValid,
           getLastSelectedScope: () => settingsStore.lastSelectedScope,
+          getRestorableOpenSessionTabs: () => settingsStore.openSessionTabs,
+          getRestorableOpenSessionActiveIndex: () =>
+            settingsStore.activeOpenSessionTabIndex,
           getScopeHistory: (scope) => projectScopesStore.historyByScope[scope],
           setProjectDirInput: (value) => {
             projectDirInput = value;
