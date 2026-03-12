@@ -1047,7 +1047,9 @@
     }
 
     maybeTrackOptimisticFirstPrompt(activeRuntime, prompt);
-    await handlePromptSubmit(activeRuntime, prompt, images);
+    const submitPromise = handlePromptSubmit(activeRuntime, prompt, images);
+    requestAnimationFrame(() => scrollToBottom(false, true));
+    await submitPromise;
   }
 
   function onCancel(): void {
@@ -1169,10 +1171,13 @@
       case "error":
         activeRuntime.messages.addErrorMessage(result.message);
         break;
-      case "submit":
+      case "submit": {
         maybeTrackOptimisticFirstPrompt(activeRuntime, result.text);
-        await handlePromptSubmit(activeRuntime, result.text);
+        const submitPromise = handlePromptSubmit(activeRuntime, result.text);
+        requestAnimationFrame(() => scrollToBottom(false, true));
+        await submitPromise;
         break;
+      }
       case "handled":
         if (command === "new") {
           clearOptimisticFirstPrompt(activeRuntime.sessionId);
