@@ -49,6 +49,7 @@ pub fn run() {
     let sidecar_state = Arc::new(Mutex::new(SidecarState::new()));
 
     let app = tauri::Builder::default()
+        .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_store::Builder::new().build())

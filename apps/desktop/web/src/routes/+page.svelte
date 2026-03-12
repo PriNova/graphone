@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onDestroy, onMount } from "svelte";
   import { invoke } from "@tauri-apps/api/core";
+  import { open } from "@tauri-apps/plugin-dialog";
   import { getAllWindows, getCurrentWindow } from "@tauri-apps/api/window";
 
   import MainChatLayout from "$lib/components/layout/MainChatLayout.svelte";
@@ -393,10 +394,10 @@
     }
 
     if (projectScopes.length === 0) {
-      return "No project session yet. Enter a project directory and create a session to start chatting.";
+      return "No project scope yet. Create one to start chatting.";
     }
 
-    return "Select a project scope or create a session to start chatting.";
+    return "Select or create a project scope to start chatting.";
   });
 
   function getAttentionSubjectForDescriptor(
@@ -822,23 +823,48 @@
     return descriptor;
   }
 
-  async function createSessionFromInput(): Promise<void> {
-    const value = projectDirInput.trim();
-    if (value.length > 0) {
-      await createSession(value);
+  async function getProjectScopeDialogDefaultPath(): Promise<
+    string | undefined
+  > {
+    const candidates = [
+      activeRuntime?.projectDir,
+      activeSession?.projectDir,
+      settingsStore.lastSelectedScope,
+    ];
+
+    for (const candidate of candidates) {
+      const normalized = normalizeScopePath(candidate ?? "");
+      if (normalized.length === 0) {
+        continue;
+      }
+
+      if (await isProjectDirValid(normalized)) {
+        return normalized;
+      }
+    }
+
+    return undefined;
+  }
+
+  async function createProjectScope(): Promise<void> {
+    const defaultPath = await getProjectScopeDialogDefaultPath();
+    const selected = await open({
+      directory: true,
+      multiple: false,
+      title: "Create project scope",
+      ...(defaultPath ? { defaultPath } : {}),
+    });
+
+    if (typeof selected !== "string") {
       return;
     }
 
-    const activeProjectDir = activeRuntime?.projectDir?.trim() ?? "";
-    if (activeProjectDir.length > 0) {
-      await createSession(activeProjectDir);
+    const projectDir = normalizeScopePath(selected);
+    if (projectDir.length === 0) {
       return;
     }
 
-    const lastSelected = normalizeScopePath(settingsStore.lastSelectedScope);
-    if (lastSelected.length > 0 && (await isProjectDirValid(lastSelected))) {
-      await createSession(lastSelected);
-    }
+    await createSession(projectDir);
   }
 
   async function onSelectSessionTab(sessionId: string): Promise<void> {
@@ -918,10 +944,6 @@
 
   function toggleSidebar(): void {
     sidebarCollapsed = !sidebarCollapsed;
-  }
-
-  function onProjectDirInputChange(value: string): void {
-    projectDirInput = value;
   }
 
   async function onSelectScope(projectDir: string): Promise<void> {
@@ -1493,7 +1515,6 @@
   {busySessionFiles}
   {reviewSessionIds}
   {reviewSessionFiles}
-  {projectDirInput}
   sessionsCreating={sessionsStore.creating}
   {sidebarCollapsed}
   collapsedScopes={settingsStore.collapsedScopes}
@@ -1542,8 +1563,7 @@
   onselectsessiontab={onSelectSessionTab}
   onclosesessiontab={onCloseSessionTab}
   ontogglesidebar={toggleSidebar}
-  onprojectdirinput={onProjectDirInputChange}
-  oncreatesession={createSessionFromInput}
+  oncreateprojectscope={createProjectScope}
   onselectscope={onSelectScope}
   onselecthistory={onSelectHistory}
   onopenhistorywindow={onOpenHistoryInFloatingWindow}

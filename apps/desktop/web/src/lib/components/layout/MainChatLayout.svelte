@@ -32,7 +32,6 @@
     busySessionFiles?: string[];
     reviewSessionIds?: string[];
     reviewSessionFiles?: string[];
-    projectDirInput?: string;
     sessionsCreating?: boolean;
     sidebarCollapsed?: boolean;
     collapsedScopes?: string[];
@@ -77,8 +76,7 @@
     onmessagescontainerchange?: (element: HTMLDivElement | null) => void;
     onmessagescontentchange?: (element: HTMLDivElement | null) => void;
     ontogglesidebar?: () => void;
-    onprojectdirinput?: (value: string) => void;
-    oncreatesession?: () => void | Promise<void>;
+    oncreateprojectscope?: () => void | Promise<void>;
     onselectscope?: (projectDir: string) => void | Promise<void>;
     onselecthistory?: (
       projectDir: string,
@@ -126,13 +124,12 @@
     busySessionFiles = [],
     reviewSessionIds = [],
     reviewSessionFiles = [],
-    projectDirInput = "",
     sessionsCreating = false,
     sidebarCollapsed = false,
     collapsedScopes = [],
     activeSession = null,
     startupError = null,
-    emptyStateText = "Select a project scope or enter a project directory to start chatting.",
+    emptyStateText = "Select or create a project scope to start chatting.",
     activeRuntime = null,
     messages = [],
     activePromptDraft = "",
@@ -171,8 +168,7 @@
     onselectsessiontab,
     onclosesessiontab,
     ontogglesidebar,
-    onprojectdirinput,
-    oncreatesession,
+    oncreateprojectscope,
     onselectscope,
     onselecthistory,
     onopenhistorywindow,
@@ -279,13 +275,11 @@
       {busySessionFiles}
       {reviewSessionIds}
       {reviewSessionFiles}
-      {projectDirInput}
       creating={sessionsCreating}
       collapsed={sidebarCollapsed}
       {collapsedScopes}
       ontoggle={ontogglesidebar}
-      {onprojectdirinput}
-      {oncreatesession}
+      {oncreateprojectscope}
       {onselectscope}
       {onselecthistory}
       {onopenhistorywindow}

@@ -16,13 +16,12 @@
     busySessionFiles?: string[];
     reviewSessionIds?: string[];
     reviewSessionFiles?: string[];
-    projectDirInput?: string;
     creating?: boolean;
     collapsed?: boolean;
     scopeHistoryByProject?: Record<string, PersistedSessionHistoryItem[]>;
     collapsedScopes?: string[];
     ontoggle?: () => void;
-    oncreatesession?: () => void | Promise<void>;
+    oncreateprojectscope?: () => void | Promise<void>;
     onselectscope?: (projectDir: string) => void | Promise<void>;
     onselecthistory?: (
       projectDir: string,
@@ -36,7 +35,6 @@
       projectDir: string,
       history: PersistedSessionHistoryItem,
     ) => void | Promise<void>;
-    onprojectdirinput?: (value: string) => void;
     onremovescope?: (projectDir: string) => void | Promise<void>;
     ontogglescopecollapse?: (projectDir: string) => void;
   }
@@ -50,18 +48,16 @@
     busySessionFiles = [],
     reviewSessionIds = [],
     reviewSessionFiles = [],
-    projectDirInput = "",
     creating = false,
     collapsed = false,
     scopeHistoryByProject = {},
     collapsedScopes = [],
     ontoggle,
-    oncreatesession,
+    oncreateprojectscope,
     onselectscope,
     onselecthistory,
     onremovehistory,
     onopenhistorywindow,
-    onprojectdirinput,
     onremovescope,
     ontogglescopecollapse,
   }: Props = $props();
@@ -373,11 +369,6 @@
     return pendingDeletionHistory.has(historyDeletionKey(history));
   }
 
-  function handleProjectDirInput(event: Event): void {
-    const target = event.target as HTMLInputElement;
-    onprojectdirinput?.(target.value);
-  }
-
   function startDeleteScope(projectDir: string, event: MouseEvent): void {
     event.stopPropagation();
     pendingDeletionScopes.add(projectDir);
@@ -455,33 +446,28 @@
     </div>
 
     {#if !collapsed}
-      <div class="mt-2 flex items-center gap-2">
-        <input
-          value={projectDirInput}
-          class="flex-1 bg-input-background border border-border rounded px-2 py-1.5 text-xs"
-          placeholder="Project directory"
-          oninput={handleProjectDirInput}
-        />
-        <button
-          type="button"
-          class="px-2 py-1.5 text-xs border border-border rounded hover:bg-secondary disabled:opacity-50"
-          onclick={() => oncreatesession?.()}
-          disabled={creating}
-        >
-          {creating ? "…" : "+"}
-        </button>
-      </div>
+      <button
+        type="button"
+        class="mt-2 inline-flex w-full items-center justify-center gap-2 rounded border border-border px-3 py-1.5 text-xs hover:bg-secondary disabled:opacity-50"
+        onclick={() => oncreateprojectscope?.()}
+        disabled={creating}
+        aria-label="Create project scope"
+      >
+        <span aria-hidden="true">{creating ? "…" : "+"}</span>
+        <span>Create project scope</span>
+      </button>
     {:else}
       <button
         type="button"
         class="mt-2 mx-auto inline-flex h-8 w-8 items-center justify-center rounded border border-border text-sm hover:bg-secondary disabled:opacity-50"
-        onclick={() => oncreatesession?.()}
+        onclick={() => oncreateprojectscope?.()}
         disabled={creating}
-        onmouseenter={(event) => showHistoryTooltip(event, "Create session")}
+        onmouseenter={(event) =>
+          showHistoryTooltip(event, "Create project scope")}
         onmouseleave={hideHistoryTooltip}
-        onfocus={(event) => showHistoryTooltip(event, "Create session")}
+        onfocus={(event) => showHistoryTooltip(event, "Create project scope")}
         onblur={hideHistoryTooltip}
-        aria-label="Create session"
+        aria-label="Create project scope"
       >
         {creating ? "…" : "+"}
       </button>
