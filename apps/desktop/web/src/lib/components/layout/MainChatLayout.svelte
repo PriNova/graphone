@@ -7,7 +7,9 @@
   import SettingsOverlay from "$lib/components/layout/SettingsOverlay.svelte";
   import { PromptInput } from "$lib/components/PromptInput";
   import { SessionSidebar } from "$lib/components/SessionSidebar";
+  import { SessionTabBar } from "$lib/components/SessionTabs";
   import { StatusBar } from "$lib/components/StatusBar";
+  import type { SessionTabView } from "$lib/session/session-tab-presentation";
   import type {
     AvailableModel,
     RegisteredExtensionSummary,
@@ -67,7 +69,10 @@
     showSidebar?: boolean;
     showSettingsButton?: boolean;
     showHeader?: boolean;
+    sessionTabs?: SessionTabView[];
     windowTitleHint?: string | null;
+    onselectsessiontab?: (sessionId: string) => void | Promise<void>;
+    onclosesessiontab?: (sessionId: string) => void | Promise<void>;
     onmessagescroll?: () => void;
     onmessagescontainerchange?: (element: HTMLDivElement | null) => void;
     onmessagescontentchange?: (element: HTMLDivElement | null) => void;
@@ -158,10 +163,13 @@
     showSidebar = true,
     showSettingsButton = true,
     showHeader = true,
+    sessionTabs = undefined,
     windowTitleHint = null,
     onmessagescroll,
     onmessagescontainerchange,
     onmessagescontentchange,
+    onselectsessiontab,
+    onclosesessiontab,
     ontogglesidebar,
     onprojectdirinput,
     oncreatesession,
@@ -213,28 +221,35 @@
 
 <main class="relative flex w-full h-screen overflow-hidden">
   {#if showSidebar && onpopoutactivesession}
-    <button
-      type="button"
-      class="absolute top-3 right-4 z-20 flex items-center justify-center h-9 w-9 rounded border border-border text-muted-foreground hover:text-foreground hover:border-foreground hover:bg-secondary transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
-      onclick={onpopoutactivesession}
-      disabled={!activeSession}
-      aria-label="Open active session in floating window"
-      title={activeSession
-        ? "Open active session in floating window"
-        : "No active session"}
-    >
-      <svg
-        aria-hidden="true"
-        class="h-4 w-4"
-        viewBox="0 0 24 24"
-        fill="none"
-        stroke="currentColor"
-        stroke-width="2"
+    <div class="group absolute top-3 right-4 z-20">
+      <button
+        type="button"
+        class="flex h-9 w-9 items-center justify-center rounded border border-border text-muted-foreground transition-colors hover:border-foreground hover:bg-secondary hover:text-foreground disabled:cursor-not-allowed disabled:opacity-40"
+        onclick={onpopoutactivesession}
+        disabled={!activeSession}
+        aria-label="Open active session in floating window"
       >
-        <rect x="4" y="4" width="16" height="12" rx="2"></rect>
-        <path d="M9 20h6"></path>
-      </svg>
-    </button>
+        <svg
+          aria-hidden="true"
+          class="h-4 w-4"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="2"
+        >
+          <rect x="4" y="4" width="16" height="12" rx="2"></rect>
+          <path d="M9 20h6"></path>
+        </svg>
+      </button>
+
+      <div
+        class="pointer-events-none absolute top-full right-0 z-30 mt-2 hidden whitespace-nowrap rounded-md border border-border bg-overlay px-2 py-1 text-[11px] text-foreground shadow-lg group-hover:block group-focus-within:block"
+      >
+        {activeSession
+          ? "Open active session in floating window"
+          : "No active session"}
+      </div>
+    </div>
   {/if}
 
   {#if showSidebar}
@@ -268,32 +283,41 @@
     class="relative flex-1 min-w-0 h-full flex items-stretch justify-center overflow-hidden"
   >
     {#if showSettingsButton}
-      <button
-        type="button"
-        class={`absolute top-3 ${showSidebar ? "left-4" : "left-3"} z-40 flex items-center justify-center h-9 w-9 rounded border transition-colors ${
-          settingsOpen
-            ? "border-foreground bg-secondary text-foreground shadow-xs"
-            : "border-border text-muted-foreground hover:text-foreground hover:border-foreground hover:bg-secondary"
-        }`}
-        onclick={toggleSettings}
-        aria-label={settingsOpen ? "Close settings" : "Open settings"}
-        title={settingsOpen ? "Close settings" : "Open settings"}
-        aria-expanded={settingsOpen}
+      <div
+        class={`group absolute top-3 ${showSidebar ? "left-4" : "left-3"} z-40`}
       >
-        <svg
-          aria-hidden="true"
-          class="h-4 w-4"
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
-          stroke-width="2"
+        <button
+          type="button"
+          class={`flex h-9 w-9 items-center justify-center rounded border transition-colors ${
+            settingsOpen
+              ? "border-foreground bg-secondary text-foreground shadow-xs"
+              : "border-border text-muted-foreground hover:text-foreground hover:border-foreground hover:bg-secondary"
+          }`}
+          onclick={toggleSettings}
+          aria-label={settingsOpen ? "Close settings" : "Open settings"}
+          aria-expanded={settingsOpen}
         >
-          <circle cx="12" cy="12" r="3" />
-          <path
-            d="M19.4 15a1.7 1.7 0 0 0 .34 1.87l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.7 1.7 0 0 0-1.87-.34 1.7 1.7 0 0 0-1.04 1.56V21a2 2 0 1 1-4 0v-.09a1.7 1.7 0 0 0-1.04-1.56 1.7 1.7 0 0 0-1.87.34l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.7 1.7 0 0 0 .34-1.87 1.7 1.7 0 0 0-1.56-1.04H3a2 2 0 1 1 0-4h.09a1.7 1.7 0 0 0 1.56-1.04 1.7 1.7 0 0 0-.34-1.87l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.7 1.7 0 0 0 1.87.34H9A1.7 1.7 0 0 0 10 3.09V3a2 2 0 1 1 4 0v.09A1.7 1.7 0 0 0 15.04 4h.01a1.7 1.7 0 0 0 1.87-.34l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.7 1.7 0 0 0-.34 1.87V8.4a1.7 1.7 0 0 0 1.56 1.04H21a2 2 0 1 1 0 4h-.09A1.7 1.7 0 0 0 19.4 15z"
-          />
-        </svg>
-      </button>
+          <svg
+            aria-hidden="true"
+            class="h-4 w-4"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2"
+          >
+            <circle cx="12" cy="12" r="3" />
+            <path
+              d="M19.4 15a1.7 1.7 0 0 0 .34 1.87l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.7 1.7 0 0 0-1.87-.34 1.7 1.7 0 0 0-1.04 1.56V21a2 2 0 1 1-4 0v-.09a1.7 1.7 0 0 0-1.04-1.56 1.7 1.7 0 0 0-1.87.34l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.7 1.7 0 0 0 .34-1.87 1.7 1.7 0 0 0-1.56-1.04H3a2 2 0 1 1 0-4h.09a1.7 1.7 0 0 0 1.56-1.04 1.7 1.7 0 0 0-.34-1.87l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.7 1.7 0 0 0 1.87.34H9A1.7 1.7 0 0 0 10 3.09V3a2 2 0 1 1 4 0v.09A1.7 1.7 0 0 0 15.04 4h.01a1.7 1.7 0 0 0 1.87-.34l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.7 1.7 0 0 0-.34 1.87V8.4a1.7 1.7 0 0 0 1.56 1.04H21a2 2 0 1 1 0 4h-.09A1.7 1.7 0 0 0 19.4 15z"
+            />
+          </svg>
+        </button>
+
+        <div
+          class="pointer-events-none absolute top-full left-1/2 z-30 mt-2 hidden -translate-x-1/2 whitespace-nowrap rounded-md border border-border bg-overlay px-2 py-1 text-[11px] text-foreground shadow-lg group-hover:block group-focus-within:block"
+        >
+          {settingsOpen ? "Close settings" : "Open settings"}
+        </div>
+      </div>
     {/if}
 
     <div
@@ -303,26 +327,66 @@
       class:pb-4={!showHeader}
     >
       {#if showHeader}
-        <div
-          class="w-full pr-6 lg:pr-8"
-          class:pl-2={showHeader || !showSettingsButton}
-          class:pl-10={showSettingsButton && !showHeader}
-        >
+        {#if sessionTabs}
           <div
-            class="w-full max-w-[min(95vw,1200px)] lg:max-w-[min(88vw,1360px)] mx-auto"
+            class="w-full pr-6 lg:pr-8"
+            class:pl-2={showHeader || !showSettingsButton}
+            class:pl-10={showSettingsButton && !showHeader}
           >
-            <header
-              class="shrink-0 h-[86px] flex flex-col items-center justify-center text-center gap-1"
+            <div
+              class="w-full max-w-[min(95vw,1200px)] lg:max-w-[min(88vw,1360px)] mx-auto"
             >
-              <h1 class="text-3xl font-semibold tracking-tight text-foreground">
-                Graphone
-              </h1>
-              {#if windowTitleHint}
-                <p class="text-xs text-muted-foreground">{windowTitleHint}</p>
-              {/if}
-            </header>
+              <header class="shrink-0 pt-12 pb-3">
+                <div
+                  class="mb-3 flex flex-col items-center justify-center text-center gap-1"
+                >
+                  <h1
+                    class="text-3xl font-semibold tracking-tight text-foreground"
+                  >
+                    Graphone
+                  </h1>
+                  {#if windowTitleHint}
+                    <p
+                      class="max-w-full truncate text-xs text-muted-foreground"
+                    >
+                      {windowTitleHint}
+                    </p>
+                  {/if}
+                </div>
+                <SessionTabBar
+                  tabs={sessionTabs}
+                  {activeSessionId}
+                  emptyLabel="No open sessions"
+                  onselect={onselectsessiontab}
+                  onclose={onclosesessiontab}
+                />
+              </header>
+            </div>
           </div>
-        </div>
+        {:else}
+          <div
+            class="w-full pr-6 lg:pr-8"
+            class:pl-2={showHeader || !showSettingsButton}
+            class:pl-10={showSettingsButton && !showHeader}
+          >
+            <div
+              class="w-full max-w-[min(95vw,1200px)] lg:max-w-[min(88vw,1360px)] mx-auto"
+            >
+              <header
+                class="shrink-0 h-[86px] flex flex-col items-center justify-center text-center gap-1"
+              >
+                <h1
+                  class="text-3xl font-semibold tracking-tight text-foreground"
+                >
+                  Graphone
+                </h1>
+                {#if windowTitleHint}
+                  <p class="text-xs text-muted-foreground">{windowTitleHint}</p>
+                {/if}
+              </header>
+            </div>
+          </div>
+        {/if}
       {/if}
 
       <div

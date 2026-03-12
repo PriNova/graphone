@@ -108,6 +108,13 @@ export async function openOrFocusFloatingSessionWindow(
   });
 }
 
+export async function listOpenFloatingSessionWindowLabels(): Promise<string[]> {
+  const windows = await getAllWindows().catch(() => []);
+  return windows
+    .map((window) => window.label)
+    .filter((label) => label.startsWith(FLOATING_SESSION_WINDOW_PREFIX));
+}
+
 export async function openOrFocusMainWindow(): Promise<void> {
   const focused = await focusWindowByLabel(MAIN_WINDOW_LABEL);
   if (focused) {

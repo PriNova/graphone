@@ -1,6 +1,6 @@
 # Graphone Feature Availability
 
-_Last updated: 2026-03-11_
+_Last updated: 2026-03-12_
 
 This page summarizes what Graphone supports today.
 
@@ -21,6 +21,7 @@ This page summarizes what Graphone supports today.
 ### Core desktop workflow
 
 - Multi-session chat experience
+- Open chats in a tab bar and switch between them without losing your place
 - Start a new chat while another session is still generating
 - Session history in the sidebar, including reopening older chats
 - Project-based chat organization

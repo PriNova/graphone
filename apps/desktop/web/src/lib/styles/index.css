@@ -229,3 +229,30 @@
     padding-right: 24px;
   }
 }
+
+@layer utilities {
+  .tab-strip-scrollbar {
+    scrollbar-width: thin;
+    scrollbar-color: var(--border) transparent;
+  }
+
+  .tab-strip-scrollbar::-webkit-scrollbar {
+    height: 10px;
+  }
+
+  .tab-strip-scrollbar::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  .tab-strip-scrollbar::-webkit-scrollbar-thumb {
+    background: var(--border);
+    border: 2px solid transparent;
+    border-radius: 999px;
+    background-clip: padding-box;
+  }
+
+  .tab-strip-scrollbar::-webkit-scrollbar-thumb:hover {
+    background: var(--muted-foreground);
+    background-clip: padding-box;
+  }
+}
