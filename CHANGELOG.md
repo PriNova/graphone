@@ -2,6 +2,16 @@
 
 ## [Unreleased]
 
+## [0.4.2] - 2026-03-13
+
+### Added
+
+- Added a folder picker when creating a project scope, so you can choose a project folder without typing the path manually.
+
+### Changed
+
+- Improved the first-run empty state so it more clearly explains how to add a project folder and start your first chat.
+
 ## [0.4.1] - 2026-03-12
 
 ### Added

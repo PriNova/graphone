@@ -1,6 +1,6 @@
 # Graphone Feature Availability
 
-_Last updated: 2026-03-12_
+_Last updated: 2026-03-13_
 
 This page summarizes what Graphone supports today.
 
@@ -25,7 +25,7 @@ This page summarizes what Graphone supports today.
 - Reopen your previously open chat tabs on relaunch when they are still available
 - Start a new chat while another session is still generating
 - Session history in the sidebar, including reopening older chats
-- Project-based chat organization
+- Project-based chat organization with a folder picker for adding project scopes
 - Streaming assistant responses
 - Stop/cancel the current response
 - Markdown rendering in assistant responses
