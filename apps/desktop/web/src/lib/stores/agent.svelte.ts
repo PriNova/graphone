@@ -2,6 +2,7 @@ import type { PromptImageAttachment } from "$lib/types/agent";
 import { invokeAgentCommand, invokeAgentRpc } from "$lib/stores/agent/api";
 import {
   parseAvailableModels,
+  parseAvailableSlashCommands,
   parseAvailableThinkingLevels,
   parseModelSupportsImageInput,
   parseOAuthLoginStatus,
@@ -14,6 +15,7 @@ import {
 } from "$lib/stores/agent/parsers";
 import type {
   AvailableModel,
+  AvailableSlashCommand,
   OAuthLoginPollResult,
   OAuthProviderStatus,
   RegisteredExtensionSummary,
@@ -23,6 +25,7 @@ import type {
 
 export type {
   AvailableModel,
+  AvailableSlashCommand,
   OAuthLoginPollResult,
   OAuthLoginStatus,
   OAuthLoginUpdate,
@@ -80,6 +83,10 @@ interface RegisteredExtensionsResponseData {
   errors?: unknown;
 }
 
+interface AvailableSlashCommandsResponseData {
+  commands?: unknown;
+}
+
 // Agent session state (session-scoped)
 export class AgentStore {
   readonly sessionId: string;
@@ -105,6 +112,7 @@ export class AgentStore {
   globalExtensions = $state<RegisteredExtensionSummary[]>([]);
   localExtensions = $state<RegisteredExtensionSummary[]>([]);
   extensionLoadDiagnostics = $state<Array<{ path: string; error: string }>>([]);
+  availableSlashCommands = $state<AvailableSlashCommand[]>([]);
 
   constructor(sessionId: string) {
     this.sessionId = sessionId;
@@ -228,6 +236,25 @@ export class AgentStore {
       throw error;
     } finally {
       this.isExtensionsLoading = false;
+    }
+  }
+
+  async loadAvailableSlashCommands(): Promise<void> {
+    if (!this.sessionStarted) {
+      throw new Error("Agent session not started");
+    }
+
+    try {
+      const data = await invokeAgentRpc<AvailableSlashCommandsResponseData>(
+        "get_commands",
+        { sessionId: this.sessionId },
+        "Failed to get available commands",
+      );
+
+      this.availableSlashCommands = parseAvailableSlashCommands(data?.commands);
+    } catch (error) {
+      console.warn("Failed to load available slash commands:", error);
+      this.availableSlashCommands = [];
     }
   }
 

@@ -59,6 +59,14 @@ interface RegisteredExtensionSummary {
   commandCount: number;
 }
 
+interface AvailableSlashCommand {
+  name: string;
+  description?: string;
+  source: "extension" | "prompt" | "skill";
+  location?: "user" | "project" | "path";
+  path?: string;
+}
+
 interface ModelsJsonModelEntry {
   id: string;
   name?: string;
@@ -709,6 +717,45 @@ export class HostRuntime {
       local: sorted.filter((extension) => extension.scope === "local"),
       errors: extensionsResult.errors,
     };
+  }
+
+  getCommands(sessionId: string): { commands: AvailableSlashCommand[] } {
+    const session = this.requireSession(sessionId, "get_commands");
+    const commands: AvailableSlashCommand[] = [];
+
+    for (const {
+      command,
+      extensionPath,
+    } of session.extensionRunner?.getRegisteredCommandsWithPaths() ?? []) {
+      commands.push({
+        name: command.name,
+        description: command.description,
+        source: "extension",
+        path: extensionPath,
+      });
+    }
+
+    for (const template of session.promptTemplates) {
+      commands.push({
+        name: template.name,
+        description: template.description,
+        source: "prompt",
+        location: template.source as AvailableSlashCommand["location"],
+        path: template.filePath,
+      });
+    }
+
+    for (const skill of session.resourceLoader.getSkills().skills) {
+      commands.push({
+        name: `skill:${skill.name}`,
+        description: skill.description,
+        source: "skill",
+        location: skill.source as AvailableSlashCommand["location"],
+        path: skill.filePath,
+      });
+    }
+
+    return { commands };
   }
 
   listOAuthProviders(sessionId: string): {

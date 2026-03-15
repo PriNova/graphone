@@ -7,7 +7,9 @@
     isKnownSlashCommand,
     ALL_SLASH_COMMANDS,
     getCommandHandler,
+    type SlashCommand,
   } from "$lib/slash-commands";
+  import type { AvailableSlashCommand } from "$lib/stores/agent.svelte";
   import ModelSelector from "./ModelSelector.svelte";
   import ThinkingSelector from "./ThinkingSelector.svelte";
   import type { AvailableModel, ThinkingLevel } from "$lib/stores/agent.svelte";
@@ -35,6 +37,8 @@
     onmodelchange?: (provider: string, modelId: string) => void | Promise<void>;
     onthinkingchange?: (level: ThinkingLevel) => void | Promise<void>;
     onmodelfilterchange?: (mode: FilterMode) => void | Promise<void>;
+    slashCommands?: SlashCommand[];
+    runtimeCommands?: AvailableSlashCommand[];
     placeholder?: string;
     disabled?: boolean;
     autofocus?: boolean;
@@ -67,6 +71,8 @@
     onmodelchange,
     onthinkingchange,
     onmodelfilterchange,
+    slashCommands = ALL_SLASH_COMMANDS,
+    runtimeCommands = [],
     placeholder = "Ask anything...",
     disabled = false,
     autofocus = false,
@@ -239,11 +245,25 @@
   const parsedCommand = $derived(parseSlashCommand(internalValue));
   const isSlashCommand = $derived(parsedCommand !== null);
   const isKnownCommand = $derived(
-    parsedCommand ? isKnownSlashCommand(parsedCommand.command) : false,
+    parsedCommand
+      ? isKnownSlashCommand(parsedCommand.command, runtimeCommands)
+      : false,
   );
   const commandHandler = $derived(
-    parsedCommand ? getCommandHandler(parsedCommand.command) : null,
+    parsedCommand
+      ? getCommandHandler(parsedCommand.command, runtimeCommands)
+      : null,
   );
+  const matchedCommand = $derived.by(() => {
+    if (!parsedCommand) {
+      return null;
+    }
+
+    return (
+      slashCommands.find((command) => command.name === parsedCommand.command) ??
+      null
+    );
+  });
 
   const bangPrefixMode = $derived.by(() => {
     const trimmed = internalValue.trim();
@@ -276,7 +296,7 @@
     // Don't show dropdown immediately after selecting a command
     if (commandJustSelected) return [];
     const query = parsedCommand.command.toLowerCase();
-    return ALL_SLASH_COMMANDS.filter((cmd) =>
+    return slashCommands.filter((cmd) =>
       cmd.name.toLowerCase().startsWith(query),
     );
   });
@@ -327,7 +347,7 @@
     onattachmentschange?.(externalImages);
   }
 
-  function selectCommand(cmd: (typeof ALL_SLASH_COMMANDS)[0]) {
+  function selectCommand(cmd: SlashCommand) {
     // Set flag to prevent dropdown from reopening immediately
     commandJustSelected = true;
     // Update value with trailing space to prevent dropdown from reopening
@@ -1104,27 +1124,21 @@
                 >/{parsedCommand?.command}</span
               >
               <span class="text-muted-foreground ml-1">
-                {ALL_SLASH_COMMANDS.find(
-                  (c) => c.name === parsedCommand?.command,
-                )?.description}
+                {matchedCommand?.description}
               </span>
             {:else if commandHandler === "unimplemented"}
               <span class="text-warning font-medium"
                 >/{parsedCommand?.command}</span
               >
               <span class="text-muted-foreground ml-1">
-                Not yet implemented • {ALL_SLASH_COMMANDS.find(
-                  (c) => c.name === parsedCommand?.command,
-                )?.description}
+                Not yet implemented • {matchedCommand?.description}
               </span>
             {:else}
               <span class="text-primary font-medium"
                 >/{parsedCommand?.command}</span
               >
               <span class="text-muted-foreground ml-1">
-                {ALL_SLASH_COMMANDS.find(
-                  (c) => c.name === parsedCommand?.command,
-                )?.description}
+                {matchedCommand?.description}
               </span>
             {/if}
           {:else}

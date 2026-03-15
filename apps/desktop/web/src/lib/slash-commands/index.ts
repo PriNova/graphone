@@ -3,6 +3,7 @@ export {
   LOCAL_COMMANDS,
   RPC_COMMANDS,
   ALL_SLASH_COMMANDS,
+  getAvailableSlashCommands,
   parseSlashCommand,
   isKnownSlashCommand,
   getCommandHandler,

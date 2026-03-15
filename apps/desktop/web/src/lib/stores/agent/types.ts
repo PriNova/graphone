@@ -76,3 +76,11 @@ export interface RegisteredExtensionsSnapshot {
   local: RegisteredExtensionSummary[];
   errors: Array<{ path: string; error: string }>;
 }
+
+export interface AvailableSlashCommand {
+  name: string;
+  description: string;
+  source: "extension" | "prompt" | "skill";
+  location?: "user" | "project" | "path";
+  path?: string;
+}

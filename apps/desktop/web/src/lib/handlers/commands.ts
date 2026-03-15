@@ -2,6 +2,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { getCommandHandler } from "$lib/slash-commands";
 import type {
   AgentStore,
+  AvailableSlashCommand,
   OAuthLoginStatus,
   OAuthLoginUpdate,
   OAuthProviderStatus,
@@ -455,6 +456,7 @@ export async function handleSlashCommand(
   command: string,
   args: string,
   fullText: string,
+  runtimeCommands: AvailableSlashCommand[] = [],
 ): Promise<CommandResult> {
   if (!runtime.agent.sessionStarted) {
     return {
@@ -463,7 +465,7 @@ export async function handleSlashCommand(
     };
   }
 
-  const handler = getCommandHandler(command);
+  const handler = getCommandHandler(command, runtimeCommands);
 
   if (handler === "local") {
     if (command === "model") {

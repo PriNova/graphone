@@ -32,6 +32,7 @@
     type SessionRuntimeMap,
   } from "$lib/session/runtime-manager";
   import { deriveSessionTabs } from "$lib/session/session-tab-presentation";
+  import { getAvailableSlashCommands } from "$lib/slash-commands";
   import type { ThinkingLevel } from "$lib/stores/agent.svelte";
   import {
     projectScopesStore,
@@ -273,6 +274,12 @@
   const chatHasMessages = $derived(messages.length > 0);
   const usageIndicator = $derived(
     activeRuntime ? activeRuntime.agent.usageIndicator : null,
+  );
+  const runtimeSlashCommands = $derived(
+    activeRuntime ? activeRuntime.agent.availableSlashCommands : [],
+  );
+  const slashCommands = $derived(
+    getAvailableSlashCommands(runtimeSlashCommands),
   );
   const isExtensionsLoading = $derived(
     activeRuntime ? activeRuntime.agent.isExtensionsLoading : false,
@@ -1257,6 +1264,7 @@
       command,
       args,
       fullText,
+      activeRuntime.agent.availableSlashCommands,
     );
 
     switch (result.type) {
@@ -1543,6 +1551,8 @@
   thinkingCollapsedByDefault={settingsStore.thinkingCollapsedByDefault}
   {chatHasMessages}
   {usageIndicator}
+  {slashCommands}
+  {runtimeSlashCommands}
   {isExtensionsLoading}
   {extensionsLoadError}
   {globalExtensions}

@@ -1,3 +1,5 @@
+import type { AvailableSlashCommand } from "$lib/stores/agent.svelte";
+
 /**
  * Slash command registry for Graphone.
  *
@@ -19,16 +21,13 @@ export interface SlashCommand {
   /**
    * How to handle this command:
    * - 'local': Handle in Graphone UI (e.g., /clear)
-   * - 'rpc': Send to sidecar (works for extensions, templates, skills)
+   * - 'rpc': Handle via the pi runtime/sidecar
    * - 'unimplemented': Known command that needs UI implementation
    */
   handler: "local" | "rpc" | "unimplemented";
 }
 
-/**
- * Commands that require interactive TUI and don't work in RPC mode.
- * These are handled in interactive-mode.ts, not agent-session.ts.
- */
+/** Commands that require interactive TUI and don't work in RPC mode. */
 export const UNIMPLEMENTED_COMMANDS: SlashCommand[] = [
   {
     name: "settings",
@@ -55,7 +54,6 @@ export const UNIMPLEMENTED_COMMANDS: SlashCommand[] = [
     description: "Resume a different session",
     handler: "unimplemented",
   },
-  // These might work but need verification
   {
     name: "export",
     description: "Export session to HTML file",
@@ -123,10 +121,7 @@ export const LOCAL_COMMANDS: SlashCommand[] = [
   },
 ];
 
-/**
- * Commands that work via RPC (extension commands, prompt templates, skills).
- * These are discovered dynamically from the sidecar via getCommands RPC call.
- */
+/** Static RPC commands exposed directly by Graphone. */
 export const RPC_COMMANDS: SlashCommand[] = [
   { name: "new", description: "Start a new session", handler: "rpc" },
 ];
@@ -136,6 +131,34 @@ export const ALL_SLASH_COMMANDS: SlashCommand[] = [
   ...LOCAL_COMMANDS,
   ...RPC_COMMANDS,
 ];
+
+function toRuntimeSlashCommand(command: AvailableSlashCommand): SlashCommand {
+  return {
+    name: command.name,
+    description: command.description,
+    handler: "rpc",
+  };
+}
+
+export function getAvailableSlashCommands(
+  runtimeCommands: AvailableSlashCommand[] = [],
+): SlashCommand[] {
+  const merged = new Map<string, SlashCommand>();
+
+  for (const command of ALL_SLASH_COMMANDS) {
+    merged.set(command.name, command);
+  }
+
+  for (const command of runtimeCommands) {
+    if (merged.has(command.name)) {
+      continue;
+    }
+
+    merged.set(command.name, toRuntimeSlashCommand(command));
+  }
+
+  return Array.from(merged.values());
+}
 
 /**
  * Parse a message to check if it's a slash command.
@@ -160,26 +183,28 @@ export function parseSlashCommand(
   };
 }
 
-/**
- * Check if a command name is a known slash command.
- */
-export function isKnownSlashCommand(commandName: string): boolean {
-  return ALL_SLASH_COMMANDS.some((cmd) => cmd.name === commandName);
+/** Check if a command name is a known slash command. */
+export function isKnownSlashCommand(
+  commandName: string,
+  runtimeCommands: AvailableSlashCommand[] = [],
+): boolean {
+  return getAvailableSlashCommands(runtimeCommands).some(
+    (cmd) => cmd.name === commandName,
+  );
 }
 
-/**
- * Get command handler type.
- */
+/** Get command handler type. */
 export function getCommandHandler(
   commandName: string,
+  runtimeCommands: AvailableSlashCommand[] = [],
 ): "local" | "rpc" | "unimplemented" | null {
-  const cmd = ALL_SLASH_COMMANDS.find((c) => c.name === commandName);
+  const cmd = getAvailableSlashCommands(runtimeCommands).find(
+    (candidate) => candidate.name === commandName,
+  );
   return cmd?.handler ?? null;
 }
 
-/**
- * Check if a command requires UI implementation.
- */
+/** Check if a command requires UI implementation. */
 export function isUnimplementedCommand(commandName: string): boolean {
   return UNIMPLEMENTED_COMMANDS.some((c) => c.name === commandName);
 }

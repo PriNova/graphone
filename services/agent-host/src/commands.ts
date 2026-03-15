@@ -241,6 +241,15 @@ export async function handleHostCommand(
         );
       }
 
+      case "get_commands": {
+        const sessionId = requireSessionId(command);
+        return success(
+          requestId,
+          "get_commands",
+          runtime.getCommands(sessionId),
+        );
+      }
+
       case "oauth_list_providers": {
         const sessionId = requireSessionId(command);
         return success(

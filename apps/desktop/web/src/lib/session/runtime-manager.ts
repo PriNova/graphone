@@ -87,14 +87,22 @@ export async function initializeRuntime(
 function warmRuntime(runtime: SessionRuntime): void {
   void Promise.allSettled([
     runtime.agent.loadRegisteredExtensions(),
+    runtime.agent.loadAvailableSlashCommands(),
     runtime.agent.loadAvailableModels(),
   ]).then((results) => {
-    const [extensionsResult, modelsResult] = results;
+    const [extensionsResult, commandsResult, modelsResult] = results;
 
     if (extensionsResult?.status === "rejected") {
       console.warn(
         "Failed to load registered extensions:",
         extensionsResult.reason,
+      );
+    }
+
+    if (commandsResult?.status === "rejected") {
+      console.warn(
+        "Failed to load available slash commands:",
+        commandsResult.reason,
       );
     }
 

@@ -12,10 +12,12 @@
   import type { SessionTabView } from "$lib/session/session-tab-presentation";
   import type {
     AvailableModel,
+    AvailableSlashCommand,
     RegisteredExtensionSummary,
     ThinkingLevel,
     UsageIndicatorSnapshot,
   } from "$lib/stores/agent.svelte";
+  import type { SlashCommand } from "$lib/slash-commands";
   import type { PersistedSessionHistoryItem } from "$lib/stores/projectScopes.svelte";
   import type { SessionDescriptor } from "$lib/stores/sessions.svelte";
   import type { Message, PromptImageAttachment } from "$lib/types/agent";
@@ -57,6 +59,8 @@
     modelFilter?: "all" | "enabled";
     chatHasMessages?: boolean;
     usageIndicator?: UsageIndicatorSnapshot | null;
+    slashCommands?: SlashCommand[];
+    runtimeSlashCommands?: AvailableSlashCommand[];
     isExtensionsLoading?: boolean;
     extensionsLoadError?: string | null;
     globalExtensions?: RegisteredExtensionSummary[];
@@ -149,6 +153,8 @@
     modelFilter = "enabled",
     chatHasMessages = false,
     usageIndicator = null,
+    slashCommands = undefined,
+    runtimeSlashCommands = [],
     isExtensionsLoading = false,
     extensionsLoadError = null,
     globalExtensions = [],
@@ -486,6 +492,8 @@
             {onthinkingchange}
             {onmodelfilterchange}
             {isLoading}
+            {slashCommands}
+            runtimeCommands={runtimeSlashCommands}
             disabled={!activeRuntime || !sessionStarted}
             placeholder={activeRuntime && sessionStarted
               ? "What would you like to get done today?"

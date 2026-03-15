@@ -1,5 +1,6 @@
 import type {
   AvailableModel,
+  AvailableSlashCommand,
   OAuthLoginStatus,
   OAuthLoginUpdate,
   OAuthProviderStatus,
@@ -348,6 +349,61 @@ function parseExtensionErrors(
     .filter(
       (entry): entry is { path: string; error: string } => entry !== null,
     );
+}
+
+export function parseAvailableSlashCommands(
+  value: unknown,
+): AvailableSlashCommand[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  const commands: AvailableSlashCommand[] = [];
+
+  for (const item of value) {
+    if (!item || typeof item !== "object") {
+      continue;
+    }
+
+    const candidate = item as {
+      name?: unknown;
+      description?: unknown;
+      source?: unknown;
+      location?: unknown;
+      path?: unknown;
+    };
+
+    if (
+      typeof candidate.name !== "string" ||
+      candidate.name.trim().length === 0
+    ) {
+      continue;
+    }
+
+    if (
+      candidate.source !== "extension" &&
+      candidate.source !== "prompt" &&
+      candidate.source !== "skill"
+    ) {
+      continue;
+    }
+
+    commands.push({
+      name: candidate.name,
+      description:
+        typeof candidate.description === "string" ? candidate.description : "",
+      source: candidate.source,
+      location:
+        candidate.location === "user" ||
+        candidate.location === "project" ||
+        candidate.location === "path"
+          ? candidate.location
+          : undefined,
+      path: typeof candidate.path === "string" ? candidate.path : undefined,
+    });
+  }
+
+  return commands;
 }
 
 export function sortAvailableModels(

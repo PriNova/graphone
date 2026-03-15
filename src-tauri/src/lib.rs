@@ -73,6 +73,7 @@ pub fn run() {
             commands::get_state,
             commands::get_available_models,
             commands::get_registered_extensions,
+            commands::get_commands,
             commands::get_oauth_providers,
             commands::start_oauth_login,
             commands::poll_oauth_login,

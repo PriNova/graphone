@@ -414,6 +414,30 @@ pub async fn get_registered_extensions(
 }
 
 #[tauri::command]
+pub async fn get_commands(
+    state: State<'_, Arc<Mutex<SidecarState>>>,
+    session_id: String,
+) -> Result<RpcResponse, String> {
+    let session_id = require_session_id(session_id, "get_commands")?;
+
+    let cmd = RpcCommand {
+        id: Some(crypto_random_uuid()),
+        r#type: "get_commands".to_string(),
+        session_id: Some(session_id),
+        cwd: None,
+        message: None,
+        provider: None,
+        model_id: None,
+        streaming_behavior: None,
+        session_file: None,
+        level: None,
+        images: None,
+    };
+
+    sidecar_lifecycle::send_command_with_response(state.inner(), cmd, 5).await
+}
+
+#[tauri::command]
 pub async fn get_oauth_providers(
     state: State<'_, Arc<Mutex<SidecarState>>>,
     session_id: String,
