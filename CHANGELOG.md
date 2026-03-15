@@ -2,6 +2,18 @@
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-03-15
+
+### Added
+
+- Added runtime slash-command discovery in Graphone, including prompts, skills, and extension commands when available.
+- Added Prompts and Skills sections in Settings, grouped by global, local, and path/package scope when available.
+
+### Changed
+
+- Changed the New Chat button and `/new` so they open a fresh chat instead of replacing the current conversation.
+- Improved skill-command transcript rendering so skill invocations appear as compact user messages instead of expanded skill file contents.
+
 ## [0.4.2] - 2026-03-13
 
 ### Added

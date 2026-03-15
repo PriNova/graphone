@@ -1,6 +1,6 @@
 # Graphone Feature Availability
 
-_Last updated: 2026-03-13_
+_Last updated: 2026-03-15_
 
 This page summarizes what Graphone supports today.
 
@@ -24,6 +24,7 @@ This page summarizes what Graphone supports today.
 - Open chats in a tab bar and switch between them without losing your place
 - Reopen your previously open chat tabs on relaunch when they are still available
 - Start a new chat while another session is still generating
+- Start a new chat from the New Chat button or `/new` without replacing your current open conversation
 - Session history in the sidebar, including reopening older chats
 - Project-based chat organization with a folder picker for adding project scopes
 - Streaming assistant responses
@@ -37,6 +38,8 @@ This page summarizes what Graphone supports today.
 
 - Image attachments in the composer (paste, drag and drop, file picker)
 - `!command` / `!!command` prompt behavior
+- Slash-command autocomplete and handling for runtime-provided commands, including prompts, skills, and extension commands when available
+- Compact in-chat rendering for skill command invocations
 - Expand/collapse controls for bash command output
 - Stop/cancel for running bash commands
 
@@ -48,6 +51,7 @@ This page summarizes what Graphone supports today.
 - Light/dark appearance toggle
 - Theme selection that persists across restarts and stays in sync across open windows
 - Model availability settings follow project preferences first, then home defaults
+- Prompts and Skills sections in Settings, grouped by global, local, and path/package scope when available
 
 ### Extensions and account
 
@@ -70,7 +74,7 @@ This page summarizes what Graphone supports today.
 
 ### Templates, skills, and extensions
 
-- Prompt templates and skills can work, but there is no full management UI yet
+- Prompt templates and skills are visible in Settings, but there is no full install/edit management UI yet
 - Extensions are visible in Settings, but management in the app is still limited
 - Some extension experiences available in the terminal app are not yet exposed in Graphone
 
@@ -110,4 +114,4 @@ This page summarizes what Graphone supports today.
 
 ## Summary
 
-Graphone already covers the main day-to-day desktop workflow well: sessions, streaming, tools, history, floating windows, and desktop releases across Linux, Windows, and macOS.
+Graphone already covers the main day-to-day desktop workflow well: sessions, tabs, slash commands, tools, history, floating windows, and desktop releases across Linux, Windows, and macOS.
