@@ -534,6 +534,7 @@
         {theme}
         {toolResultsCollapsedByDefault}
         {thinkingCollapsedByDefault}
+        {runtimeSlashCommands}
         {isExtensionsLoading}
         {extensionsLoadError}
         {globalExtensions}

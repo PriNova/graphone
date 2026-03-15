@@ -1,11 +1,15 @@
 <script lang="ts">
-  import type { RegisteredExtensionSummary } from "$lib/stores/agent.svelte";
+  import type {
+    AvailableSlashCommand,
+    RegisteredExtensionSummary,
+  } from "$lib/stores/agent.svelte";
   import type { UiTheme } from "$lib/theme/app-theme";
 
   interface Props {
     theme?: UiTheme;
     toolResultsCollapsedByDefault?: boolean;
     thinkingCollapsedByDefault?: boolean;
+    runtimeSlashCommands?: AvailableSlashCommand[];
     isExtensionsLoading?: boolean;
     extensionsLoadError?: string | null;
     globalExtensions?: RegisteredExtensionSummary[];
@@ -20,6 +24,7 @@
     theme = "dark",
     toolResultsCollapsedByDefault = true,
     thinkingCollapsedByDefault = true,
+    runtimeSlashCommands = [],
     isExtensionsLoading = false,
     extensionsLoadError = null,
     globalExtensions = [],
@@ -36,9 +41,44 @@
     "When enabled, new tool result blocks start collapsed.";
   const thinkingCollapseHint =
     "When enabled, new thinking blocks start collapsed.";
+  const skillsHint =
+    "Skills loaded for the active session. These come from pi runtime resources and are available via /skill:name in the prompt box.";
+  const promptsHint =
+    "Prompt templates loaded for the active session. These come from pi runtime resources and are available via /name in the prompt box.";
   const extensionsHint =
     "Extensions loaded for the active session, grouped by global (~/.pi/agent) and local (.pi) scope.";
 
+  const skills = $derived(
+    runtimeSlashCommands.filter((command) => command.source === "skill"),
+  );
+  const globalSkills = $derived(
+    skills.filter((skill) => skill.location === "user"),
+  );
+  const localSkills = $derived(
+    skills.filter((skill) => skill.location === "project"),
+  );
+  const pathSkills = $derived(
+    skills.filter(
+      (skill) => skill.location === "path" || skill.location === undefined,
+    ),
+  );
+  const totalSkills = $derived(skills.length);
+
+  const promptTemplates = $derived(
+    runtimeSlashCommands.filter((command) => command.source === "prompt"),
+  );
+  const globalPromptTemplates = $derived(
+    promptTemplates.filter((prompt) => prompt.location === "user"),
+  );
+  const localPromptTemplates = $derived(
+    promptTemplates.filter((prompt) => prompt.location === "project"),
+  );
+  const pathPromptTemplates = $derived(
+    promptTemplates.filter(
+      (prompt) => prompt.location === "path" || prompt.location === undefined,
+    ),
+  );
+  const totalPromptTemplates = $derived(promptTemplates.length);
   const totalRegisteredExtensions = $derived(
     globalExtensions.length + localExtensions.length,
   );
@@ -169,6 +209,200 @@
             >
           </span>
         </label>
+      </div>
+    </section>
+
+    <section class="rounded-lg border border-border bg-card p-4">
+      <div class="flex items-center justify-between gap-4">
+        <h3 class="text-sm font-semibold text-foreground" title={skillsHint}>
+          Skills
+        </h3>
+        <span class="text-xs text-muted-foreground">{totalSkills} loaded</span>
+      </div>
+
+      <div class="mt-4 space-y-4">
+        <div>
+          <h4
+            class="text-xs font-medium uppercase tracking-wide text-muted-foreground"
+          >
+            Global ({globalSkills.length})
+          </h4>
+          {#if globalSkills.length === 0}
+            <p class="mt-2 text-xs text-muted-foreground">No global skills.</p>
+          {:else}
+            <ul class="mt-2 space-y-2">
+              {#each globalSkills as skill (`${skill.name}-${skill.path}`)}
+                <li
+                  class="rounded border border-border bg-surface p-2.5"
+                  title={skill.path}
+                >
+                  <p class="text-sm text-foreground">/{skill.name}</p>
+                  {#if skill.description}
+                    <p class="mt-1 text-[11px] text-muted-foreground">
+                      {skill.description}
+                    </p>
+                  {/if}
+                </li>
+              {/each}
+            </ul>
+          {/if}
+        </div>
+
+        <div>
+          <h4
+            class="text-xs font-medium uppercase tracking-wide text-muted-foreground"
+          >
+            Local ({localSkills.length})
+          </h4>
+          {#if localSkills.length === 0}
+            <p class="mt-2 text-xs text-muted-foreground">No local skills.</p>
+          {:else}
+            <ul class="mt-2 space-y-2">
+              {#each localSkills as skill (`${skill.name}-${skill.path}`)}
+                <li
+                  class="rounded border border-border bg-surface p-2.5"
+                  title={skill.path}
+                >
+                  <p class="text-sm text-foreground">/{skill.name}</p>
+                  {#if skill.description}
+                    <p class="mt-1 text-[11px] text-muted-foreground">
+                      {skill.description}
+                    </p>
+                  {/if}
+                </li>
+              {/each}
+            </ul>
+          {/if}
+        </div>
+
+        <div>
+          <h4
+            class="text-xs font-medium uppercase tracking-wide text-muted-foreground"
+          >
+            Path / package ({pathSkills.length})
+          </h4>
+          {#if pathSkills.length === 0}
+            <p class="mt-2 text-xs text-muted-foreground">
+              No path- or package-based skills.
+            </p>
+          {:else}
+            <ul class="mt-2 space-y-2">
+              {#each pathSkills as skill (`${skill.name}-${skill.path}`)}
+                <li
+                  class="rounded border border-border bg-surface p-2.5"
+                  title={skill.path}
+                >
+                  <p class="text-sm text-foreground">/{skill.name}</p>
+                  {#if skill.description}
+                    <p class="mt-1 text-[11px] text-muted-foreground">
+                      {skill.description}
+                    </p>
+                  {/if}
+                </li>
+              {/each}
+            </ul>
+          {/if}
+        </div>
+      </div>
+    </section>
+
+    <section class="rounded-lg border border-border bg-card p-4">
+      <div class="flex items-center justify-between gap-4">
+        <h3 class="text-sm font-semibold text-foreground" title={promptsHint}>
+          Prompts
+        </h3>
+        <span class="text-xs text-muted-foreground">
+          {totalPromptTemplates} loaded
+        </span>
+      </div>
+
+      <div class="mt-4 space-y-4">
+        <div>
+          <h4
+            class="text-xs font-medium uppercase tracking-wide text-muted-foreground"
+          >
+            Global ({globalPromptTemplates.length})
+          </h4>
+          {#if globalPromptTemplates.length === 0}
+            <p class="mt-2 text-xs text-muted-foreground">
+              No global prompt templates.
+            </p>
+          {:else}
+            <ul class="mt-2 space-y-2">
+              {#each globalPromptTemplates as prompt (`${prompt.name}-${prompt.path}`)}
+                <li
+                  class="rounded border border-border bg-surface p-2.5"
+                  title={prompt.path}
+                >
+                  <p class="text-sm text-foreground">/{prompt.name}</p>
+                  {#if prompt.description}
+                    <p class="mt-1 text-[11px] text-muted-foreground">
+                      {prompt.description}
+                    </p>
+                  {/if}
+                </li>
+              {/each}
+            </ul>
+          {/if}
+        </div>
+
+        <div>
+          <h4
+            class="text-xs font-medium uppercase tracking-wide text-muted-foreground"
+          >
+            Local ({localPromptTemplates.length})
+          </h4>
+          {#if localPromptTemplates.length === 0}
+            <p class="mt-2 text-xs text-muted-foreground">
+              No local prompt templates.
+            </p>
+          {:else}
+            <ul class="mt-2 space-y-2">
+              {#each localPromptTemplates as prompt (`${prompt.name}-${prompt.path}`)}
+                <li
+                  class="rounded border border-border bg-surface p-2.5"
+                  title={prompt.path}
+                >
+                  <p class="text-sm text-foreground">/{prompt.name}</p>
+                  {#if prompt.description}
+                    <p class="mt-1 text-[11px] text-muted-foreground">
+                      {prompt.description}
+                    </p>
+                  {/if}
+                </li>
+              {/each}
+            </ul>
+          {/if}
+        </div>
+
+        <div>
+          <h4
+            class="text-xs font-medium uppercase tracking-wide text-muted-foreground"
+          >
+            Path / package ({pathPromptTemplates.length})
+          </h4>
+          {#if pathPromptTemplates.length === 0}
+            <p class="mt-2 text-xs text-muted-foreground">
+              No path- or package-based prompt templates.
+            </p>
+          {:else}
+            <ul class="mt-2 space-y-2">
+              {#each pathPromptTemplates as prompt (`${prompt.name}-${prompt.path}`)}
+                <li
+                  class="rounded border border-border bg-surface p-2.5"
+                  title={prompt.path}
+                >
+                  <p class="text-sm text-foreground">/{prompt.name}</p>
+                  {#if prompt.description}
+                    <p class="mt-1 text-[11px] text-muted-foreground">
+                      {prompt.description}
+                    </p>
+                  {/if}
+                </li>
+              {/each}
+            </ul>
+          {/if}
+        </div>
       </div>
     </section>
 
