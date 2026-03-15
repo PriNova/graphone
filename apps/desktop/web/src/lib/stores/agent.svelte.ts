@@ -65,10 +65,6 @@ interface LogoutOAuthProviderResponseData {
   loggedOut?: unknown;
 }
 
-interface NewSessionResponseData {
-  cancelled?: unknown;
-}
-
 interface BashCommandResponseData {
   output?: unknown;
   exitCode?: unknown;
@@ -497,26 +493,6 @@ export class AgentStore {
     ).catch(console.error);
     this.isBashRunning = false;
     this.isLoading = false;
-  }
-
-  async newSession(): Promise<boolean> {
-    try {
-      const data = await invokeAgentRpc<NewSessionResponseData>(
-        "new_session",
-        { sessionId: this.sessionId },
-        "Failed to create new session",
-      );
-
-      await this.refreshState().catch((error) => {
-        console.warn("Failed to refresh agent state after new session:", error);
-      });
-      await this.loadAvailableModels().catch((error) => {
-        console.warn("Failed to refresh models after new session:", error);
-      });
-      return data?.cancelled !== true;
-    } catch {
-      return false;
-    }
   }
 
   setLoading(loading: boolean): void {

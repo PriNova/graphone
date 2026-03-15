@@ -555,12 +555,6 @@ export class HostRuntime {
     session.abortBash();
   }
 
-  async newSession(sessionId: string): Promise<{ cancelled: boolean }> {
-    const session = this.requireSession(sessionId, "new_session");
-    const cancelled = !(await session.newSession());
-    return { cancelled };
-  }
-
   getMessages(sessionId: string): { messages: AgentSession["messages"] } {
     const session = this.requireSession(sessionId, "get_messages");
     return {

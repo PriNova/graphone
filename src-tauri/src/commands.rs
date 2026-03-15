@@ -306,31 +306,6 @@ pub async fn abort_bash(
     sidecar_lifecycle::send_command_with_response(state.inner(), cmd, 5).await
 }
 
-/// Create a new session
-#[tauri::command]
-pub async fn new_session(
-    state: State<'_, Arc<Mutex<SidecarState>>>,
-    session_id: String,
-) -> Result<RpcResponse, String> {
-    let session_id = require_session_id(session_id, "new_session")?;
-
-    let cmd = RpcCommand {
-        id: Some(crypto_random_uuid()),
-        r#type: "new_session".to_string(),
-        session_id: Some(session_id),
-        cwd: None,
-        message: None,
-        provider: None,
-        model_id: None,
-        streaming_behavior: None,
-        session_file: None,
-        level: None,
-        images: None,
-    };
-
-    sidecar_lifecycle::send_command_with_response(state.inner(), cmd, 5).await
-}
-
 /// Get messages from the current session
 #[tauri::command]
 pub async fn get_messages(

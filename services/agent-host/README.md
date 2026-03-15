@@ -49,7 +49,6 @@ Transport: newline-delimited JSON over stdio.
 - `steer`
 - `follow_up`
 - `abort`
-- `new_session`
 - `get_messages`
 - `get_state`
 - `set_model`

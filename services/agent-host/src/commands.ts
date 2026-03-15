@@ -171,15 +171,6 @@ export async function handleHostCommand(
         return success(requestId, "abort_bash");
       }
 
-      case "new_session": {
-        const sessionId = requireSessionId(command);
-        return success(
-          requestId,
-          "new_session",
-          await runtime.newSession(sessionId),
-        );
-      }
-
       case "get_messages": {
         const sessionId = requireSessionId(command);
         return success(

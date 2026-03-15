@@ -510,15 +510,6 @@ export async function handleSlashCommand(
   }
 
   if (handler === "rpc") {
-    // Handle specific RPC commands
-    if (command === "new") {
-      const created = await runtime.agent.newSession();
-      if (created) {
-        runtime.messages.clearMessages();
-      }
-      return { type: "handled" };
-    }
-
     // Extension commands, prompt templates, and skills work via prompt routing
     return { type: "submit", text: fullText };
   }

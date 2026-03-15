@@ -1172,17 +1172,19 @@
       return;
     }
 
-    if (activeRuntime.agent.isLoading) {
-      if (isFloatingSessionWindow) {
-        await createSiblingFloatingSessionWindow(activeRuntime.projectDir);
-        return;
-      }
-
-      await createSession(activeRuntime.projectDir);
+    const projectDir = normalizeScopePath(activeRuntime.projectDir);
+    if (projectDir.length === 0) {
       return;
     }
 
-    await onSlashCommand("new", "", "/new");
+    await settingsStore.setLastSelectedScope(projectDir);
+
+    if (isFloatingSessionWindow) {
+      await createSiblingFloatingSessionWindow(projectDir);
+      return;
+    }
+
+    await createSession(projectDir);
   }
 
   async function onModelChange(
@@ -1239,24 +1241,8 @@
     if (!activeRuntime) return;
 
     if (command === "new") {
-      if (activeRuntime.agent.isBashRunning) {
-        activeRuntime.messages.addErrorMessage(
-          "Abort the running bash command before starting a new chat.",
-        );
-        return;
-      }
-
-      if (activeRuntime.agent.isLoading) {
-        clearOptimisticFirstPrompt(activeRuntime.sessionId);
-
-        if (isFloatingSessionWindow) {
-          await createSiblingFloatingSessionWindow(activeRuntime.projectDir);
-          return;
-        }
-
-        await createSession(activeRuntime.projectDir);
-        return;
-      }
+      await onNewChat();
+      return;
     }
 
     const result = await handleSlashCommand(
@@ -1279,10 +1265,6 @@
         break;
       }
       case "handled":
-        if (command === "new") {
-          clearOptimisticFirstPrompt(activeRuntime.sessionId);
-          await sessionsStore.refreshFromBackend().catch(() => undefined);
-        }
         break;
     }
   }

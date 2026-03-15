@@ -68,7 +68,6 @@ pub fn run() {
             commands::read_clipboard_image,
             commands::abort_agent,
             commands::abort_bash,
-            commands::new_session,
             commands::get_messages,
             commands::get_state,
             commands::get_available_models,
