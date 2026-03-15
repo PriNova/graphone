@@ -1,5 +1,6 @@
 import { spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
+import { readFileSync } from "node:fs";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { basename, dirname, extname, join, resolve } from "node:path";
@@ -13,6 +14,7 @@ import {
   getShellConfig,
   ModelRegistry,
   SessionManager,
+  stripFrontmatter,
   type AgentSession,
   type BashOperations,
 } from "@mariozechner/pi-coding-agent";
@@ -242,6 +244,36 @@ function wrapBashOperationsWithCwd(
   };
 }
 
+function expandSkillCommandForRpc(
+  session: AgentSession,
+  message: string,
+): string {
+  if (!message.startsWith("/skill:")) {
+    return message;
+  }
+
+  const spaceIndex = message.indexOf(" ");
+  const skillName =
+    spaceIndex === -1 ? message.slice(7) : message.slice(7, spaceIndex);
+  const args = spaceIndex === -1 ? "" : message.slice(spaceIndex + 1).trim();
+
+  const skill = session.resourceLoader
+    .getSkills()
+    .skills.find((candidate) => candidate.name === skillName);
+
+  if (!skill) {
+    return message;
+  }
+
+  try {
+    const body = stripFrontmatter(readFileSync(skill.filePath, "utf-8")).trim();
+    const skillBlock = `<skill name="${skill.name}" location="${skill.filePath}">\nReferences are relative to ${skill.baseDir}.\n\n${body}\n</skill>`;
+    return args ? `${skillBlock}\n\nUser: ${args}` : skillBlock;
+  } catch {
+    return message;
+  }
+}
+
 export class HostRuntime {
   private readonly sessions = new Map<string, HostedSession>();
   private readonly authStorage = AuthStorage.create();
@@ -391,11 +423,12 @@ export class HostRuntime {
     streamingBehavior?: "steer" | "followUp",
   ): Promise<void> {
     const session = this.requireSession(sessionId, "prompt");
+    const expandedMessage = expandSkillCommandForRpc(session, message);
 
     // Fire-and-forget to keep prompt acknowledgements immediate,
     // matching RPC mode behavior where streaming continues via events.
     session
-      .prompt(message, {
+      .prompt(expandedMessage, {
         images,
         streamingBehavior,
         source: "rpc",
@@ -414,7 +447,7 @@ export class HostRuntime {
     images?: ImageContent[],
   ): Promise<void> {
     const session = this.requireSession(sessionId, "steer");
-    await session.steer(message, images);
+    await session.steer(expandSkillCommandForRpc(session, message), images);
   }
 
   async followUp(
@@ -423,7 +456,7 @@ export class HostRuntime {
     images?: ImageContent[],
   ): Promise<void> {
     const session = this.requireSession(sessionId, "follow_up");
-    await session.followUp(message, images);
+    await session.followUp(expandSkillCommandForRpc(session, message), images);
   }
 
   async abort(sessionId: string): Promise<void> {

@@ -9,6 +9,7 @@ import type {
 } from "$lib/stores/agent.svelte";
 import type { MessagesStore } from "$lib/stores/messages.svelte";
 import type { PromptImageAttachment } from "$lib/types/agent";
+import { parseSkillCommand } from "$lib/utils/skill-block";
 
 const OAUTH_POLL_INTERVAL_MS = 240;
 const OAUTH_POLL_TIMEOUT_MS = 10 * 60 * 1000;
@@ -536,7 +537,12 @@ export async function handlePromptSubmit(
     ...(images ?? []),
   ];
 
-  runtime.messages.addOptimisticUserMessage(optimisticContent);
+  const shouldRenderOptimisticMessage =
+    parseSkillCommand(prompt.trim()) === null || (images?.length ?? 0) > 0;
+
+  if (shouldRenderOptimisticMessage) {
+    runtime.messages.addOptimisticUserMessage(optimisticContent);
+  }
 
   try {
     await runtime.agent.sendPrompt(prompt, images);

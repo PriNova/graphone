@@ -6,6 +6,11 @@ import type {
   ToolResultMessage,
   UserContentBlock,
 } from "$lib/types/agent";
+import {
+  normalizeSkillUserMessage,
+  parseSkillBlock,
+  parseSkillCommand,
+} from "$lib/utils/skill-block";
 
 // Messages store manages message state and scroll behavior (session-scoped)
 export class MessagesStore {
@@ -268,11 +273,18 @@ export class MessagesStore {
     const last = this.messages[this.messages.length - 1];
     if (
       last?.type === "user" &&
-      this.isSameUserContent(last.content, converted) &&
       Math.abs(timestamp.getTime() - last.timestamp.getTime()) <=
         MessagesStore.OPTIMISTIC_DEDUPE_WINDOW_MS
     ) {
-      return;
+      if (this.isSameUserContent(last.content, converted)) {
+        return;
+      }
+
+      if (this.isSkillCommandEchoReplacement(last.content, converted)) {
+        last.content = converted;
+        last.timestamp = timestamp;
+        return;
+      }
     }
 
     this.addMessage({
@@ -742,6 +754,49 @@ export class MessagesStore {
     }
 
     return true;
+  }
+
+  private getUserTextContent(content: UserContentBlock[]): string | null {
+    if (content.some((block) => block.type !== "text")) {
+      return null;
+    }
+
+    const text = content
+      .filter(
+        (block): block is Extract<UserContentBlock, { type: "text" }> =>
+          block.type === "text",
+      )
+      .map((block) => block.text)
+      .join("");
+
+    return text.length > 0 ? text : null;
+  }
+
+  private isSkillCommandEchoReplacement(
+    optimistic: UserContentBlock[],
+    echoed: UserContentBlock[],
+  ): boolean {
+    const optimisticText = this.getUserTextContent(optimistic);
+    const echoedText = this.getUserTextContent(echoed);
+
+    if (!optimisticText || !echoedText) {
+      return false;
+    }
+
+    const skillCommand = parseSkillCommand(optimisticText);
+    const skillBlock = parseSkillBlock(echoedText);
+
+    if (
+      !skillCommand ||
+      !skillBlock ||
+      skillCommand.skillName !== skillBlock.name
+    ) {
+      return false;
+    }
+
+    return (
+      skillCommand.args === normalizeSkillUserMessage(skillBlock.userMessage)
+    );
   }
 
   static extractToolResultPayload(result: unknown): {
