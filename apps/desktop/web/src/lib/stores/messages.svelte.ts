@@ -237,6 +237,12 @@ export class MessagesStore {
       }
 
       if (msg.role === "custom") {
+        // Skip custom messages that are marked as hidden (display: false).
+        // During active sessions, the host filters these out, but raw session
+        // entries include all custom messages regardless of their display flag.
+        if (msg.display === false) {
+          continue;
+        }
         loadedMessages.push({
           id: crypto.randomUUID(),
           type: "user",
