@@ -2,6 +2,18 @@
 
 ## [Unreleased]
 
+## [0.5.1] - 2026-03-17
+
+### Changed
+
+- Refactored the host runtime and prompt input flow to separate prompt draft state, scrolling, command execution, slash/bang command UI, image attachment utilities, and model catalog sync helpers.
+- Improved model catalog sync handling when `models.json` is blank.
+
+### Fixed
+
+- Fixed hidden custom messages from older sessions rendering as user messages.
+- Fixed built-in models losing their reasoning flag during catalog sync.
+
 ## [0.5.0] - 2026-03-15
 
 ### Added
