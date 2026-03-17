@@ -1190,7 +1190,12 @@ export class HostRuntime {
 
         const nextModels = discoveredModels.map((discovered) => {
           const existing = existingById.get(discovered.id);
-          return this.mergeDiscoveredModelEntry(existing, discovered, modelApi);
+          return this.mergeDiscoveredModelEntry(
+            candidate.provider,
+            existing,
+            discovered,
+            modelApi,
+          );
         });
 
         let providerChanged = false;
@@ -1564,6 +1569,7 @@ export class HostRuntime {
   }
 
   private mergeDiscoveredModelEntry(
+    provider: string,
     existing: ModelsJsonModelEntry | undefined,
     discovered: DiscoveredModelCatalogEntry,
     defaultApi: string | undefined,
@@ -1598,11 +1604,15 @@ export class HostRuntime {
       next.api = defaultApi;
     }
 
-    if (
-      typeof discovered.reasoning === "boolean" &&
-      typeof next.reasoning !== "boolean"
-    ) {
+    // Inherit reasoning from discovered model if explicitly provided,
+    // otherwise fall back to the built-in model definition.
+    if (typeof discovered.reasoning === "boolean") {
       next.reasoning = discovered.reasoning;
+    } else if (typeof next.reasoning !== "boolean") {
+      const builtIn = this.modelRegistry.find(provider, discovered.id);
+      if (builtIn?.reasoning) {
+        next.reasoning = true;
+      }
     }
 
     if (
