@@ -39,6 +39,7 @@
     type PersistedSessionHistoryItem,
     normalizeScopePath,
   } from "$lib/stores/projectScopes.svelte";
+  import { PromptDraftStore } from "$lib/stores/prompt-draft.svelte";
   import {
     sessionsStore,
     type SessionDescriptor,
@@ -51,6 +52,7 @@
   import { broadcastUiTheme, type UiTheme } from "$lib/theme/app-theme";
   import type { PromptImageAttachment } from "$lib/types/agent";
   import type { SessionRuntime } from "$lib/types/session";
+  import { ScrollController } from "$lib/utils/scroll-controller";
   import {
     listOpenFloatingSessionWindowLabels,
     openOrFocusFloatingSessionWindow,
@@ -58,14 +60,23 @@
   } from "$lib/windowing/session-windows";
   import { getCurrentWindowContext } from "$lib/windowing/window-context";
 
-  // DOM refs
+  // ── Extracted controllers ─────────────────────────────────────────────────
+
+  const scrollController = new ScrollController();
+  const promptDraftStore = new PromptDraftStore();
+
+  // ── DOM refs ──────────────────────────────────────────────────────────────
+
   let messagesContainerRef = $state<HTMLDivElement | null>(null);
   let messagesContentRef = $state<HTMLDivElement | null>(null);
 
-  // Event unlistener
+  // ── Event cleanup ─────────────────────────────────────────────────────────
+
   let disposeAgentEventBridge: (() => void) | null = null;
   let disposeWindowFocusChanged: (() => void) | null = null;
   let detachedSessionRefreshTimer: ReturnType<typeof setInterval> | null = null;
+
+  // ── Core state ────────────────────────────────────────────────────────────
 
   let sessionRuntimes = $state<SessionRuntimeMap>({});
   let projectDirInput = $state("");
@@ -77,10 +88,6 @@
   let optimisticFirstPromptBySession = $state<
     Record<string, { text: string; timestamp: string }>
   >({});
-  let promptDraftBySession = $state<Record<string, string>>({});
-  let promptAttachmentDraftBySession = $state<
-    Record<string, PromptImageAttachment[]>
-  >({});
   let openSessionTabOrder = $state<string[]>([]);
   let lastPersistedOpenTabsSignature = $state<string>("");
   let detachedSessionIds = $state<string[]>([]);
@@ -88,12 +95,16 @@
   let isWindowFocused = $state(
     typeof document === "undefined" ? true : document.hasFocus(),
   );
+
+  // ── Window context ────────────────────────────────────────────────────────
+
   const windowContext = getCurrentWindowContext();
   const isFloatingSessionWindow =
     windowContext.role === "floating-session-chat";
   const isMainWindow = windowContext.role === "main";
   const boundSessionId = windowContext.sessionId;
-  const EMPTY_PROMPT_ATTACHMENTS: PromptImageAttachment[] = [];
+
+  // ── Derived state ─────────────────────────────────────────────────────────
 
   const sessions = $derived(sessionsStore.sessions);
   const activeSessionId = $derived(sessionsStore.activeSessionId);
@@ -108,96 +119,8 @@
     ),
   );
 
-  function areSessionIdListsEqual(left: string[], right: string[]): boolean {
-    if (left.length !== right.length) {
-      return false;
-    }
-
-    return left.every((value, index) => value === right[index]);
-  }
-
-  function getRestorableOpenSessionTabs(): RestorableOpenSessionTab[] {
-    const sessionsById = new Map(
-      sessions.map((session) => [session.sessionId, session] as const),
-    );
-
-    return openSessionTabOrder
-      .map((sessionId): RestorableOpenSessionTab | null => {
-        const session = sessionsById.get(sessionId);
-        if (!session) {
-          return null;
-        }
-
-        const projectDir = normalizeScopePath(session.projectDir);
-        if (projectDir.length === 0) {
-          return null;
-        }
-
-        const sessionFile = session.sessionFile?.trim() ?? "";
-        return sessionFile.length > 0
-          ? { projectDir, sessionFile }
-          : { projectDir };
-      })
-      .filter((entry): entry is RestorableOpenSessionTab => entry !== null);
-  }
-
-  function getRestorableOpenSessionActiveIndex(): number {
-    if (!activeSessionId) {
-      return 0;
-    }
-
-    const activeIndex = openSessionTabOrder.indexOf(activeSessionId);
-    return activeIndex >= 0 ? activeIndex : 0;
-  }
-
-  $effect(() => {
-    const validSessionIds = new Set(
-      sessions.map((session) => session.sessionId),
-    );
-    const nextOrder = openSessionTabOrder.filter((sessionId) =>
-      validSessionIds.has(sessionId),
-    );
-
-    for (const session of sessions) {
-      if (!validSessionIds.has(session.sessionId)) {
-        continue;
-      }
-
-      if (!nextOrder.includes(session.sessionId)) {
-        nextOrder.push(session.sessionId);
-      }
-    }
-
-    if (!areSessionIdListsEqual(openSessionTabOrder, nextOrder)) {
-      openSessionTabOrder = nextOrder;
-    }
-  });
-
-  $effect(() => {
-    if (!isMainWindow || !settingsStore.loaded || !sessionsBootstrapped) {
-      return;
-    }
-
-    const tabs = getRestorableOpenSessionTabs();
-    const activeIndex = getRestorableOpenSessionActiveIndex();
-    const signature = JSON.stringify({ tabs, activeIndex });
-
-    if (signature === lastPersistedOpenTabsSignature) {
-      return;
-    }
-
-    lastPersistedOpenTabsSignature = signature;
-    void settingsStore
-      .persistOpenSessionTabs(tabs, activeIndex)
-      .catch((error) => {
-        console.warn("Failed to persist open session tabs:", error);
-      });
-  });
-
   const orderedSessionTabs = $derived.by(() => {
-    if (!isMainWindow) {
-      return undefined;
-    }
+    if (!isMainWindow) return undefined;
 
     return deriveSessionTabs({
       sessions,
@@ -217,17 +140,15 @@
       ]),
     ].sort((a, b) => a.localeCompare(b)),
   );
+
   const activeRuntime = $derived(
     activeSessionId ? (sessionRuntimes[activeSessionId] ?? null) : null,
   );
-  const activePromptDraft = $derived(
-    activeSessionId ? (promptDraftBySession[activeSessionId] ?? "") : "",
-  );
+
+  // Use PromptDraftStore for derived values
+  const activePromptDraft = $derived(promptDraftStore.getText(activeSessionId));
   const activePromptAttachmentDraft = $derived(
-    activeSessionId
-      ? (promptAttachmentDraftBySession[activeSessionId] ??
-          EMPTY_PROMPT_ATTACHMENTS)
-      : EMPTY_PROMPT_ATTACHMENTS,
+    promptDraftStore.getAttachments(activeSessionId),
   );
 
   const messages = $derived(
@@ -299,6 +220,7 @@
   const activeProjectDir = $derived(
     activeRuntime ? normalizeScopePath(activeRuntime.projectDir) : null,
   );
+
   const busySessionIds = $derived.by(() => {
     const busy = new Set<string>();
 
@@ -309,28 +231,22 @@
     }
 
     for (const [sessionId, runtime] of Object.entries(sessionRuntimes)) {
-      if (!runtime.agent.isLoading) {
-        continue;
-      }
-
+      if (!runtime.agent.isLoading) continue;
       busy.add(sessionId);
 
       const persistedSessionId = runtime.agent.persistedSessionId?.trim() ?? "";
-      if (persistedSessionId.length > 0) {
-        busy.add(persistedSessionId);
-      }
+      if (persistedSessionId.length > 0) busy.add(persistedSessionId);
     }
 
     return Array.from(busy);
   });
+
   const busySessionFiles = $derived.by(() => {
     const busy = new Set<string>();
 
     for (const session of sessionsStore.sessions) {
       const sessionFile = session.sessionFile?.trim() ?? "";
-      if (sessionFile.length === 0) {
-        continue;
-      }
+      if (sessionFile.length === 0) continue;
 
       if (session.busy || sessionRuntimes[session.sessionId]?.agent.isLoading) {
         busy.add(sessionFile);
@@ -339,6 +255,7 @@
 
     return Array.from(busy);
   });
+
   const reviewOpenSessionIds = $derived.by(() => {
     const review = new Set<string>();
 
@@ -347,72 +264,101 @@
         !sessionAttentionStore.needsReview(
           getAttentionSubjectForDescriptor(session),
         )
-      ) {
+      )
         continue;
-      }
 
       review.add(session.sessionId);
     }
 
     return Array.from(review);
   });
+
   const reviewSessionIds = $derived.by(() => {
     const review = new Set<string>();
 
     for (const history of Object.values(scopeHistoryByProject).flat()) {
       if (
         !sessionAttentionStore.needsReview(subjectFromPersistedHistory(history))
-      ) {
+      )
         continue;
-      }
 
       review.add(history.sessionId);
     }
 
     return Array.from(review);
   });
+
   const reviewSessionFiles = $derived.by(() => {
     const review = new Set<string>();
 
     for (const history of Object.values(scopeHistoryByProject).flat()) {
       if (
         !sessionAttentionStore.needsReview(subjectFromPersistedHistory(history))
-      ) {
+      )
         continue;
-      }
 
       const filePath = history.filePath.trim();
-      if (filePath.length > 0) {
-        review.add(filePath);
-      }
+      if (filePath.length > 0) review.add(filePath);
     }
 
     return Array.from(review);
   });
+
   const showSidebarInLayout = $derived(isMainWindow);
   const showPopOutActiveSessionButton = $derived(isMainWindow);
   const showHeaderInLayout = $derived(!isFloatingSessionWindow);
   const layoutWindowTitleHint = $derived(
     isFloatingSessionWindow ? "Floating isolated session" : null,
   );
-  const layoutEmptyStateText = $derived.by(() => {
-    if (isFloatingSessionWindow && floatingSessionMissing) {
-      return "This floating session is no longer available.";
-    }
 
-    if (projectScopes.length === 0) {
+  const layoutEmptyStateText = $derived.by(() => {
+    if (isFloatingSessionWindow && floatingSessionMissing)
+      return "This floating session is no longer available.";
+
+    if (projectScopes.length === 0)
       return "No project scope yet. Create one to start chatting.";
-    }
 
     return "Select or create a project scope to start chatting.";
   });
 
+  // ── Helpers ───────────────────────────────────────────────────────────────
+
+  function areSessionIdListsEqual(left: string[], right: string[]): boolean {
+    if (left.length !== right.length) return false;
+    return left.every((value, index) => value === right[index]);
+  }
+
+  function getRestorableOpenSessionTabs(): RestorableOpenSessionTab[] {
+    const sessionsById = new Map(
+      sessions.map((session) => [session.sessionId, session] as const),
+    );
+
+    return openSessionTabOrder
+      .map((sessionId): RestorableOpenSessionTab | null => {
+        const session = sessionsById.get(sessionId);
+        if (!session) return null;
+
+        const projectDir = normalizeScopePath(session.projectDir);
+        if (projectDir.length === 0) return null;
+
+        const sessionFile = session.sessionFile?.trim() ?? "";
+        return sessionFile.length > 0
+          ? { projectDir, sessionFile }
+          : { projectDir };
+      })
+      .filter((entry): entry is RestorableOpenSessionTab => entry !== null);
+  }
+
+  function getRestorableOpenSessionActiveIndex(): number {
+    if (!activeSessionId) return 0;
+    const activeIndex = openSessionTabOrder.indexOf(activeSessionId);
+    return activeIndex >= 0 ? activeIndex : 0;
+  }
+
   function getAttentionSubjectForDescriptor(
     descriptor: SessionDescriptor | null | undefined,
   ) {
-    if (!descriptor) {
-      return null;
-    }
+    if (!descriptor) return null;
 
     return mergeSessionAttentionSubjects(
       subjectFromSessionDescriptor(descriptor),
@@ -423,9 +369,7 @@
   function getAttentionSubjectForHistory(
     history: PersistedSessionHistoryItem | null | undefined,
   ) {
-    if (!history) {
-      return null;
-    }
+    if (!history) return null;
 
     const matchingSession = sessionsStore.sessions.find(
       (session) => session.sessionFile === history.filePath,
@@ -443,9 +387,7 @@
   function getAttentionSubjectForRuntime(
     runtime: SessionRuntime | null | undefined,
   ) {
-    if (!runtime) {
-      return null;
-    }
+    if (!runtime) return null;
 
     const matchingSession = sessionsStore.sessions.find(
       (session) => session.sessionId === runtime.sessionId,
@@ -461,9 +403,7 @@
     sessionId: string,
   ): Promise<boolean> {
     const normalizedSessionId = sessionId.trim();
-    if (normalizedSessionId.length === 0) {
-      return false;
-    }
+    if (normalizedSessionId.length === 0) return false;
 
     if (
       isWindowFocused &&
@@ -477,23 +417,17 @@
     const windows = await getAllWindows().catch(() => []);
 
     for (const window of windows) {
-      if (window.label !== floatingLabel) {
-        continue;
-      }
+      if (window.label !== floatingLabel) continue;
 
       const focused = await window.isFocused().catch(() => false);
-      if (focused) {
-        return true;
-      }
+      if (focused) return true;
     }
 
     return false;
   }
 
   async function markVisibleSessionSeen(): Promise<void> {
-    if (!isWindowFocused) {
-      return;
-    }
+    if (!isWindowFocused) return;
 
     const visibleSession = isFloatingSessionWindow
       ? boundSessionId
@@ -504,24 +438,12 @@
       : activeSession;
 
     const subject = getAttentionSubjectForDescriptor(visibleSession);
-    if (!sessionAttentionStore.needsReview(subject)) {
-      return;
-    }
+    if (!sessionAttentionStore.needsReview(subject)) return;
 
     await sessionAttentionStore.markSeen(subject);
   }
 
-  $effect(() => {
-    const shouldTrackVisibleSession =
-      (isFloatingSessionWindow && boundSessionId) ||
-      (!isFloatingSessionWindow && activeSessionId);
-
-    if (!shouldTrackVisibleSession || !isWindowFocused) {
-      return;
-    }
-
-    void markVisibleSessionSeen().catch(() => undefined);
-  });
+  // ── Scroll behavior (using ScrollController) ──────────────────────────────
 
   function handleScroll(): void {
     if (messagesContainerRef && activeRuntime) {
@@ -529,65 +451,19 @@
     }
   }
 
-  // `force` is used when activating/opening a session so restored per-session
-  // pin state does not block the initial jump to the latest message.
   function scrollToBottom(smooth = true, force = false): void {
     activeRuntime?.messages.scrollToBottom(messagesContainerRef, smooth, force);
   }
 
-  // Performance: Debounced scroll using RAF throttling.
-  // Prevents multiple scroll operations per animation frame during
-  // high-frequency streaming events (text_delta, thinking_delta).
-  // Use instant scroll here for reliability while content grows rapidly;
-  // smooth scrolling can fall behind and temporarily mark the view as unpinned.
-  let scrollRaf: number | null = null;
-  let resizeScrollRaf: number | null = null;
-
   function scheduleScrollToBottom(): void {
-    if (scrollRaf === null) {
-      scrollRaf = requestAnimationFrame(() => {
-        scrollToBottom(false);
-        scrollRaf = null;
-      });
-    }
+    scrollController.scheduleScrollToBottom(() => scrollToBottom(false));
   }
 
-  function schedulePinnedResizeScroll(): void {
-    if (resizeScrollRaf !== null) {
-      return;
-    }
-
-    resizeScrollRaf = requestAnimationFrame(() => {
-      resizeScrollRaf = null;
-
-      if (!messagesContainerRef || !activeRuntime) {
-        return;
-      }
-
-      if (!activeRuntime.messages.isPinnedToBottom()) {
-        return;
-      }
-
-      activeRuntime.messages.scrollToBottom(messagesContainerRef, false);
-    });
+  function isPinnedToBottom(): boolean {
+    return activeRuntime?.messages.isPinnedToBottom() ?? false;
   }
 
-  $effect(() => {
-    const contentElement = messagesContentRef;
-    if (!contentElement) {
-      return;
-    }
-
-    const resizeObserver = new ResizeObserver(() => {
-      schedulePinnedResizeScroll();
-    });
-
-    resizeObserver.observe(contentElement);
-
-    return () => {
-      resizeObserver.disconnect();
-    };
-  });
+  // ── Optimistic prompt tracking ────────────────────────────────────────────
 
   function maybeTrackOptimisticFirstPrompt(
     runtime: SessionRuntime,
@@ -596,18 +472,12 @@
     const alreadyHasUserMessages = runtime.messages.messages.some(
       (message) => message.type === "user",
     );
-    if (alreadyHasUserMessages) {
-      return;
-    }
+    if (alreadyHasUserMessages) return;
 
-    if (optimisticFirstPromptBySession[runtime.sessionId]) {
-      return;
-    }
+    if (optimisticFirstPromptBySession[runtime.sessionId]) return;
 
     const trimmed = prompt.trim();
-    if (trimmed.length === 0) {
-      return;
-    }
+    if (trimmed.length === 0) return;
 
     optimisticFirstPromptBySession = {
       ...optimisticFirstPromptBySession,
@@ -619,14 +489,14 @@
   }
 
   function clearOptimisticFirstPrompt(sessionId: string): void {
-    if (!optimisticFirstPromptBySession[sessionId]) {
-      return;
-    }
+    if (!optimisticFirstPromptBySession[sessionId]) return;
 
     const remaining = { ...optimisticFirstPromptBySession };
     delete remaining[sessionId];
     optimisticFirstPromptBySession = remaining;
   }
+
+  // ── Session sidebar sync ──────────────────────────────────────────────────
 
   function reconcilePendingSessionSidebarSync(): void {
     for (const sessionId of pendingSessionSidebarSync) {
@@ -652,10 +522,6 @@
     sessionSidebarRefreshTimer = setTimeout(() => {
       sessionSidebarRefreshTimer = null;
 
-      // Only refresh project scopes to pick up newly persisted session files.
-      // Do NOT refresh sessionsStore - the session is already tracked locally
-      // and refreshFromBackend() would replace the list, potentially losing
-      // the active session if there's a timing issue with the backend.
       void projectScopesStore
         .refresh()
         .then(() => {
@@ -664,6 +530,8 @@
         .catch(() => undefined);
     }, delayMs);
   }
+
+  // ── Session runtime management ────────────────────────────────────────────
 
   async function ensureRuntime(
     descriptor: SessionDescriptor,
@@ -677,19 +545,7 @@
     sessionRuntimes = removeRuntimeForSession(sessionRuntimes, sessionId);
     pendingSessionSidebarSync.delete(sessionId);
     clearOptimisticFirstPrompt(sessionId);
-
-    if (Object.hasOwn(promptDraftBySession, sessionId)) {
-      const remainingDrafts = { ...promptDraftBySession };
-      delete remainingDrafts[sessionId];
-      promptDraftBySession = remainingDrafts;
-    }
-
-    if (Object.hasOwn(promptAttachmentDraftBySession, sessionId)) {
-      const remainingAttachments = { ...promptAttachmentDraftBySession };
-      delete remainingAttachments[sessionId];
-      promptAttachmentDraftBySession = remainingAttachments;
-    }
-
+    promptDraftStore.cleanupSession(sessionId);
     openSessionTabOrder = openSessionTabOrder.filter((id) => id !== sessionId);
     detachedSessionIds = detachedSessionIds.filter((id) => id !== sessionId);
   }
@@ -700,19 +556,17 @@
     );
     const currentIndex = currentOrder.indexOf(sessionId);
 
-    if (currentIndex === -1) {
-      return null;
-    }
+    if (currentIndex === -1) return null;
 
     return (
       currentOrder[currentIndex + 1] ?? currentOrder[currentIndex - 1] ?? null
     );
   }
 
+  // ── Window management ─────────────────────────────────────────────────────
+
   async function refreshDetachedSessionIds(): Promise<void> {
-    if (!isMainWindow) {
-      return;
-    }
+    if (!isMainWindow) return;
 
     const openLabels = new Set(await listOpenFloatingSessionWindowLabels());
     const nextDetached = sessions
@@ -726,13 +580,13 @@
     }
   }
 
+  // ── Session actions ───────────────────────────────────────────────────────
+
   async function closeSessionWithTabBehavior(sessionId: string): Promise<void> {
     const sessionToClose = sessions.find(
       (session) => session.sessionId === sessionId,
     );
-    if (!sessionToClose) {
-      return;
-    }
+    if (!sessionToClose) return;
 
     const activeBeforeClose = sessionsStore.activeSessionId;
     const nextActiveSessionId =
@@ -743,16 +597,12 @@
     await sessionsStore.closeSession(sessionId);
     cleanupClosedSessionState(sessionId);
 
-    if (!nextActiveSessionId) {
-      return;
-    }
+    if (!nextActiveSessionId) return;
 
     const nextDescriptor = sessionsStore.sessions.find(
       (session) => session.sessionId === nextActiveSessionId,
     );
-    if (!nextDescriptor) {
-      return;
-    }
+    if (!nextDescriptor) return;
 
     sessionsStore.setActiveSession(nextActiveSessionId);
     await ensureRuntime(nextDescriptor);
@@ -766,15 +616,11 @@
     const seedScopes = new Set<string>();
 
     const lastSelected = normalizeScopePath(settingsStore.lastSelectedScope);
-    if (lastSelected.length > 0) {
-      seedScopes.add(lastSelected);
-    }
+    if (lastSelected.length > 0) seedScopes.add(lastSelected);
 
     for (const session of sessionsStore.sessions) {
       const scope = normalizeScopePath(session.projectDir);
-      if (scope.length > 0) {
-        seedScopes.add(scope);
-      }
+      if (scope.length > 0) seedScopes.add(scope);
     }
 
     return [...seedScopes];
@@ -841,13 +687,9 @@
 
     for (const candidate of candidates) {
       const normalized = normalizeScopePath(candidate ?? "");
-      if (normalized.length === 0) {
-        continue;
-      }
+      if (normalized.length === 0) continue;
 
-      if (await isProjectDirValid(normalized)) {
-        return normalized;
-      }
+      if (await isProjectDirValid(normalized)) return normalized;
     }
 
     return undefined;
@@ -862,25 +704,21 @@
       ...(defaultPath ? { defaultPath } : {}),
     });
 
-    if (typeof selected !== "string") {
-      return;
-    }
+    if (typeof selected !== "string") return;
 
     const projectDir = normalizeScopePath(selected);
-    if (projectDir.length === 0) {
-      return;
-    }
+    if (projectDir.length === 0) return;
 
     await createSession(projectDir);
   }
+
+  // ── Tab selection ─────────────────────────────────────────────────────────
 
   async function onSelectSessionTab(sessionId: string): Promise<void> {
     const descriptor = sessionsStore.sessions.find(
       (session) => session.sessionId === sessionId,
     );
-    if (!descriptor) {
-      return;
-    }
+    if (!descriptor) return;
 
     sessionsStore.setActiveSession(sessionId);
     await ensureRuntime(descriptor);
@@ -890,6 +728,8 @@
   async function onCloseSessionTab(sessionId: string): Promise<void> {
     await closeSessionWithTabBehavior(sessionId);
   }
+
+  // ── Floating window actions ───────────────────────────────────────────────
 
   async function popOutSession(descriptor: SessionDescriptor): Promise<void> {
     await openOrFocusFloatingSessionWindow({
@@ -918,18 +758,14 @@
         { activate: false },
       ));
 
-    if (!existing) {
-      scheduleSessionSidebarRefresh(250);
-    }
+    if (!existing) scheduleSessionSidebarRefresh(250);
 
     await popOutSession(descriptor);
   }
 
   async function onPopOutActiveSession(): Promise<void> {
     const descriptor = sessionsStore.activeSession;
-    if (!descriptor) {
-      return;
-    }
+    if (!descriptor) return;
 
     await popOutSession(descriptor);
   }
@@ -949,13 +785,13 @@
     await popOutSession(descriptor);
   }
 
+  // ── Sidebar actions ───────────────────────────────────────────────────────
+
   function toggleSidebar(): void {
     sidebarCollapsed = !sidebarCollapsed;
   }
 
   async function onSelectScope(projectDir: string): Promise<void> {
-    // Clicking a scope header should start a fresh chat for that scope.
-    // Existing sessions are only resumed when selecting explicit history items.
     const normalizedTarget = normalizeScopePath(projectDir);
     if (
       activeRuntime &&
@@ -964,9 +800,7 @@
       return;
     }
 
-    // Save last selected scope
     await settingsStore.setLastSelectedScope(normalizedTarget);
-
     await createSession(projectDir);
   }
 
@@ -980,7 +814,6 @@
       (session) => session.sessionFile === history.filePath,
     );
     if (existing) {
-      // Save last selected scope
       await settingsStore.setLastSelectedScope(normalizedTarget);
       sessionsStore.setActiveSession(existing.sessionId);
       await ensureRuntime(existing);
@@ -991,9 +824,7 @@
       return;
     }
 
-    // Save last selected scope
     await settingsStore.setLastSelectedScope(normalizedTarget);
-
     await createSession(projectDir, history.filePath);
     await sessionAttentionStore
       .markSeen(getAttentionSubjectForHistory(history))
@@ -1017,7 +848,7 @@
       try {
         await closeSessionWithTabBehavior(openSession.sessionId);
       } catch {
-        // Ignore close errors - session may already be closed in backend
+        // Ignore close errors
       }
     }
 
@@ -1035,11 +866,9 @@
   }
 
   async function onRemoveScope(projectDir: string): Promise<void> {
-    // Normalize project dir for comparison (remove trailing slashes)
     const normalizedProjectDir = projectDir.replace(/[\\/]+$/, "");
     const scopeHistory = scopeHistoryByProject[normalizedProjectDir] ?? [];
 
-    // Close all sessions for this scope via backend
     const sessionsToClose = sessionsStore.sessions.filter(
       (session) =>
         session.projectDir.replace(/[\\/]+$/, "") === normalizedProjectDir,
@@ -1048,11 +877,10 @@
       try {
         await closeSessionWithTabBehavior(session.sessionId);
       } catch {
-        // Ignore close errors - session may not exist in backend
+        // Ignore close errors
       }
     }
 
-    // Delete the scope (session files) via backend
     await projectScopesStore.deleteScope(
       normalizedProjectDir,
       getProjectScopeSeedScopes(),
@@ -1075,6 +903,8 @@
     await recoverSessionSelectionAfterScopeMutation();
   }
 
+  // ── Agent event handlers ──────────────────────────────────────────────────
+
   function handleAgentError(errorPayload: string): void {
     for (const runtime of Object.values(sessionRuntimes)) {
       runtime.messages.addErrorMessage(errorPayload);
@@ -1091,28 +921,18 @@
     }
   }
 
+  // ── Prompt handlers ───────────────────────────────────────────────────────
+
   function onPromptInput(value: string): void {
     const sessionId = activeSessionId;
-    if (!sessionId) {
-      return;
-    }
-
-    promptDraftBySession = {
-      ...promptDraftBySession,
-      [sessionId]: value,
-    };
+    if (!sessionId) return;
+    promptDraftStore.setText(sessionId, value);
   }
 
   function onPromptAttachmentsChange(images: PromptImageAttachment[]): void {
     const sessionId = activeSessionId;
-    if (!sessionId) {
-      return;
-    }
-
-    promptAttachmentDraftBySession = {
-      ...promptAttachmentDraftBySession,
-      [sessionId]: images,
-    };
+    if (!sessionId) return;
+    promptDraftStore.setAttachments(sessionId, images);
   }
 
   async function onSubmit(
@@ -1161,9 +981,7 @@
   }
 
   async function onNewChat(): Promise<void> {
-    if (!activeRuntime || !chatHasMessages) {
-      return;
-    }
+    if (!activeRuntime || !chatHasMessages) return;
 
     if (activeRuntime.agent.isBashRunning) {
       activeRuntime.messages.addErrorMessage(
@@ -1173,9 +991,7 @@
     }
 
     const projectDir = normalizeScopePath(activeRuntime.projectDir);
-    if (projectDir.length === 0) {
-      return;
-    }
+    if (projectDir.length === 0) return;
 
     await settingsStore.setLastSelectedScope(projectDir);
 
@@ -1186,6 +1002,8 @@
 
     await createSession(projectDir);
   }
+
+  // ── Settings handlers ─────────────────────────────────────────────────────
 
   async function onModelChange(
     provider: string,
@@ -1233,6 +1051,8 @@
     await settingsStore.setThinkingCollapsedByDefault(collapsed);
   }
 
+  // ── Slash command handler ─────────────────────────────────────────────────
+
   async function onSlashCommand(
     command: string,
     args: string,
@@ -1273,48 +1093,87 @@
     await settingsStore.toggleScopeCollapsed(scope);
   }
 
+  // ── Effects ───────────────────────────────────────────────────────────────
+
   $effect(() => {
-    const active = sessionsStore.activeSession;
-    if (active) {
-      projectDirInput = active.projectDir;
+    const validSessionIds = new Set(
+      sessions.map((session) => session.sessionId),
+    );
+    const nextOrder = openSessionTabOrder.filter((sessionId) =>
+      validSessionIds.has(sessionId),
+    );
+
+    for (const session of sessions) {
+      if (!validSessionIds.has(session.sessionId)) continue;
+      if (!nextOrder.includes(session.sessionId)) {
+        nextOrder.push(session.sessionId);
+      }
+    }
+
+    if (!areSessionIdListsEqual(openSessionTabOrder, nextOrder)) {
+      openSessionTabOrder = nextOrder;
     }
   });
 
+  $effect(() => {
+    if (!isMainWindow || !settingsStore.loaded || !sessionsBootstrapped) return;
+
+    const tabs = getRestorableOpenSessionTabs();
+    const activeIndex = getRestorableOpenSessionActiveIndex();
+    const signature = JSON.stringify({ tabs, activeIndex });
+
+    if (signature === lastPersistedOpenTabsSignature) return;
+
+    lastPersistedOpenTabsSignature = signature;
+    void settingsStore
+      .persistOpenSessionTabs(tabs, activeIndex)
+      .catch((error) => {
+        console.warn("Failed to persist open session tabs:", error);
+      });
+  });
+
+  $effect(() => {
+    const shouldTrackVisibleSession =
+      (isFloatingSessionWindow && boundSessionId) ||
+      (!isFloatingSessionWindow && activeSessionId);
+
+    if (!shouldTrackVisibleSession || !isWindowFocused) return;
+
+    void markVisibleSessionSeen().catch(() => undefined);
+  });
+
+  $effect(() => {
+    const contentElement = messagesContentRef;
+    if (!contentElement) return;
+
+    return scrollController.observeContentResize(
+      contentElement,
+      () => scrollToBottom(false),
+      isPinnedToBottom,
+    );
+  });
+
+  $effect(() => {
+    const active = sessionsStore.activeSession;
+    if (active) projectDirInput = active.projectDir;
+  });
+
+  // Use PromptDraftStore for reconciliation
   $effect(() => {
     const validSessionIds = new Set(
       sessionsStore.sessions.map((session) => session.sessionId),
     );
-
-    const promptEntries = Object.entries(promptDraftBySession).filter(
-      ([sessionId]) => validSessionIds.has(sessionId),
-    );
-    if (promptEntries.length !== Object.keys(promptDraftBySession).length) {
-      promptDraftBySession = Object.fromEntries(promptEntries);
-    }
-
-    const attachmentEntries = Object.entries(
-      promptAttachmentDraftBySession,
-    ).filter(([sessionId]) => validSessionIds.has(sessionId));
-    if (
-      attachmentEntries.length !==
-      Object.keys(promptAttachmentDraftBySession).length
-    ) {
-      promptAttachmentDraftBySession = Object.fromEntries(attachmentEntries);
-    }
+    promptDraftStore.reconcile(validSessionIds);
   });
 
   $effect(() => {
-    if (!isMainWindow) {
-      return;
-    }
-
+    if (!isMainWindow) return;
     void refreshDetachedSessionIds().catch(() => undefined);
   });
 
   $effect(() => {
-    if (!sessionsBootstrapped || !isFloatingSessionWindow || !boundSessionId) {
+    if (!sessionsBootstrapped || !isFloatingSessionWindow || !boundSessionId)
       return;
-    }
 
     const hasBoundSession = sessionsStore.sessions.some(
       (session) => session.sessionId === boundSessionId,
@@ -1324,6 +1183,8 @@
       floatingSessionMissing = true;
     }
   });
+
+  // ── Lifecycle ─────────────────────────────────────────────────────────────
 
   onMount(async () => {
     const settingsLoad = settingsStore.load().catch((error) => {
@@ -1389,9 +1250,7 @@
       .onFocusChanged((event) => {
         isWindowFocused = event.payload;
 
-        if (!event.payload) {
-          return;
-        }
+        if (!event.payload) return;
 
         void settingsStore.load().catch(() => undefined);
         void markVisibleSessionSeen().catch(() => undefined);
@@ -1411,9 +1270,7 @@
       handleRuntimeEvent: (runtime, event) => {
         handleAgentEvent(runtime, event);
 
-        if (event.type !== "agent_end") {
-          return;
-        }
+        if (event.type !== "agent_end") return;
 
         if (!isMainWindow) {
           if (
@@ -1433,9 +1290,7 @@
         }
 
         const attentionSubject = getAttentionSubjectForRuntime(runtime);
-        if (!attentionSubject) {
-          return;
-        }
+        if (!attentionSubject) return;
 
         void (async () => {
           const visibleSomewhere = await isSessionVisibleInAnyFocusedWindow(
@@ -1477,20 +1332,9 @@
       detachedSessionRefreshTimer = null;
     }
 
-    if (scrollRaf !== null) {
-      cancelAnimationFrame(scrollRaf);
-      scrollRaf = null;
-    }
-
-    if (resizeScrollRaf !== null) {
-      cancelAnimationFrame(resizeScrollRaf);
-      resizeScrollRaf = null;
-    }
-
+    scrollController.cancelAll();
     pendingSessionSidebarSync.clear();
     optimisticFirstPromptBySession = {};
-    promptDraftBySession = {};
-    promptAttachmentDraftBySession = {};
     detachedSessionIds = [];
   });
 </script>

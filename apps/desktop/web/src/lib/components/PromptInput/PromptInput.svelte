@@ -10,6 +10,19 @@
     type SlashCommand,
   } from "$lib/slash-commands";
   import type { AvailableSlashCommand } from "$lib/stores/agent.svelte";
+  import {
+    MAX_IMAGES_PER_MESSAGE,
+    areAttachmentsEqual,
+    areLocalAndExternalEqual,
+    processImageFiles,
+    toExternalAttachments,
+    toLocalAttachments,
+    tryReadNativeClipboardImage,
+    extractImageFilesFromClipboard,
+    type LocalPromptImageAttachment,
+  } from "$lib/utils/image-attachments";
+  import SlashCommandAutocomplete from "./SlashCommandAutocomplete.svelte";
+  import BangCommandIndicator from "./BangCommandIndicator.svelte";
   import ModelSelector from "./ModelSelector.svelte";
   import ThinkingSelector from "./ThinkingSelector.svelte";
   import type { AvailableModel, ThinkingLevel } from "$lib/stores/agent.svelte";
@@ -93,127 +106,10 @@
     compact = false,
   }: Props = $props();
 
-  type LocalPromptImageAttachment = PromptImageAttachment & { id: string };
+  // ── Internal state ────────────────────────────────────────────────────────
 
-  function toLocalAttachments(
-    images: PromptImageAttachment[],
-  ): LocalPromptImageAttachment[] {
-    return images.map((image) => ({
-      id: crypto.randomUUID(),
-      ...image,
-    }));
-  }
-
-  function toExternalAttachments(
-    images: LocalPromptImageAttachment[],
-  ): PromptImageAttachment[] {
-    return images.map(({ id, ...image }) => image);
-  }
-
-  function areExternalAttachmentsEqual(
-    a: PromptImageAttachment[] | null | undefined,
-    b: PromptImageAttachment[] | null | undefined,
-  ): boolean {
-    if (a === b) {
-      return true;
-    }
-
-    if (!a || !b) {
-      return false;
-    }
-
-    if (a.length !== b.length) {
-      return false;
-    }
-
-    for (let i = 0; i < a.length; i += 1) {
-      const left = a[i];
-      const right = b[i];
-
-      if (!left || !right) {
-        return false;
-      }
-
-      if (left.mimeType !== right.mimeType || left.data !== right.data) {
-        return false;
-      }
-    }
-
-    return true;
-  }
-
-  function areLocalAttachmentsEqual(
-    a: LocalPromptImageAttachment[],
-    b: LocalPromptImageAttachment[],
-  ): boolean {
-    if (a === b) {
-      return true;
-    }
-
-    if (a.length !== b.length) {
-      return false;
-    }
-
-    for (let i = 0; i < a.length; i += 1) {
-      const left = a[i];
-      const right = b[i];
-
-      if (!left || !right) {
-        return false;
-      }
-
-      if (
-        left.id !== right.id ||
-        left.mimeType !== right.mimeType ||
-        left.data !== right.data
-      ) {
-        return false;
-      }
-    }
-
-    return true;
-  }
-
-  function areLocalAndExternalAttachmentsEqual(
-    localImages: LocalPromptImageAttachment[],
-    externalImages: PromptImageAttachment[],
-  ): boolean {
-    if (localImages.length !== externalImages.length) {
-      return false;
-    }
-
-    for (let i = 0; i < localImages.length; i += 1) {
-      const local = localImages[i];
-      const external = externalImages[i];
-
-      if (!local || !external) {
-        return false;
-      }
-
-      if (
-        local.mimeType !== external.mimeType ||
-        local.data !== external.data
-      ) {
-        return false;
-      }
-    }
-
-    return true;
-  }
-
-  // Internal state for the input value
   // svelte-ignore state_referenced_locally
   let internalValue = $state(externalValue);
-
-  const SUPPORTED_IMAGE_MIME_TYPES = new Set([
-    "image/png",
-    "image/jpeg",
-    "image/gif",
-    "image/webp",
-  ]);
-  const MAX_IMAGES_PER_MESSAGE = 4;
-  const MAX_IMAGE_SIZE_BYTES = 5 * 1024 * 1024;
-
   let textareaRef = $state<HTMLTextAreaElement | null>(null);
   let fileInputRef = $state<HTMLInputElement | null>(null);
   let isFocused = $state(false);
@@ -222,6 +118,13 @@
   let attachmentError = $state<string | null>(null);
   let isDragOver = $state(false);
   let dragDepth = $state(0);
+  let selectedCommandIndex = $state(0);
+  let lastSyncedExternalValue = $state<string | null>(null);
+  let lastSyncedExternalAttachments = $state<PromptImageAttachment[] | null>(
+    null,
+  );
+
+  // ── Derived state ─────────────────────────────────────────────────────────
 
   const hasContent = $derived(internalValue.trim().length > 0);
   const hasAttachments = $derived(attachments.length > 0);
@@ -241,7 +144,6 @@
     disabled || isLoading || modelChanging || thinkingChanging,
   );
 
-  // Slash command detection
   const parsedCommand = $derived(parseSlashCommand(internalValue));
   const isSlashCommand = $derived(parsedCommand !== null);
   const isKnownCommand = $derived(
@@ -255,10 +157,7 @@
       : null,
   );
   const matchedCommand = $derived.by(() => {
-    if (!parsedCommand) {
-      return null;
-    }
-
+    if (!parsedCommand) return null;
     return (
       slashCommands.find((command) => command.name === parsedCommand.command) ??
       null
@@ -267,42 +166,23 @@
 
   const bangPrefixMode = $derived.by(() => {
     const trimmed = internalValue.trim();
-    if (trimmed.startsWith("!!")) {
-      return "exclude" as const;
-    }
-    if (trimmed.startsWith("!")) {
-      return "include" as const;
-    }
+    if (trimmed.startsWith("!!")) return "exclude" as const;
+    if (trimmed.startsWith("!")) return "include" as const;
     return null;
   });
 
   const parsedBangCommand = $derived(parseBangCommand(internalValue));
-  const bangHintLabel = $derived.by(() => {
-    if (bangPrefixMode === "exclude") {
-      return "Bash • excluded from context";
-    }
-    if (bangPrefixMode === "include") {
-      return "Bash • included in context";
-    }
-    return "";
-  });
 
-  // Filter matching commands for autocomplete (show all matches, scrollable)
   const matchingCommands = $derived.by(() => {
     if (!isFocused || !isSlashCommand) return [];
     if (!parsedCommand || parsedCommand.args) return [];
-    // Don't show dropdown if input ends with space (command is complete/selected)
     if (internalValue.endsWith(" ")) return [];
-    // Don't show dropdown immediately after selecting a command
     if (commandJustSelected) return [];
     const query = parsedCommand.command.toLowerCase();
     return slashCommands.filter((cmd) =>
       cmd.name.toLowerCase().startsWith(query),
     );
   });
-
-  // Track selected command index for keyboard navigation
-  let selectedCommandIndex = $state(0);
 
   // Reset selection when matching commands change
   $effect(() => {
@@ -311,60 +191,49 @@
     }
   });
 
+  // ── Helpers ───────────────────────────────────────────────────────────────
+
   function applyTextareaHeight(target: HTMLTextAreaElement): void {
     target.style.height = "auto";
     const newHeight = Math.min(target.scrollHeight, 300);
     target.style.height = newHeight > 44 ? `${newHeight}px` : "auto";
   }
 
-  let lastSyncedExternalAttachments = $state<PromptImageAttachment[] | null>(
-    null,
-  );
-
   function setInternalValue(nextValue: string, notify = true): void {
     internalValue = nextValue;
-    if (notify) {
-      oninput?.(nextValue);
-    }
+    if (notify) oninput?.(nextValue);
   }
 
   function setAttachments(
     nextAttachments: LocalPromptImageAttachment[],
     notify = true,
   ): void {
-    if (areLocalAttachmentsEqual(attachments, nextAttachments)) {
-      return;
-    }
+    // Use the generic equality check from the utility
+    if (areAttachmentsEqual(attachments, nextAttachments)) return;
 
     attachments = nextAttachments;
 
-    if (!notify) {
-      return;
-    }
+    if (!notify) return;
 
     const externalImages = toExternalAttachments(nextAttachments);
     lastSyncedExternalAttachments = externalImages;
     onattachmentschange?.(externalImages);
   }
 
-  function selectCommand(cmd: SlashCommand) {
-    // Set flag to prevent dropdown from reopening immediately
+  function selectCommand(cmd: SlashCommand): void {
     commandJustSelected = true;
-    // Update value with trailing space to prevent dropdown from reopening
     setInternalValue(`/${cmd.name} `);
-    // Re-focus textarea
     textareaRef?.focus();
-    // Clear the flag after a short delay to allow future slash commands
     setTimeout(() => {
       commandJustSelected = false;
     }, 100);
   }
 
-  function handleInput(event: Event) {
+  // ── Event handlers ────────────────────────────────────────────────────────
+
+  function handleInput(event: Event): void {
     const target = event.target as HTMLTextAreaElement;
     setInternalValue(target.value);
-
-    // Auto-resize textarea based on content.
     applyTextareaHeight(target);
   }
 
@@ -379,215 +248,57 @@
   function removeAttachment(id: string): void {
     const nextAttachments = attachments.filter((image) => image.id !== id);
     setAttachments(nextAttachments);
-    if (nextAttachments.length === 0) {
-      clearAttachmentError();
-    }
+    if (nextAttachments.length === 0) clearAttachmentError();
   }
 
-  function isSupportedImageMimeType(mimeType: string): boolean {
-    return SUPPORTED_IMAGE_MIME_TYPES.has(mimeType.toLowerCase());
-  }
+  async function addImageFiles(files: Blob[]): Promise<void> {
+    if (disabled || isLoading) return;
 
-  function readBlobAsDataUrl(file: Blob): Promise<string | null> {
-    return new Promise((resolve) => {
-      const reader = new FileReader();
-      reader.onerror = () => resolve(null);
-      reader.onload = (event) => {
-        const result = event.target?.result;
-        resolve(typeof result === "string" ? result : null);
-      };
-      reader.readAsDataURL(file);
-    });
-  }
+    const result = await processImageFiles(files, attachments.length);
 
-  async function convertDataUrlToPng(dataUrl: string): Promise<string | null> {
-    const image = await new Promise<HTMLImageElement | null>((resolve) => {
-      const img = new Image();
-      img.onload = () => resolve(img);
-      img.onerror = () => resolve(null);
-      img.src = dataUrl;
-    });
-
-    if (!image) {
-      return null;
-    }
-
-    const width = image.naturalWidth || image.width;
-    const height = image.naturalHeight || image.height;
-    if (!width || !height) {
-      return null;
-    }
-
-    const canvas = document.createElement("canvas");
-    canvas.width = width;
-    canvas.height = height;
-    const context = canvas.getContext("2d");
-    if (!context) {
-      return null;
-    }
-
-    context.drawImage(image, 0, 0);
-    return canvas.toDataURL("image/png");
-  }
-
-  async function processImageFile(file: Blob): Promise<void> {
-    if (disabled || isLoading) {
+    if (result.error) {
+      setAttachmentError(result.error);
       return;
     }
 
-    if (attachments.length >= MAX_IMAGES_PER_MESSAGE) {
-      setAttachmentError(
-        `You can only attach up to ${MAX_IMAGES_PER_MESSAGE} images per message.`,
-      );
-      return;
-    }
-
-    const mimeType = file.type.toLowerCase();
-    if (!mimeType.startsWith("image/")) {
-      setAttachmentError("Only image files can be attached.");
-      return;
-    }
-
-    if (file.size > MAX_IMAGE_SIZE_BYTES) {
-      setAttachmentError("Image is too large. Maximum size is 5MB.");
-      return;
-    }
-
-    let dataUrl = await readBlobAsDataUrl(file);
-    if (!dataUrl) {
-      setAttachmentError("Failed to read image attachment.");
-      return;
-    }
-
-    if (!isSupportedImageMimeType(mimeType)) {
-      const converted = await convertDataUrlToPng(dataUrl);
-      if (!converted) {
-        setAttachmentError(
-          "Only PNG, JPEG, GIF, and WebP images are supported.",
-        );
-        return;
-      }
-      dataUrl = converted;
-    }
-
-    const commaIndex = dataUrl.indexOf(",");
-    const header = commaIndex > 0 ? dataUrl.slice(0, commaIndex) : "";
-    const base64Data = commaIndex > 0 ? dataUrl.slice(commaIndex + 1) : "";
-    if (
-      !header.startsWith("data:") ||
-      !header.includes(";base64") ||
-      base64Data.length === 0
-    ) {
-      setAttachmentError("Unsupported clipboard image format.");
-      return;
-    }
-
-    const declaredMimeType = header
-      .slice("data:".length)
-      .split(";")[0]
-      ?.toLowerCase();
-    const resolvedMimeType =
-      declaredMimeType && isSupportedImageMimeType(declaredMimeType)
-        ? declaredMimeType
-        : "image/png";
-
-    setAttachments([
-      ...attachments,
-      {
-        id: crypto.randomUUID(),
-        type: "image",
-        data: base64Data,
-        mimeType: resolvedMimeType,
-      },
-    ]);
+    setAttachments([...attachments, ...result.attachments]);
     clearAttachmentError();
   }
 
-  async function processImageFiles(files: Blob[]): Promise<void> {
-    for (const file of files) {
-      await processImageFile(file);
-      if (attachments.length >= MAX_IMAGES_PER_MESSAGE) {
-        return;
-      }
-    }
-  }
-
-  function decodeBase64ToBytes(base64: string): Uint8Array {
-    const binaryString = atob(base64);
-    const bytes = new Uint8Array(binaryString.length);
-    for (let i = 0; i < binaryString.length; i += 1) {
-      bytes[i] = binaryString.charCodeAt(i);
-    }
-    return bytes;
-  }
-
-  async function tryNativeClipboardImagePaste(): Promise<boolean> {
-    try {
-      const image = await invoke<PromptImageAttachment | null>(
-        "read_clipboard_image",
-      );
-      if (
-        !image ||
-        image.type !== "image" ||
-        typeof image.data !== "string" ||
-        typeof image.mimeType !== "string"
-      ) {
-        return false;
-      }
-
-      const bytes = decodeBase64ToBytes(image.data);
-      if (bytes.length === 0) {
-        return false;
-      }
-
-      const blob = new Blob([bytes], {
-        type: image.mimeType,
-      });
-      await processImageFile(blob);
-      return true;
-    } catch {
-      return false;
-    }
-  }
-
   function handlePaste(event: ClipboardEvent): void {
-    if (disabled || isLoading) {
-      return;
-    }
+    if (disabled || isLoading) return;
 
     const items = event.clipboardData?.items;
     if (!items || items.length === 0) {
-      void tryNativeClipboardImagePaste();
+      // Fall back to native clipboard reading
+      void (async () => {
+        const blob = await tryReadNativeClipboardImage(invoke);
+        if (blob) await addImageFiles([blob]);
+      })();
       return;
     }
 
-    const imageItems = Array.from(items).filter(
-      (item) => item.kind === "file" && item.type.startsWith("image/"),
-    );
+    const imageFiles = extractImageFilesFromClipboard(items);
 
-    if (imageItems.length === 0) {
+    if (imageFiles.length === 0) {
       const hasTextPayload =
-        (event.clipboardData.getData("text/plain") ?? "").length > 0 ||
-        (event.clipboardData.getData("text/html") ?? "").length > 0;
+        (event.clipboardData?.getData("text/plain") ?? "").length > 0 ||
+        (event.clipboardData?.getData("text/html") ?? "").length > 0;
       if (!hasTextPayload) {
-        void tryNativeClipboardImagePaste();
+        void (async () => {
+          const blob = await tryReadNativeClipboardImage(invoke);
+          if (blob) await addImageFiles([blob]);
+        })();
       }
       return;
     }
 
     event.preventDefault();
-    void processImageFiles(
-      imageItems
-        .map((item) => item.getAsFile())
-        .filter((file): file is File => file !== null),
-    );
+    void addImageFiles(imageFiles);
   }
 
   function handleDragEnter(event: DragEvent): void {
-    if (disabled || isLoading) {
-      return;
-    }
-
+    if (disabled || isLoading) return;
     event.preventDefault();
     event.stopPropagation();
     dragDepth += 1;
@@ -595,36 +306,23 @@
   }
 
   function handleDragOver(event: DragEvent): void {
-    if (disabled || isLoading) {
-      return;
-    }
-
+    if (disabled || isLoading) return;
     event.preventDefault();
     event.stopPropagation();
-    if (event.dataTransfer) {
-      event.dataTransfer.dropEffect = "copy";
-    }
+    if (event.dataTransfer) event.dataTransfer.dropEffect = "copy";
     isDragOver = true;
   }
 
   function handleDragLeave(event: DragEvent): void {
-    if (disabled || isLoading) {
-      return;
-    }
-
+    if (disabled || isLoading) return;
     event.preventDefault();
     event.stopPropagation();
     dragDepth = Math.max(0, dragDepth - 1);
-    if (dragDepth === 0) {
-      isDragOver = false;
-    }
+    if (dragDepth === 0) isDragOver = false;
   }
 
   function handleDrop(event: DragEvent): void {
-    if (disabled || isLoading) {
-      return;
-    }
-
+    if (disabled || isLoading) return;
     event.preventDefault();
     event.stopPropagation();
     dragDepth = 0;
@@ -634,18 +332,11 @@
       file.type.toLowerCase().startsWith("image/"),
     );
 
-    if (files.length === 0) {
-      return;
-    }
-
-    void processImageFiles(files);
+    if (files.length > 0) void addImageFiles(files);
   }
 
   function openFilePicker(): void {
-    if (disabled || isLoading) {
-      return;
-    }
-
+    if (disabled || isLoading) return;
     fileInputRef?.click();
   }
 
@@ -655,38 +346,29 @@
       file.type.toLowerCase().startsWith("image/"),
     );
 
-    if (files.length > 0) {
-      void processImageFiles(files);
-    }
+    if (files.length > 0) void addImageFiles(files);
 
-    // Allow selecting the same file again later.
+    // Allow selecting the same file again later
     target.value = "";
   }
 
-  async function handleSubmit() {
+  async function handleSubmit(): Promise<void> {
     if (!canSubmit) return;
 
     const trimmedValue = internalValue.trim();
     if (!trimmedValue && attachments.length === 0) return;
 
-    // Check if this is a slash command
     const slashCmd = parseSlashCommand(trimmedValue);
     if (slashCmd && onslashcommand) {
       await onslashcommand(slashCmd.command, slashCmd.args, trimmedValue);
     } else {
-      await onsubmit?.(
-        trimmedValue,
-        attachments.map(({ id, ...image }) => image),
-      );
+      await onsubmit?.(trimmedValue, toExternalAttachments(attachments));
     }
 
-    // Clear input after submission
     setInternalValue("");
     setAttachments([]);
     clearAttachmentError();
-    if (textareaRef) {
-      textareaRef.style.height = "auto";
-    }
+    if (textareaRef) textareaRef.style.height = "auto";
   }
 
   async function handleNewChat(): Promise<void> {
@@ -702,7 +384,7 @@
     }
   }
 
-  function handleKeyDown(event: KeyboardEvent) {
+  function handleKeyDown(event: KeyboardEvent): void {
     // Handle dropdown navigation when slash command dropdown is open
     if (matchingCommands.length > 0) {
       if (event.key === "ArrowDown") {
@@ -717,15 +399,11 @@
           matchingCommands.length;
         return;
       } else if (event.key === "Enter" && !event.shiftKey) {
-        // Select the highlighted command
         event.preventDefault();
         const selectedCmd = matchingCommands[selectedCommandIndex];
-        if (selectedCmd) {
-          selectCommand(selectedCmd);
-        }
+        if (selectedCmd) selectCommand(selectedCmd);
         return;
       } else if (event.key === "Escape") {
-        // Close dropdown but keep typing
         event.preventDefault();
         isFocused = false;
         return;
@@ -734,9 +412,7 @@
 
     if (event.key === "Enter" && !event.shiftKey) {
       event.preventDefault();
-      if (canSubmit) {
-        handleSubmit();
-      }
+      if (canSubmit) handleSubmit();
     } else if (event.key === "Escape") {
       if (isLoading) {
         oncancel?.();
@@ -744,14 +420,12 @@
         setInternalValue("");
         setAttachments([]);
         clearAttachmentError();
-        if (textareaRef) {
-          textareaRef.style.height = "auto";
-        }
+        if (textareaRef) textareaRef.style.height = "auto";
       }
     }
   }
 
-  let lastSyncedExternalValue = $state<string | null>(null);
+  // ── Sync external state ───────────────────────────────────────────────────
 
   $effect(() => {
     if (lastSyncedExternalValue === null) {
@@ -759,60 +433,40 @@
       return;
     }
 
-    if (externalValue === lastSyncedExternalValue) {
-      return;
-    }
+    if (externalValue === lastSyncedExternalValue) return;
 
     lastSyncedExternalValue = externalValue;
     internalValue = externalValue;
-    if (textareaRef) {
-      applyTextareaHeight(textareaRef);
-    }
+    if (textareaRef) applyTextareaHeight(textareaRef);
   });
 
   $effect(() => {
     if (lastSyncedExternalAttachments === null) {
       lastSyncedExternalAttachments = externalAttachments;
 
-      if (
-        !areLocalAndExternalAttachmentsEqual(attachments, externalAttachments)
-      ) {
+      if (!areLocalAndExternalEqual(attachments, externalAttachments)) {
         setAttachments(toLocalAttachments(externalAttachments), false);
       }
 
-      if (externalAttachments.length === 0) {
-        clearAttachmentError();
-      }
+      if (externalAttachments.length === 0) clearAttachmentError();
       return;
     }
 
-    if (
-      areExternalAttachmentsEqual(
-        externalAttachments,
-        lastSyncedExternalAttachments,
-      )
-    ) {
+    if (areAttachmentsEqual(externalAttachments, lastSyncedExternalAttachments))
       return;
-    }
 
     lastSyncedExternalAttachments = externalAttachments;
 
-    if (
-      !areLocalAndExternalAttachmentsEqual(attachments, externalAttachments)
-    ) {
+    if (!areLocalAndExternalEqual(attachments, externalAttachments)) {
       setAttachments(toLocalAttachments(externalAttachments), false);
     }
 
-    if (externalAttachments.length === 0) {
-      clearAttachmentError();
-    }
+    if (externalAttachments.length === 0) clearAttachmentError();
   });
 
   // Auto-focus on mount if requested
   $effect(() => {
-    if (autofocus && textareaRef) {
-      textareaRef.focus();
-    }
+    if (autofocus && textareaRef) textareaRef.focus();
   });
 </script>
 
@@ -822,37 +476,25 @@
     disabled && "opacity-60 cursor-not-allowed",
   )}
 >
-  <!-- Slash command autocomplete dropdown -->
-  {#if matchingCommands.length > 0}
-    <!-- svelte-ignore a11y_no_static_element_interactions -->
-    <div
-      class="absolute bottom-full left-0 right-0 mb-1 bg-background border border-border rounded-md max-h-64 overflow-y-auto z-50"
-      onmousedown={(e) => e.preventDefault()}
-    >
-      {#each matchingCommands as cmd, index (cmd.name)}
-        <button
-          type="button"
-          class={cn(
-            "flex items-center gap-2 px-3 py-2 w-full text-left cursor-pointer",
-            index === selectedCommandIndex && "bg-accent",
-          )}
-          onmouseenter={() => (selectedCommandIndex = index)}
-          onclick={() => selectCommand(cmd)}
-        >
-          <span class="text-sm font-medium text-primary">/{cmd.name}</span>
-          <span class="text-sm text-muted-foreground">{cmd.description}</span>
-        </button>
-      {/each}
-    </div>
-  {:else if isSlashCommand && isFocused && parsedCommand && !parsedCommand.args && matchingCommands.length === 0 && !internalValue.endsWith(" ")}
-    <!-- No matches indicator -->
-    <div
-      class="absolute bottom-full left-0 mb-1 px-2 py-1 bg-background border border-border rounded-md"
-    >
-      <span class="text-xs text-warning">/{parsedCommand.command}</span>
-      <span class="text-xs text-muted-foreground ml-2">Unknown command</span>
-    </div>
-  {/if}
+  <!-- Slash command autocomplete -->
+  <SlashCommandAutocomplete
+    isOpen={!!(
+      isFocused &&
+      (matchingCommands.length > 0 ||
+        (isSlashCommand &&
+          parsedCommand &&
+          !parsedCommand.args &&
+          !internalValue.endsWith(" ")))
+    )}
+    {matchingCommands}
+    {selectedCommandIndex}
+    {isKnownCommand}
+    {commandHandler}
+    {matchedCommand}
+    {parsedCommand}
+    onselectcommand={selectCommand}
+    onindexchange={(index) => (selectedCommandIndex = index)}
+  />
 
   <input
     bind:this={fileInputRef}
@@ -924,67 +566,10 @@
 
     <div class="relative">
       {#if bangPrefixMode}
-        <div class="px-3 pt-2 pb-0.5">
-          <span
-            class={cn(
-              "inline-flex max-w-[calc(100%-7rem)] items-center gap-1.5 rounded-full border px-2 py-1 text-[11px] font-medium transition-colors",
-              bangPrefixMode === "include"
-                ? "border-success/30 bg-success/8 text-success"
-                : "border-border bg-surface-active text-muted-foreground",
-              !parsedBangCommand && "opacity-80",
-            )}
-          >
-            {#if bangPrefixMode === "include"}
-              <svg
-                class="w-3.5 h-3.5 shrink-0"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-              >
-                <path
-                  stroke-linecap="round"
-                  stroke-linejoin="round"
-                  stroke-width="2"
-                  d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7S1 12 1 12z"
-                />
-                <circle cx="12" cy="12" r="3" stroke-width="2" />
-              </svg>
-            {:else}
-              <svg
-                class="w-3.5 h-3.5 shrink-0"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-              >
-                <path
-                  stroke-linecap="round"
-                  stroke-linejoin="round"
-                  stroke-width="2"
-                  d="M3 3l18 18"
-                />
-                <path
-                  stroke-linecap="round"
-                  stroke-linejoin="round"
-                  stroke-width="2"
-                  d="M10.58 10.58a2 2 0 002.83 2.83"
-                />
-                <path
-                  stroke-linecap="round"
-                  stroke-linejoin="round"
-                  stroke-width="2"
-                  d="M9.88 4.24A10.94 10.94 0 0112 4c5 0 9.27 3.11 11 7.5a11.8 11.8 0 01-4.04 5.19"
-                />
-                <path
-                  stroke-linecap="round"
-                  stroke-linejoin="round"
-                  stroke-width="2"
-                  d="M6.61 6.61A10.93 10.93 0 001 11.5C2.73 15.89 7 19 12 19a10.94 10.94 0 004.24-.85"
-                />
-              </svg>
-            {/if}
-            <span class="truncate">{bangHintLabel}</span>
-          </span>
-        </div>
+        <BangCommandIndicator
+          mode={bangPrefixMode}
+          isValid={parsedBangCommand !== null}
+        />
       {/if}
 
       <textarea
@@ -1085,7 +670,6 @@
           aria-label={isLoading ? "Stop" : "Submit"}
         >
           {#if isLoading}
-            <!-- Stop square icon -->
             <svg
               class="w-4 h-4"
               viewBox="0 0 24 24"
@@ -1117,32 +701,32 @@
   {#if !compact}
     <div class="flex justify-between pt-1.5 px-1">
       <span class="text-xs flex flex-col gap-0.5">
-        {#if isSlashCommand}
-          {#if isKnownCommand}
+        {#if isSlashCommand && parsedCommand}
+          {#if isKnownCommand && matchedCommand}
             {#if commandHandler === "local"}
               <span class="text-success font-medium"
-                >/{parsedCommand?.command}</span
+                >/{parsedCommand.command}</span
               >
               <span class="text-muted-foreground ml-1">
-                {matchedCommand?.description}
+                {matchedCommand.description}
               </span>
             {:else if commandHandler === "unimplemented"}
               <span class="text-warning font-medium"
-                >/{parsedCommand?.command}</span
+                >/{parsedCommand.command}</span
               >
               <span class="text-muted-foreground ml-1">
-                Not yet implemented • {matchedCommand?.description}
+                Not yet implemented • {matchedCommand.description}
               </span>
             {:else}
               <span class="text-primary font-medium"
-                >/{parsedCommand?.command}</span
+                >/{parsedCommand.command}</span
               >
               <span class="text-muted-foreground ml-1">
-                {matchedCommand?.description}
+                {matchedCommand.description}
               </span>
             {/if}
           {:else}
-            <span class="text-destructive">/{parsedCommand?.command}</span>
+            <span class="text-destructive">/{parsedCommand.command}</span>
             <span class="text-muted-foreground ml-1">Unknown command</span>
           {/if}
         {/if}
