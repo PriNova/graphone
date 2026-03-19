@@ -4,6 +4,7 @@ import {
   parseAvailableModels,
   parseAvailableSlashCommands,
   parseAvailableThinkingLevels,
+  parseExtensionStatuses,
   parseModelSupportsImageInput,
   parseOAuthLoginStatus,
   parseOAuthLoginUpdates,
@@ -16,6 +17,7 @@ import {
 import type {
   AvailableModel,
   AvailableSlashCommand,
+  ExtensionStatusEntry,
   OAuthLoginPollResult,
   OAuthProviderStatus,
   RegisteredExtensionSummary,
@@ -26,6 +28,7 @@ import type {
 export type {
   AvailableModel,
   AvailableSlashCommand,
+  ExtensionStatusEntry,
   OAuthLoginPollResult,
   OAuthLoginStatus,
   OAuthLoginUpdate,
@@ -44,6 +47,7 @@ interface AgentStateResponseData {
   supportsThinking?: unknown;
   availableThinkingLevels?: unknown;
   usageIndicator?: unknown;
+  extensionUi?: { statuses?: unknown };
   sessionId?: unknown;
 }
 
@@ -109,6 +113,7 @@ export class AgentStore {
   localExtensions = $state<RegisteredExtensionSummary[]>([]);
   extensionLoadDiagnostics = $state<Array<{ path: string; error: string }>>([]);
   availableSlashCommands = $state<AvailableSlashCommand[]>([]);
+  extensionStatuses = $state<ExtensionStatusEntry[]>([]);
 
   constructor(sessionId: string) {
     this.sessionId = sessionId;
@@ -148,6 +153,9 @@ export class AgentStore {
     );
 
     this.usageIndicator = parseUsageIndicator(data?.usageIndicator);
+    this.extensionStatuses = parseExtensionStatuses(
+      data?.extensionUi?.statuses,
+    );
 
     if (this.availableModels.length > 0) {
       this.availableModels = sortAvailableModels(
@@ -493,6 +501,27 @@ export class AgentStore {
     ).catch(console.error);
     this.isBashRunning = false;
     this.isLoading = false;
+  }
+
+  applyExtensionStatusUpdate(key: string, text?: string): void {
+    const normalizedKey = key.trim();
+    if (!normalizedKey) {
+      return;
+    }
+
+    if (text === undefined) {
+      this.extensionStatuses = this.extensionStatuses.filter(
+        (entry) => entry.key !== normalizedKey,
+      );
+      return;
+    }
+
+    const next = this.extensionStatuses.filter(
+      (entry) => entry.key !== normalizedKey,
+    );
+    next.push({ key: normalizedKey, text });
+    next.sort((a, b) => a.key.localeCompare(b.key));
+    this.extensionStatuses = next;
   }
 
   setLoading(loading: boolean): void {

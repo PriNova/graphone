@@ -1,6 +1,6 @@
 # Graphone Feature Availability
 
-_Last updated: 2026-03-15_
+_Last updated: 2026-03-19_
 
 This page summarizes what Graphone supports today.
 
@@ -57,6 +57,7 @@ This page summarizes what Graphone supports today.
 
 - Extension list in Settings
 - Extension load status in Settings when available
+- Extension status updates can appear in the app status bar during a session
 - Login/logout flow in the app
 
 ### Safety
@@ -76,7 +77,7 @@ This page summarizes what Graphone supports today.
 
 - Prompt templates and skills are visible in Settings, but there is no full install/edit management UI yet
 - Extensions are visible in Settings, but management in the app is still limited
-- Some extension experiences available in the terminal app are not yet exposed in Graphone
+- Some extension experiences available in the terminal app are not yet exposed in Graphone, but session status updates are now shown in the app
 
 ### Model discovery
 

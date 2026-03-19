@@ -129,6 +129,20 @@ export interface SessionEventEnvelope {
   event: unknown;
 }
 
+export interface ExtensionUiRequestEnvelope {
+  type: "extension_ui_request";
+  sessionId: string;
+  id: string;
+  method: "setStatus";
+  statusKey: string;
+  statusText?: string;
+}
+
+export type HostOutboundEnvelope =
+  | HostResponse
+  | SessionEventEnvelope
+  | ExtensionUiRequestEnvelope;
+
 export interface HostedSessionInfo {
   sessionId: string;
   cwd: string;

@@ -29,6 +29,15 @@ interface PendingChunkedAgentEvent {
   chunks: Array<string | undefined>;
 }
 
+interface ExtensionUiRequestPayload {
+  type: "extension_ui_request";
+  sessionId: string;
+  id: string;
+  method: "setStatus";
+  statusKey: string;
+  statusText?: string;
+}
+
 const MAX_PENDING_CHUNK_AGE_MS = 60_000;
 const pendingChunkedAgentEvents = new Map<string, PendingChunkedAgentEvent>();
 
@@ -57,6 +66,32 @@ function isChunkedAgentEventPayload(
     Number.isInteger(typed.chunkCount) &&
     typed.chunkCount > 0 &&
     typeof typed.payloadChunk === "string"
+  );
+}
+
+function isExtensionUiRequestPayload(
+  payload: unknown,
+): payload is ExtensionUiRequestPayload {
+  if (!payload || typeof payload !== "object") {
+    return false;
+  }
+
+  const typed = payload as {
+    type?: unknown;
+    sessionId?: unknown;
+    id?: unknown;
+    method?: unknown;
+    statusKey?: unknown;
+    statusText?: unknown;
+  };
+
+  return (
+    typed.type === "extension_ui_request" &&
+    typeof typed.sessionId === "string" &&
+    typeof typed.id === "string" &&
+    typed.method === "setStatus" &&
+    typeof typed.statusKey === "string" &&
+    (typed.statusText === undefined || typeof typed.statusText === "string")
   );
 }
 
@@ -125,6 +160,21 @@ export async function setupAgentEventBridge(
       const reassembledPayload = acceptChunkedAgentPayload(payload);
       if (reassembledPayload !== null) {
         routePayload(reassembledPayload);
+      }
+      return;
+    }
+
+    if (isExtensionUiRequestPayload(payload)) {
+      const runtime = dependencies.getRuntime(payload.sessionId);
+      if (!runtime) {
+        return;
+      }
+
+      if (payload.method === "setStatus") {
+        runtime.agent.applyExtensionStatusUpdate(
+          payload.statusKey,
+          payload.statusText,
+        );
       }
       return;
     }

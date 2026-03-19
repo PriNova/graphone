@@ -9,6 +9,7 @@ import type {
   ThinkingLevel,
   UsageContextSeverity,
   UsageIndicatorSnapshot,
+  ExtensionStatusEntry,
 } from "$lib/stores/agent/types";
 import { VALID_THINKING_LEVELS } from "$lib/stores/agent/types";
 
@@ -201,6 +202,35 @@ function parseUsageContextSeverity(value: unknown): UsageContextSeverity {
   }
 
   return "normal";
+}
+
+export function parseExtensionStatuses(value: unknown): ExtensionStatusEntry[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  return value
+    .map((item) => {
+      if (!item || typeof item !== "object") {
+        return null;
+      }
+
+      const candidate = item as { key?: unknown; text?: unknown };
+      if (
+        typeof candidate.key !== "string" ||
+        candidate.key.trim().length === 0 ||
+        typeof candidate.text !== "string"
+      ) {
+        return null;
+      }
+
+      return {
+        key: candidate.key,
+        text: candidate.text,
+      } satisfies ExtensionStatusEntry;
+    })
+    .filter((entry): entry is ExtensionStatusEntry => entry !== null)
+    .sort((a, b) => a.key.localeCompare(b.key));
 }
 
 export function parseAvailableModels(value: unknown): AvailableModel[] {

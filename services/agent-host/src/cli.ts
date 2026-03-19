@@ -7,8 +7,7 @@ import { attachJsonlLineReader, serializeJsonLine } from "./jsonl.js";
 import {
   failure,
   type HostCommand,
-  type HostResponse,
-  type SessionEventEnvelope,
+  type HostOutboundEnvelope,
 } from "./protocol.js";
 
 const GRAPHONE_HOST_FLAG = "--graphone-host";
@@ -54,7 +53,7 @@ class LineWriter {
   private readonly queue: string[] = [];
   private writing = false;
 
-  writeObject(value: HostResponse | SessionEventEnvelope): void {
+  writeObject(value: HostOutboundEnvelope): void {
     this.queue.push(serializeJsonLine(value));
     this.flush();
   }

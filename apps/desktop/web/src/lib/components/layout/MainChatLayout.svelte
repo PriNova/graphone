@@ -13,6 +13,7 @@
   import type {
     AvailableModel,
     AvailableSlashCommand,
+    ExtensionStatusEntry,
     RegisteredExtensionSummary,
     ThinkingLevel,
     UsageIndicatorSnapshot,
@@ -59,6 +60,7 @@
     modelFilter?: "all" | "enabled";
     chatHasMessages?: boolean;
     usageIndicator?: UsageIndicatorSnapshot | null;
+    extensionStatuses?: ExtensionStatusEntry[];
     slashCommands?: SlashCommand[];
     runtimeSlashCommands?: AvailableSlashCommand[];
     isExtensionsLoading?: boolean;
@@ -153,6 +155,7 @@
     modelFilter = "enabled",
     chatHasMessages = false,
     usageIndicator = null,
+    extensionStatuses = [],
     slashCommands = undefined,
     runtimeSlashCommands = [],
     isExtensionsLoading = false,
@@ -530,7 +533,11 @@
         <div
           class="w-full max-w-[min(95vw,1200px)] lg:max-w-[min(88vw,1360px)] mx-auto"
         >
-          <StatusBar cwd={activeProjectDir} {usageIndicator} />
+          <StatusBar
+            cwd={activeProjectDir}
+            {usageIndicator}
+            {extensionStatuses}
+          />
         </div>
       </div>
     </div>

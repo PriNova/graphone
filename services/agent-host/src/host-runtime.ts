@@ -11,6 +11,7 @@ import {
   SessionManager,
   stripFrontmatter,
   type AgentSession,
+  type ExtensionUIContext,
   type SessionEntry,
 } from "@mariozechner/pi-coding-agent";
 
@@ -32,13 +33,18 @@ import {
   type OAuthLoginStatus,
   type OAuthLoginUpdate,
 } from "./oauth-login-manager.js";
-import type { HostedSessionInfo, SessionEventEnvelope } from "./protocol.js";
 import type { HostedSession } from "./session-runtime.js";
 import { validateCwd, validateSessionFile } from "./session-validation.js";
 import {
   buildUsageIndicator,
   type UsageIndicatorSnapshot,
 } from "./usage-indicator.js";
+import type {
+  ExtensionUiRequestEnvelope,
+  HostOutboundEnvelope,
+  HostedSessionInfo,
+  SessionEventEnvelope,
+} from "./protocol.js";
 
 // ── Types ───────────────────────────────────────────────────────────────────
 
@@ -57,6 +63,10 @@ interface AvailableSlashCommand {
   source: "extension" | "prompt" | "skill";
   location?: "user" | "project" | "path";
   path?: string;
+}
+
+interface HostedExtensionUiState {
+  statuses: Map<string, string>;
 }
 
 // ── Helpers ─────────────────────────────────────────────────────────────────
@@ -215,6 +225,10 @@ function buildFullTranscriptMessages(
 
 export class HostRuntime {
   private readonly sessions = new Map<string, HostedSession>();
+  private readonly extensionUiStates = new Map<
+    string,
+    HostedExtensionUiState
+  >();
   private readonly authStorage = AuthStorage.create();
   private readonly modelRegistry = new ModelRegistry(this.authStorage);
   private readonly oauthLoginManager = new OAuthLoginManager(
@@ -228,7 +242,7 @@ export class HostRuntime {
   private readonly extensionNameResolver = new ExtensionNameResolver();
 
   constructor(
-    private readonly emitSessionEvent: (event: SessionEventEnvelope) => void,
+    private readonly emitOutboundEvent: (event: HostOutboundEnvelope) => void,
   ) {}
 
   async initialize(): Promise<void> {
@@ -275,8 +289,46 @@ export class HostRuntime {
       modelRegistry: this.modelRegistry,
     });
 
+    this.extensionUiStates.set(sessionId, { statuses: new Map() });
+
+    await session.bindExtensions({
+      uiContext: this.createExtensionUiContext(sessionId),
+      commandContextActions: {
+        waitForIdle: () => session.agent.waitForIdle(),
+        newSession: async (options) => {
+          const success = await session.newSession(options);
+          return { cancelled: !success };
+        },
+        fork: async (entryId) => {
+          const result = await session.fork(entryId);
+          return { cancelled: result.cancelled };
+        },
+        navigateTree: async (targetId, options) => {
+          const result = await session.navigateTree(targetId, {
+            summarize: options?.summarize,
+            customInstructions: options?.customInstructions,
+            replaceInstructions: options?.replaceInstructions,
+            label: options?.label,
+          });
+          return { cancelled: result.cancelled };
+        },
+        switchSession: async (sessionPath) => {
+          const success = await session.switchSession(sessionPath);
+          return { cancelled: !success };
+        },
+        reload: async () => {
+          await session.reload();
+        },
+      },
+      onError: (error) => {
+        console.error(
+          `[pi-host-sidecar] extension error (${error.extensionPath}:${error.event}): ${error.error}`,
+        );
+      },
+    });
+
     const unsubscribe = session.subscribe((event) => {
-      this.emitSessionEvent({
+      this.emitOutboundEvent({
         type: "session_event",
         sessionId,
         event: compactSessionEventForWire(event),
@@ -317,6 +369,7 @@ export class HostRuntime {
     hosted.unsubscribe();
     hosted.session.dispose();
     this.sessions.delete(sessionId);
+    this.extensionUiStates.delete(sessionId);
     this.oauthLoginManager.disposeSession(sessionId);
   }
 
@@ -389,7 +442,7 @@ export class HostRuntime {
     }
 
     const emitBashEvent = (event: Record<string, unknown>): void => {
-      this.emitSessionEvent({ type: "session_event", sessionId, event });
+      this.emitOutboundEvent({ type: "session_event", sessionId, event });
     };
 
     emitBashEvent({
@@ -513,6 +566,9 @@ export class HostRuntime {
     messageCount: number;
     pendingMessageCount: number;
     usageIndicator: UsageIndicatorSnapshot;
+    extensionUi: {
+      statuses: Array<{ key: string; text: string }>;
+    };
   } {
     const session = this.requireSession(sessionId, "get_state");
     return {
@@ -531,6 +587,9 @@ export class HostRuntime {
       messageCount: session.messages.length,
       pendingMessageCount: session.pendingMessageCount,
       usageIndicator: buildUsageIndicator(session),
+      extensionUi: {
+        statuses: this.getSortedExtensionStatuses(sessionId),
+      },
     };
   }
 
@@ -792,6 +851,88 @@ export class HostRuntime {
   }
 
   // ── Private helpers ───────────────────────────────────────────────────────
+
+  private createExtensionUiContext(sessionId: string): ExtensionUIContext {
+    return {
+      select: async () => undefined,
+      confirm: async () => false,
+      input: async () => undefined,
+      notify: () => {},
+      onTerminalInput: () => () => {},
+      setStatus: (key, text) => {
+        this.applyExtensionStatusUpdate(sessionId, key, text);
+      },
+      setWorkingMessage: () => {},
+      setWidget: () => {},
+      setFooter: () => {},
+      setHeader: () => {},
+      setTitle: () => {},
+      custom: async () => undefined as never,
+      pasteToEditor: () => {},
+      setEditorText: () => {},
+      getEditorText: () => "",
+      editor: async () => undefined,
+      setEditorComponent: () => {},
+      get theme() {
+        return {} as ExtensionUIContext["theme"];
+      },
+      getAllThemes: () => [],
+      getTheme: () => undefined,
+      setTheme: () => ({
+        success: false,
+        error: "Theme switching not supported in Graphone host mode",
+      }),
+      getToolsExpanded: () => false,
+      setToolsExpanded: () => {},
+    };
+  }
+
+  private applyExtensionStatusUpdate(
+    sessionId: string,
+    key: string,
+    text: string | undefined,
+  ): void {
+    const normalizedKey = key.trim();
+    if (!normalizedKey) {
+      return;
+    }
+
+    const state = this.getOrCreateExtensionUiState(sessionId);
+    if (text === undefined) {
+      state.statuses.delete(normalizedKey);
+    } else {
+      state.statuses.set(normalizedKey, text);
+    }
+
+    const event: ExtensionUiRequestEnvelope = {
+      type: "extension_ui_request",
+      sessionId,
+      id: randomUUID(),
+      method: "setStatus",
+      statusKey: normalizedKey,
+      statusText: text,
+    };
+    this.emitOutboundEvent(event);
+  }
+
+  private getOrCreateExtensionUiState(
+    sessionId: string,
+  ): HostedExtensionUiState {
+    let state = this.extensionUiStates.get(sessionId);
+    if (!state) {
+      state = { statuses: new Map() };
+      this.extensionUiStates.set(sessionId, state);
+    }
+    return state;
+  }
+
+  private getSortedExtensionStatuses(
+    sessionId: string,
+  ): Array<{ key: string; text: string }> {
+    return Array.from(this.getOrCreateExtensionUiState(sessionId).statuses)
+      .map(([key, text]) => ({ key, text }))
+      .sort((a, b) => a.key.localeCompare(b.key));
+  }
 
   private async syncModelCatalog(): Promise<void> {
     try {

@@ -196,6 +196,9 @@
   const usageIndicator = $derived(
     activeRuntime ? activeRuntime.agent.usageIndicator : null,
   );
+  const extensionStatuses = $derived(
+    activeRuntime ? activeRuntime.agent.extensionStatuses : [],
+  );
   const runtimeSlashCommands = $derived(
     activeRuntime ? activeRuntime.agent.availableSlashCommands : [],
   );
@@ -1377,6 +1380,7 @@
   thinkingCollapsedByDefault={settingsStore.thinkingCollapsedByDefault}
   {chatHasMessages}
   {usageIndicator}
+  {extensionStatuses}
   {slashCommands}
   {runtimeSlashCommands}
   {isExtensionsLoading}

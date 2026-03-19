@@ -25,6 +25,11 @@ export interface UsageIndicatorSnapshot {
   contextSeverity: UsageContextSeverity;
 }
 
+export interface ExtensionStatusEntry {
+  key: string;
+  text: string;
+}
+
 export interface OAuthProviderStatus {
   id: string;
   name: string;
