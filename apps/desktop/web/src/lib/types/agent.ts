@@ -87,6 +87,11 @@ export type Message =
       excludeFromContext?: boolean;
       timestamp: Date;
       isStreaming?: boolean;
+    }
+  | {
+      id: string;
+      type: "compactionBoundary";
+      timestamp: Date;
     };
 
 // Helper type guards

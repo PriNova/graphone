@@ -6,6 +6,7 @@
   } from "$lib/session/session-state-presentation";
   import type { PersistedSessionHistoryItem } from "$lib/stores/projectScopes.svelte";
   import { cn } from "$lib/utils/cn";
+  import { getSkillAwareDisplayText } from "$lib/utils/skill-block";
 
   interface Props {
     projectScopes?: string[];
@@ -187,8 +188,8 @@
   }
 
   function historyPreviewText(history: PersistedSessionHistoryItem): string {
-    const message = history.firstUserMessage?.trim();
-    if (message && message.length > 0) {
+    const message = getSkillAwareDisplayText(history.firstUserMessage);
+    if (message.length > 0) {
       return message;
     }
 
@@ -196,8 +197,8 @@
   }
 
   function historyTooltipText(history: PersistedSessionHistoryItem): string {
-    const message = history.firstUserMessage?.trim();
-    if (message && message.length > 0) {
+    const message = getSkillAwareDisplayText(history.firstUserMessage);
+    if (message.length > 0) {
       return message;
     }
 

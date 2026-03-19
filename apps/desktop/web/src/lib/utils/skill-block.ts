@@ -51,3 +51,28 @@ export function normalizeSkillUserMessage(text: string | undefined): string {
 
   return text.replace(/^User:\s*/i, "").trim();
 }
+
+export function getSkillAwareDisplayText(
+  text: string | null | undefined,
+): string {
+  const trimmed = text?.trim() ?? "";
+
+  if (trimmed.length === 0) {
+    return "";
+  }
+
+  const skillBlock = parseSkillBlock(trimmed);
+  if (skillBlock) {
+    const userMessage = normalizeSkillUserMessage(skillBlock.userMessage);
+    return userMessage.length > 0 ? userMessage : `Skill: ${skillBlock.name}`;
+  }
+
+  const skillCommand = parseSkillCommand(trimmed);
+  if (skillCommand) {
+    return skillCommand.args.length > 0
+      ? skillCommand.args
+      : `Skill: ${skillCommand.skillName}`;
+  }
+
+  return trimmed;
+}

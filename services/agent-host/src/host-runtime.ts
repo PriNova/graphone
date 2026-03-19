@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { readFileSync } from "node:fs";
 
-import type { ThinkingLevel } from "@mariozechner/pi-agent-core";
+import type { AgentMessage, ThinkingLevel } from "@mariozechner/pi-agent-core";
 import type { ImageContent } from "@mariozechner/pi-ai";
 
 import {
@@ -11,6 +11,7 @@ import {
   SessionManager,
   stripFrontmatter,
   type AgentSession,
+  type SessionEntry,
 } from "@mariozechner/pi-coding-agent";
 
 import {
@@ -148,6 +149,66 @@ function compactSessionEventForWire(event: unknown): unknown {
   }
 
   return event;
+}
+
+function parseEntryTimestamp(timestamp: string): number {
+  const parsed = Date.parse(timestamp);
+  return Number.isFinite(parsed) ? parsed : Date.now();
+}
+
+function convertEntryToDisplayMessage(
+  entry: SessionEntry,
+): AgentMessage | Record<string, unknown> | null {
+  switch (entry.type) {
+    case "message":
+      return entry.message;
+
+    case "custom_message":
+      return {
+        role: "custom",
+        customType: entry.customType,
+        content: entry.content,
+        details: entry.details,
+        display: entry.display,
+        timestamp: parseEntryTimestamp(entry.timestamp),
+      };
+
+    case "branch_summary":
+      return {
+        role: "branchSummary",
+        summary: entry.summary,
+        fromId: entry.fromId,
+        timestamp: parseEntryTimestamp(entry.timestamp),
+      };
+
+    case "compaction":
+      return {
+        role: "compactionSummary",
+        summary: entry.summary,
+        tokensBefore: entry.tokensBefore,
+        timestamp: parseEntryTimestamp(entry.timestamp),
+      };
+
+    default:
+      return null;
+  }
+}
+
+function buildFullTranscriptMessages(
+  session: AgentSession,
+): Array<AgentMessage | Record<string, unknown>> {
+  const entries = session.sessionManager.getBranch();
+  const messages: Array<AgentMessage | Record<string, unknown>> = [];
+
+  for (const entry of entries) {
+    const converted = convertEntryToDisplayMessage(entry);
+    if (!converted) {
+      continue;
+    }
+    messages.push(converted);
+  }
+
+  return messages;
 }
 
 // ── HostRuntime ─────────────────────────────────────────────────────────────
@@ -429,9 +490,11 @@ export class HostRuntime {
 
   // ── State queries ─────────────────────────────────────────────────────────
 
-  getMessages(sessionId: string): { messages: AgentSession["messages"] } {
+  getMessages(sessionId: string): {
+    messages: Array<AgentMessage | Record<string, unknown>>;
+  } {
     const session = this.requireSession(sessionId, "get_messages");
-    return { messages: session.messages };
+    return { messages: buildFullTranscriptMessages(session) };
   }
 
   getState(sessionId: string): {

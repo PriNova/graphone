@@ -622,11 +622,22 @@ export function handleAgentEvent(
       break;
 
     case "auto_compaction_end": {
+      runtime.messages.addCompactionBoundary();
+
       const summary = event.result?.summary?.trim();
       if (summary) {
-        runtime.messages.addSystemMessage(
-          `Auto-compaction summary:\n${summary}`,
-        );
+        const tokensBefore =
+          typeof event.result?.tokensBefore === "number" &&
+          Number.isFinite(event.result.tokensBefore)
+            ? event.result.tokensBefore
+            : null;
+
+        const heading =
+          tokensBefore !== null
+            ? `Auto-compaction summary (${tokensBefore.toLocaleString()} tokens before):`
+            : "Auto-compaction summary:";
+
+        runtime.messages.addSystemMessage(`${heading}\n${summary}`);
       }
 
       runtime.agent.refreshState().catch((error) => {

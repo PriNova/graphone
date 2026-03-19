@@ -437,35 +437,41 @@
             </div>
           {:else}
             {#each messages as message, messageIndex (message.id)}
-              <div class:mt-2={messageIndex > 0}>
-                {#if message.type === "user"}
-                  <UserMessage
-                    content={message.content}
-                    timestamp={message.timestamp}
-                  />
-                {:else if message.type === "bashExecution"}
-                  <BashExecutionMessage
-                    command={message.command}
-                    output={message.output}
-                    exitCode={message.exitCode}
-                    cancelled={message.cancelled}
-                    truncated={message.truncated}
-                    fullOutputPath={message.fullOutputPath}
-                    excludeFromContext={message.excludeFromContext}
-                    isStreaming={message.isStreaming}
-                  />
-                {:else}
-                  <AssistantMessage
-                    content={message.content}
-                    timestamp={message.timestamp}
-                    isStreaming={message.isStreaming}
-                    defaultThinkingCollapsed={thinkingCollapsedByDefault}
-                    defaultToolCollapsed={toolResultsCollapsedByDefault}
-                    {getToolResult}
-                    {isToolPending}
-                  />
-                {/if}
-              </div>
+              {#if message.type === "compactionBoundary"}
+                <div class="my-4 flex items-center" aria-hidden="true">
+                  <div class="h-px w-full bg-border"></div>
+                </div>
+              {:else}
+                <div class:mt-2={messageIndex > 0}>
+                  {#if message.type === "user"}
+                    <UserMessage
+                      content={message.content}
+                      timestamp={message.timestamp}
+                    />
+                  {:else if message.type === "bashExecution"}
+                    <BashExecutionMessage
+                      command={message.command}
+                      output={message.output}
+                      exitCode={message.exitCode}
+                      cancelled={message.cancelled}
+                      truncated={message.truncated}
+                      fullOutputPath={message.fullOutputPath}
+                      excludeFromContext={message.excludeFromContext}
+                      isStreaming={message.isStreaming}
+                    />
+                  {:else}
+                    <AssistantMessage
+                      content={message.content}
+                      timestamp={message.timestamp}
+                      isStreaming={message.isStreaming}
+                      defaultThinkingCollapsed={thinkingCollapsedByDefault}
+                      defaultToolCollapsed={toolResultsCollapsedByDefault}
+                      {getToolResult}
+                      {isToolPending}
+                    />
+                  {/if}
+                </div>
+              {/if}
             {/each}
           {/if}
         </div>

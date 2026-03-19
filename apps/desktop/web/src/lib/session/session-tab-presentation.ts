@@ -1,6 +1,7 @@
 import { describeSessionAttentionTone } from "$lib/session/session-state-presentation";
 import type { PersistedSessionHistoryItem } from "$lib/stores/projectScopes.svelte";
 import type { SessionDescriptor } from "$lib/stores/sessions.svelte";
+import { getSkillAwareDisplayText } from "$lib/utils/skill-block";
 
 export interface SessionTabView {
   sessionId: string;
@@ -70,7 +71,9 @@ function toBaseMeta(
   scopeHistoryByProject: Record<string, PersistedSessionHistoryItem[]>,
 ): SessionTabBaseMeta {
   const history = findHistoryForSession(session, scopeHistoryByProject);
-  const preview = collapseWhitespace(history?.firstUserMessage);
+  const preview = collapseWhitespace(
+    getSkillAwareDisplayText(history?.firstUserMessage),
+  );
   const projectTitle = collapseWhitespace(session.title) || "Untitled session";
   const fullLabel = preview || projectTitle || `Session ${session.sessionId}`;
 

@@ -194,6 +194,12 @@ export class MessagesStore {
       }
 
       if (msg.role === "compactionSummary") {
+        loadedMessages.push({
+          id: crypto.randomUUID(),
+          type: "compactionBoundary",
+          timestamp,
+        });
+
         const summary =
           typeof msg.summary === "string" ? msg.summary.trim() : "";
 
@@ -217,6 +223,16 @@ export class MessagesStore {
             isStreaming: false,
           });
         }
+
+        continue;
+      }
+
+      if (msg.role === "compactionBoundary") {
+        loadedMessages.push({
+          id: crypto.randomUUID(),
+          type: "compactionBoundary",
+          timestamp,
+        });
         continue;
       }
 
@@ -723,6 +739,17 @@ export class MessagesStore {
       content: [{ type: "text", text }],
       timestamp: new Date(),
       isStreaming: false,
+    });
+  }
+
+  addCompactionBoundary(timestamp?: number): void {
+    this.addMessage({
+      id: crypto.randomUUID(),
+      type: "compactionBoundary",
+      timestamp:
+        typeof timestamp === "number" && Number.isFinite(timestamp)
+          ? new Date(timestamp)
+          : new Date(),
     });
   }
 
