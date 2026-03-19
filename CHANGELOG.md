@@ -2,6 +2,16 @@
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-03-19
+
+### Added
+
+- Added session-local extension status updates in the status bar so extension activity is visible in the current chat.
+
+### Changed
+
+- Improved session restore behavior so extension status text is available again as soon as a session reopens.
+
 ## [0.5.2] - 2026-03-19
 
 ### Added
