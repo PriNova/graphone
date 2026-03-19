@@ -2,6 +2,16 @@
 
 ## [Unreleased]
 
+## [0.5.2] - 2026-03-19
+
+### Added
+
+- Added full session transcript history in chat, including visible compaction boundaries and preserved compaction summaries.
+
+### Changed
+
+- Changed session sidebar previews, tooltips, and tab labels to show prompt text instead of raw skill wrappers.
+
 ## [0.5.1] - 2026-03-17
 
 ### Changed
