@@ -1,6 +1,6 @@
 # Graphone Feature Availability
 
-_Last updated: 2026-03-19_
+_Last updated: 2026-03-20_
 
 This page summarizes what Graphone supports today.
 
@@ -27,6 +27,10 @@ This page summarizes what Graphone supports today.
 - Start a new chat from the New Chat button or `/new` without replacing your current open conversation
 - Session history in the sidebar, including reopening older chats
 - Project-based chat organization with a folder picker for adding project scopes
+- Session tree view for browsing a conversation as a branchable transcript
+- Open the session tree from the toolbar or with `/tree`
+- Jump back to earlier points in a chat and branch from earlier user prompts
+- Optional branch summaries when switching paths, with cancel support while the summary is being created
 - Streaming assistant responses
 - Stop/cancel the current response
 - Markdown rendering in assistant responses
@@ -100,14 +104,14 @@ This page summarizes what Graphone supports today.
 
 - Full queued message behavior
 - Full support for advanced commands such as:
-  - `/settings`, `/scoped-models`, `/fork`, `/tree`, `/resume`
+  - `/settings`, `/scoped-models`, `/fork`, `/resume`
   - `/export`, `/share`, `/copy`, `/name`, `/session`
   - `/compact`, `/reload`, `/hotkeys`, `/changelog`, `/quit`
 
 ### Keyboard and branching workflows
 
 - Full terminal-style keyboard shortcut coverage
-- Full tree and branch navigation workflow
+- Full keyboard-first tree navigation and branch management flow
 
 ### Terminal-app parity
 

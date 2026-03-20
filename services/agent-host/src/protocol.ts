@@ -8,7 +8,10 @@ export type HostCommandType =
   | "abort"
   | "bash"
   | "abort_bash"
+  | "abort_branch_summary"
   | "get_messages"
+  | "get_session_tree"
+  | "navigate_session_tree"
   | "get_state"
   | "set_model"
   | "cycle_model"
@@ -58,6 +61,12 @@ export interface SessionMessageCommand extends HostCommandBase {
   images?: HostImageAttachment[];
 }
 
+export interface NavigateSessionTreeCommand extends HostCommandBase {
+  type: "navigate_session_tree";
+  message: string;
+  streamingBehavior?: "summarize";
+}
+
 export interface BashCommand extends HostCommandBase {
   type: "bash";
   command?: string;
@@ -90,6 +99,7 @@ export type HostCommand =
   | CreateSessionCommand
   | PromptCommand
   | SessionMessageCommand
+  | NavigateSessionTreeCommand
   | BashCommand
   | SetModelCommand
   | SetThinkingLevelCommand
@@ -101,7 +111,9 @@ export type HostCommand =
         | "list_sessions"
         | "abort"
         | "abort_bash"
+        | "abort_branch_summary"
         | "get_messages"
+        | "get_session_tree"
         | "get_state"
         | "cycle_model"
         | "get_available_models"

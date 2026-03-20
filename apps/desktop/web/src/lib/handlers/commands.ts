@@ -40,6 +40,7 @@ export interface SessionRuntimeForCommands {
 export type CommandResult =
   | { type: "handled" }
   | { type: "submit"; text: string }
+  | { type: "openTree" }
   | { type: "error"; message: string };
 
 export interface BangCommandInput {
@@ -474,6 +475,10 @@ export async function handleSlashCommand(
         "Use the model dropdown next to the prompt input to switch models.",
       );
       return { type: "handled" };
+    }
+
+    if (command === "tree") {
+      return { type: "openTree" };
     }
 
     if (command === "login") {

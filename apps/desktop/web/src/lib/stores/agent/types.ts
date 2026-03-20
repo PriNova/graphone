@@ -89,3 +89,38 @@ export interface AvailableSlashCommand {
   location?: "user" | "project" | "path";
   path?: string;
 }
+
+export type SessionTreeNodeRole =
+  | "user"
+  | "assistant"
+  | "toolResult"
+  | "bashExecution"
+  | "custom";
+
+export type SessionTreeEntryType =
+  | "message"
+  | "branchSummary"
+  | "compaction"
+  | "customMessage";
+
+export interface SessionTreeNodeSnapshot {
+  id: string;
+  parentId: string | null;
+  entryType: SessionTreeEntryType;
+  role?: SessionTreeNodeRole;
+  preview: string;
+  timestamp: number;
+  children: SessionTreeNodeSnapshot[];
+}
+
+export interface SessionTreeSnapshot {
+  currentLeafId: string | null;
+  tree: SessionTreeNodeSnapshot[];
+}
+
+export interface NavigateSessionTreeResult {
+  editorText?: string;
+  cancelled: boolean;
+  aborted?: boolean;
+  summaryCreated: boolean;
+}

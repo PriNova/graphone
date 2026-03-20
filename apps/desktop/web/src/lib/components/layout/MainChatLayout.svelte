@@ -5,6 +5,7 @@
     UserMessage,
   } from "$lib/components/Messages";
   import SettingsOverlay from "$lib/components/layout/SettingsOverlay.svelte";
+  import SessionTreeOverlay from "$lib/components/layout/SessionTreeOverlay.svelte";
   import { PromptInput } from "$lib/components/PromptInput";
   import { SessionSidebar } from "$lib/components/SessionSidebar";
   import { SessionTabBar } from "$lib/components/SessionTabs";
@@ -15,6 +16,7 @@
     AvailableSlashCommand,
     ExtensionStatusEntry,
     RegisteredExtensionSummary,
+    SessionTreeNodeSnapshot,
     ThinkingLevel,
     UsageIndicatorSnapshot,
   } from "$lib/stores/agent.svelte";
@@ -71,6 +73,15 @@
     theme?: UiTheme;
     toolResultsCollapsedByDefault?: boolean;
     thinkingCollapsedByDefault?: boolean;
+    sessionTreeOpen?: boolean;
+    sessionTreeLoading?: boolean;
+    sessionTreeError?: string | null;
+    sessionTreeCurrentLeafId?: string | null;
+    sessionTreeNodes?: SessionTreeNodeSnapshot[];
+    sessionTreeNavigatingNodeId?: string | null;
+    sessionTreeNavigatingWithSummary?: boolean;
+    sessionTreeCancellingNavigation?: boolean;
+    sessionTreeSummarizeOnNavigate?: boolean;
     showSidebar?: boolean;
     showSettingsButton?: boolean;
     showHeader?: boolean;
@@ -118,6 +129,11 @@
     onthemechange?: (theme: UiTheme) => void | Promise<void>;
     ontoolresultscollapsedchange?: (collapsed: boolean) => void | Promise<void>;
     onthinkingcollapsedchange?: (collapsed: boolean) => void | Promise<void>;
+    onopensessiontree?: () => void | Promise<void>;
+    onclosesessiontree?: () => void | Promise<void>;
+    onsessiontreesummarizechange?: (value: boolean) => void | Promise<void>;
+    onnavigatesessiontree?: (nodeId: string) => void | Promise<void>;
+    oncancelsessiontreenavigation?: () => void | Promise<void>;
   }
 
   let {
@@ -166,6 +182,15 @@
     theme = "dark",
     toolResultsCollapsedByDefault = true,
     thinkingCollapsedByDefault = true,
+    sessionTreeOpen = false,
+    sessionTreeLoading = false,
+    sessionTreeError = null,
+    sessionTreeCurrentLeafId = null,
+    sessionTreeNodes = [],
+    sessionTreeNavigatingNodeId = null,
+    sessionTreeNavigatingWithSummary = false,
+    sessionTreeCancellingNavigation = false,
+    sessionTreeSummarizeOnNavigate = false,
     showSidebar = true,
     showSettingsButton = true,
     showHeader = true,
@@ -197,6 +222,11 @@
     onthemechange,
     ontoolresultscollapsedchange,
     onthinkingcollapsedchange,
+    onopensessiontree,
+    onclosesessiontree,
+    onsessiontreesummarizechange,
+    onnavigatesessiontree,
+    oncancelsessiontreenavigation,
   }: Props = $props();
 
   let messagesContainerElement = $state<HTMLDivElement | null>(null);
@@ -241,35 +271,98 @@
 </script>
 
 <main class="relative flex w-full h-screen overflow-hidden">
-  {#if showSidebar && onpopoutactivesession}
-    <div class="group absolute top-3 right-4 z-20">
-      <button
-        type="button"
-        class="flex h-9 w-9 items-center justify-center rounded border border-border text-muted-foreground transition-colors hover:border-foreground hover:bg-secondary hover:text-foreground disabled:cursor-not-allowed disabled:opacity-40"
-        onclick={onpopoutactivesession}
-        disabled={!activeSession}
-        aria-label="Open active session in floating window"
-      >
-        <svg
-          aria-hidden="true"
-          class="h-4 w-4"
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
-          stroke-width="2"
-        >
-          <rect x="4" y="4" width="16" height="12" rx="2"></rect>
-          <path d="M9 20h6"></path>
-        </svg>
-      </button>
+  {#if (showSidebar && onpopoutactivesession) || showSettingsButton}
+    <div class="absolute top-3 right-4 z-20 flex flex-col gap-2">
+      {#if showSidebar && onpopoutactivesession}
+        <div class="group relative flex justify-end">
+          <button
+            type="button"
+            class="flex h-9 w-9 items-center justify-center rounded border border-border text-muted-foreground transition-colors hover:border-foreground hover:bg-secondary hover:text-foreground disabled:cursor-not-allowed disabled:opacity-40"
+            onclick={onpopoutactivesession}
+            disabled={!activeSession}
+            aria-label="Open active session in floating window"
+          >
+            <svg
+              aria-hidden="true"
+              class="h-4 w-4"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+            >
+              <rect x="4" y="4" width="16" height="12" rx="2"></rect>
+              <path d="M9 20h6"></path>
+            </svg>
+          </button>
 
-      <div
-        class="pointer-events-none absolute top-full right-0 z-30 mt-2 hidden whitespace-nowrap rounded-md border border-border bg-overlay px-2 py-1 text-[11px] text-foreground shadow-lg group-hover:block group-focus-within:block"
-      >
-        {activeSession
-          ? "Open active session in floating window"
-          : "No active session"}
-      </div>
+          <div
+            class="pointer-events-none absolute right-full top-1/2 z-30 mr-3 hidden -translate-y-1/2 whitespace-nowrap rounded-md border border-border bg-overlay px-2 py-1 text-[11px] text-foreground shadow-lg group-hover:block group-focus-within:block"
+          >
+            <span
+              class="absolute left-full top-1/2 h-2.5 w-2.5 -translate-x-[1px] -translate-y-1/2 rotate-45 border-r border-t border-border bg-overlay"
+              aria-hidden="true"
+            ></span>
+            {activeSession
+              ? "Open active session in floating window"
+              : "No active session"}
+          </div>
+        </div>
+      {/if}
+
+      {#if showSettingsButton}
+        <div class="group relative flex justify-end">
+          <button
+            type="button"
+            class={`flex h-9 w-9 items-center justify-center rounded border transition-colors ${
+              sessionTreeOpen
+                ? "border-foreground bg-secondary text-foreground shadow-xs"
+                : "border-border text-muted-foreground hover:text-foreground hover:border-foreground hover:bg-secondary"
+            }`}
+            onclick={() => {
+              if (sessionTreeOpen) {
+                onclosesessiontree?.();
+                return;
+              }
+              onopensessiontree?.();
+            }}
+            disabled={!activeRuntime}
+            aria-label={sessionTreeOpen
+              ? "Close session tree"
+              : "Open session tree"}
+            aria-expanded={sessionTreeOpen}
+          >
+            <svg
+              aria-hidden="true"
+              class="h-4 w-4"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+            >
+              <path d="M8 6h8"></path>
+              <path d="M8 12h4"></path>
+              <path d="M8 18h8"></path>
+              <path d="M8 6v12"></path>
+              <path d="M16 6v6"></path>
+              <path d="M16 18v0"></path>
+            </svg>
+          </button>
+
+          <div
+            class="pointer-events-none absolute right-full top-1/2 z-30 mr-3 hidden -translate-y-1/2 whitespace-nowrap rounded-md border border-border bg-overlay px-2 py-1 text-[11px] text-foreground shadow-lg group-hover:block group-focus-within:block"
+          >
+            <span
+              class="absolute left-full top-1/2 h-2.5 w-2.5 -translate-x-[1px] -translate-y-1/2 rotate-45 border-r border-t border-border bg-overlay"
+              aria-hidden="true"
+            ></span>
+            {activeRuntime
+              ? sessionTreeOpen
+                ? "Close session tree"
+                : "Open session tree"
+              : "No active session"}
+          </div>
+        </div>
+      {/if}
     </div>
   {/if}
 
@@ -303,38 +396,40 @@
   >
     {#if showSettingsButton}
       <div
-        class={`group absolute top-3 ${showSidebar ? "left-4" : "left-3"} z-40`}
+        class={`absolute top-3 ${showSidebar ? "left-4" : "left-3"} z-40 flex flex-col gap-2`}
       >
-        <button
-          type="button"
-          class={`flex h-9 w-9 items-center justify-center rounded border transition-colors ${
-            settingsOpen
-              ? "border-foreground bg-secondary text-foreground shadow-xs"
-              : "border-border text-muted-foreground hover:text-foreground hover:border-foreground hover:bg-secondary"
-          }`}
-          onclick={toggleSettings}
-          aria-label={settingsOpen ? "Close settings" : "Open settings"}
-          aria-expanded={settingsOpen}
-        >
-          <svg
-            aria-hidden="true"
-            class="h-4 w-4"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            stroke-width="2"
+        <div class="group relative">
+          <button
+            type="button"
+            class={`flex h-9 w-9 items-center justify-center rounded border transition-colors ${
+              settingsOpen
+                ? "border-foreground bg-secondary text-foreground shadow-xs"
+                : "border-border text-muted-foreground hover:text-foreground hover:border-foreground hover:bg-secondary"
+            }`}
+            onclick={toggleSettings}
+            aria-label={settingsOpen ? "Close settings" : "Open settings"}
+            aria-expanded={settingsOpen}
           >
-            <circle cx="12" cy="12" r="3" />
-            <path
-              d="M19.4 15a1.7 1.7 0 0 0 .34 1.87l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.7 1.7 0 0 0-1.87-.34 1.7 1.7 0 0 0-1.04 1.56V21a2 2 0 1 1-4 0v-.09a1.7 1.7 0 0 0-1.04-1.56 1.7 1.7 0 0 0-1.87.34l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.7 1.7 0 0 0 .34-1.87 1.7 1.7 0 0 0-1.56-1.04H3a2 2 0 1 1 0-4h.09a1.7 1.7 0 0 0 1.56-1.04 1.7 1.7 0 0 0-.34-1.87l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.7 1.7 0 0 0 1.87.34H9A1.7 1.7 0 0 0 10 3.09V3a2 2 0 1 1 4 0v.09A1.7 1.7 0 0 0 15.04 4h.01a1.7 1.7 0 0 0 1.87-.34l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.7 1.7 0 0 0-.34 1.87V8.4a1.7 1.7 0 0 0 1.56 1.04H21a2 2 0 1 1 0 4h-.09A1.7 1.7 0 0 0 19.4 15z"
-            />
-          </svg>
-        </button>
+            <svg
+              aria-hidden="true"
+              class="h-4 w-4"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+            >
+              <circle cx="12" cy="12" r="3" />
+              <path
+                d="M19.4 15a1.7 1.7 0 0 0 .34 1.87l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.7 1.7 0 0 0-1.87-.34 1.7 1.7 0 0 0-1.04 1.56V21a2 2 0 1 1-4 0v-.09a1.7 1.7 0 0 0-1.04-1.56 1.7 1.7 0 0 0-1.87.34l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.7 1.7 0 0 0 .34-1.87 1.7 1.7 0 0 0-1.56-1.04H3a2 2 0 1 1 0-4h.09a1.7 1.7 0 0 0 1.56-1.04 1.7 1.7 0 0 0-.34-1.87l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.7 1.7 0 0 0 1.87.34H9A1.7 1.7 0 0 0 10 3.09V3a2 2 0 1 1 4 0v.09A1.7 1.7 0 0 0 15.04 4h.01a1.7 1.7 0 0 0 1.87-.34l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.7 1.7 0 0 0-.34 1.87V8.4a1.7 1.7 0 0 0 1.56 1.04H21a2 2 0 1 1 0 4h-.09A1.7 1.7 0 0 0 19.4 15z"
+              />
+            </svg>
+          </button>
 
-        <div
-          class="pointer-events-none absolute top-full left-1/2 z-30 mt-2 hidden -translate-x-1/2 whitespace-nowrap rounded-md border border-border bg-overlay px-2 py-1 text-[11px] text-foreground shadow-lg group-hover:block group-focus-within:block"
-        >
-          {settingsOpen ? "Close settings" : "Open settings"}
+          <div
+            class="pointer-events-none absolute top-full left-1/2 z-30 mt-2 hidden -translate-x-1/2 whitespace-nowrap rounded-md border border-border bg-overlay px-2 py-1 text-[11px] text-foreground shadow-lg group-hover:block group-focus-within:block"
+          >
+            {settingsOpen ? "Close settings" : "Open settings"}
+          </div>
         </div>
       </div>
     {/if}
@@ -408,137 +503,168 @@
         {/if}
       {/if}
 
-      <div
-        class="flex-1 min-h-0 overflow-y-auto pr-6 lg:pr-8 flex flex-col [scrollbar-gutter:stable]"
-        class:py-4={showHeader}
-        class:pt-0={!showHeader}
-        class:pb-4={!showHeader}
-        class:pl-2={showHeader || !showSettingsButton}
-        class:pl-10={showSettingsButton && !showHeader}
-        bind:this={messagesContainerElement}
-        onscroll={onmessagescroll}
-      >
+      <div class="relative flex min-h-0 flex-1 flex-col">
         <div
-          class="min-h-full w-full max-w-[min(95vw,1200px)] lg:max-w-[min(88vw,1360px)] mx-auto"
-          bind:this={messagesContentElement}
+          class="flex-1 min-h-0 overflow-y-auto pr-6 lg:pr-8 flex flex-col [scrollbar-gutter:stable]"
+          class:py-4={showHeader}
+          class:pt-0={!showHeader}
+          class:pb-4={!showHeader}
+          class:pl-2={showHeader || !showSettingsButton}
+          class:pl-10={showSettingsButton && !showHeader}
+          bind:this={messagesContainerElement}
+          onscroll={onmessagescroll}
         >
-          {#if startupError}
-            <div class="flex items-center justify-center h-full">
-              <p class="text-destructive text-sm">
-                Failed to initialize sessions: {startupError}
-              </p>
-            </div>
-          {:else if !activeRuntime}
-            <div class="flex items-center justify-center h-full">
-              <p class="text-muted-foreground text-sm">{emptyStateText}</p>
-            </div>
-          {:else if messages.length === 0}
-            <div class="flex items-center justify-center h-full">
-              <p class="text-muted-foreground text-sm">
-                {emptyChatPromptText}
-              </p>
-            </div>
-          {:else}
-            {#each messages as message, messageIndex (message.id)}
-              {#if message.type === "compactionBoundary"}
-                <div class="my-4 flex items-center" aria-hidden="true">
-                  <div class="h-px w-full bg-border"></div>
-                </div>
-              {:else}
-                <div class:mt-2={messageIndex > 0}>
-                  {#if message.type === "user"}
-                    <UserMessage
-                      content={message.content}
-                      timestamp={message.timestamp}
-                    />
-                  {:else if message.type === "bashExecution"}
-                    <BashExecutionMessage
-                      command={message.command}
-                      output={message.output}
-                      exitCode={message.exitCode}
-                      cancelled={message.cancelled}
-                      truncated={message.truncated}
-                      fullOutputPath={message.fullOutputPath}
-                      excludeFromContext={message.excludeFromContext}
-                      isStreaming={message.isStreaming}
-                    />
-                  {:else}
-                    <AssistantMessage
-                      content={message.content}
-                      timestamp={message.timestamp}
-                      isStreaming={message.isStreaming}
-                      defaultThinkingCollapsed={thinkingCollapsedByDefault}
-                      defaultToolCollapsed={toolResultsCollapsedByDefault}
-                      {getToolResult}
-                      {isToolPending}
-                    />
-                  {/if}
-                </div>
-              {/if}
-            {/each}
-          {/if}
+          <div
+            class="min-h-full w-full max-w-[min(95vw,1200px)] lg:max-w-[min(88vw,1360px)] mx-auto"
+            bind:this={messagesContentElement}
+          >
+            {#if startupError}
+              <div class="flex items-center justify-center h-full">
+                <p class="text-destructive text-sm">
+                  Failed to initialize sessions: {startupError}
+                </p>
+              </div>
+            {:else if !activeRuntime}
+              <div class="flex items-center justify-center h-full">
+                <p class="text-muted-foreground text-sm">{emptyStateText}</p>
+              </div>
+            {:else if messages.length === 0}
+              <div class="flex items-center justify-center h-full">
+                <p class="text-muted-foreground text-sm">
+                  {emptyChatPromptText}
+                </p>
+              </div>
+            {:else}
+              {#each messages as message, messageIndex (message.id)}
+                {#if message.type === "compactionBoundary"}
+                  <div class="my-4 flex items-center" aria-hidden="true">
+                    <div class="h-px w-full bg-border"></div>
+                  </div>
+                {:else}
+                  <div class:mt-2={messageIndex > 0}>
+                    {#if message.type === "user"}
+                      <UserMessage
+                        content={message.content}
+                        timestamp={message.timestamp}
+                      />
+                    {:else if message.type === "bashExecution"}
+                      <BashExecutionMessage
+                        command={message.command}
+                        output={message.output}
+                        exitCode={message.exitCode}
+                        cancelled={message.cancelled}
+                        truncated={message.truncated}
+                        fullOutputPath={message.fullOutputPath}
+                        excludeFromContext={message.excludeFromContext}
+                        isStreaming={message.isStreaming}
+                      />
+                    {:else}
+                      <AssistantMessage
+                        content={message.content}
+                        timestamp={message.timestamp}
+                        isStreaming={message.isStreaming}
+                        defaultThinkingCollapsed={thinkingCollapsedByDefault}
+                        defaultToolCollapsed={toolResultsCollapsedByDefault}
+                        {getToolResult}
+                        {isToolPending}
+                      />
+                    {/if}
+                  </div>
+                {/if}
+              {/each}
+            {/if}
+          </div>
         </div>
-      </div>
 
-      <section
-        class="shrink-0 w-full pb-1 pt-1 pr-6 lg:pr-8"
-        class:pl-2={showHeader || !showSettingsButton}
-        class:pl-10={showSettingsButton && !showHeader}
-      >
-        <div
-          class="w-full max-w-[min(95vw,1200px)] lg:max-w-[min(88vw,1360px)] mx-auto"
+        <section
+          class="shrink-0 w-full pb-1 pt-1 pr-6 lg:pr-8"
+          class:pl-2={showHeader || !showSettingsButton}
+          class:pl-10={showSettingsButton && !showHeader}
         >
-          <PromptInput
-            value={activePromptDraft}
-            attachments={activePromptAttachmentDraft}
-            oninput={onpromptinput}
-            onattachmentschange={onpromptattachmentschange}
-            {onsubmit}
-            {oncancel}
-            {onslashcommand}
-            {onnewchat}
-            {onmodelchange}
-            {onthinkingchange}
-            {onmodelfilterchange}
-            {isLoading}
-            {slashCommands}
-            runtimeCommands={runtimeSlashCommands}
-            disabled={!activeRuntime || !sessionStarted}
-            placeholder={activeRuntime && sessionStarted
-              ? "What would you like to get done today?"
-              : "Create a session to begin..."}
-            model={currentModel}
-            provider={currentProvider}
-            thinkingLevel={currentThinkingLevel}
-            supportsImageInput={currentModelSupportsImageInput}
-            {supportsThinking}
-            {availableThinkingLevels}
-            models={availableModels}
-            modelsLoading={isModelsLoading}
-            modelChanging={isSettingModel}
-            thinkingChanging={isSettingThinking}
-            enabledModels={activeRuntime?.enabledModels}
-            {modelFilter}
-            autofocus={true}
-            {chatHasMessages}
-          />
-        </div>
-      </section>
+          <div
+            class="w-full max-w-[min(95vw,1200px)] lg:max-w-[min(88vw,1360px)] mx-auto"
+          >
+            <PromptInput
+              value={activePromptDraft}
+              attachments={activePromptAttachmentDraft}
+              oninput={onpromptinput}
+              onattachmentschange={onpromptattachmentschange}
+              {onsubmit}
+              {oncancel}
+              {onslashcommand}
+              {onnewchat}
+              {onmodelchange}
+              {onthinkingchange}
+              {onmodelfilterchange}
+              {isLoading}
+              {slashCommands}
+              runtimeCommands={runtimeSlashCommands}
+              disabled={!activeRuntime || !sessionStarted}
+              placeholder={activeRuntime && sessionStarted
+                ? "What would you like to get done today?"
+                : "Create a session to begin..."}
+              model={currentModel}
+              provider={currentProvider}
+              thinkingLevel={currentThinkingLevel}
+              supportsImageInput={currentModelSupportsImageInput}
+              {supportsThinking}
+              {availableThinkingLevels}
+              models={availableModels}
+              modelsLoading={isModelsLoading}
+              modelChanging={isSettingModel}
+              thinkingChanging={isSettingThinking}
+              enabledModels={activeRuntime?.enabledModels}
+              {modelFilter}
+              autofocus={true}
+              {chatHasMessages}
+            />
+          </div>
+        </section>
 
-      <div
-        class="w-full pr-6 lg:pr-8"
-        class:pl-2={showHeader || !showSettingsButton}
-        class:pl-10={showSettingsButton && !showHeader}
-      >
         <div
-          class="w-full max-w-[min(95vw,1200px)] lg:max-w-[min(88vw,1360px)] mx-auto"
+          class="w-full pr-6 lg:pr-8"
+          class:pl-2={showHeader || !showSettingsButton}
+          class:pl-10={showSettingsButton && !showHeader}
         >
-          <StatusBar
-            cwd={activeProjectDir}
-            {usageIndicator}
-            {extensionStatuses}
-          />
+          <div
+            class="w-full max-w-[min(95vw,1200px)] lg:max-w-[min(88vw,1360px)] mx-auto"
+          >
+            <StatusBar
+              cwd={activeProjectDir}
+              {usageIndicator}
+              {extensionStatuses}
+            />
+          </div>
         </div>
+
+        {#if sessionTreeOpen}
+          <div class="pointer-events-none absolute inset-0 z-40 flex flex-col">
+            <div
+              class="flex-1 min-h-0 w-full pr-6 lg:pr-8"
+              class:pl-2={showHeader || !showSettingsButton}
+              class:pl-10={showSettingsButton && !showHeader}
+            >
+              <div
+                class="mx-auto flex h-full w-full max-w-[min(95vw,1200px)] lg:max-w-[min(88vw,1360px)] pointer-events-auto"
+              >
+                <SessionTreeOverlay
+                  tree={sessionTreeNodes}
+                  currentLeafId={sessionTreeCurrentLeafId}
+                  loading={sessionTreeLoading}
+                  error={sessionTreeError}
+                  navigatingNodeId={sessionTreeNavigatingNodeId}
+                  navigatingWithSummary={sessionTreeNavigatingWithSummary}
+                  cancellingNavigation={sessionTreeCancellingNavigation}
+                  summarizeOnNavigate={sessionTreeSummarizeOnNavigate}
+                  onclose={onclosesessiontree}
+                  onsummarizechange={onsessiontreesummarizechange}
+                  onnavigate={onnavigatesessiontree}
+                  oncancelnavigate={oncancelsessiontreenavigation}
+                />
+              </div>
+            </div>
+          </div>
+        {/if}
       </div>
     </div>
 

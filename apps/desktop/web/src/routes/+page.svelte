@@ -33,7 +33,10 @@
   } from "$lib/session/runtime-manager";
   import { deriveSessionTabs } from "$lib/session/session-tab-presentation";
   import { getAvailableSlashCommands } from "$lib/slash-commands";
-  import type { ThinkingLevel } from "$lib/stores/agent.svelte";
+  import type {
+    SessionTreeNodeSnapshot,
+    ThinkingLevel,
+  } from "$lib/stores/agent.svelte";
   import {
     projectScopesStore,
     type PersistedSessionHistoryItem,
@@ -92,6 +95,16 @@
   let lastPersistedOpenTabsSignature = $state<string>("");
   let detachedSessionIds = $state<string[]>([]);
   let floatingSessionMissing = $state(false);
+  let sessionTreeOpen = $state(false);
+  let sessionTreeLoading = $state(false);
+  let sessionTreeError = $state<string | null>(null);
+  let sessionTreeCurrentLeafId = $state<string | null>(null);
+  let sessionTreeNodes = $state<SessionTreeNodeSnapshot[]>([]);
+  let sessionTreeNavigatingNodeId = $state<string | null>(null);
+  let sessionTreeNavigatingWithSummary = $state(false);
+  let sessionTreeCancellingNavigation = $state(false);
+  let sessionTreeSummarizeOnNavigate = $state(false);
+  let sessionTreeSessionId = $state<string | null>(null);
   let isWindowFocused = $state(
     typeof document === "undefined" ? true : document.hasFocus(),
   );
@@ -1006,6 +1019,134 @@
     await createSession(projectDir);
   }
 
+  async function onOpenSessionTree(): Promise<void> {
+    if (!activeRuntime) {
+      return;
+    }
+
+    const runtime = activeRuntime;
+    sessionTreeOpen = true;
+    sessionTreeLoading = true;
+    sessionTreeError = null;
+    sessionTreeNavigatingNodeId = null;
+    sessionTreeNavigatingWithSummary = false;
+    sessionTreeCancellingNavigation = false;
+    sessionTreeSessionId = runtime.sessionId;
+
+    try {
+      const snapshot = await runtime.agent.getSessionTree();
+      if (sessionTreeSessionId !== runtime.sessionId) {
+        return;
+      }
+
+      sessionTreeNodes = snapshot.tree;
+      sessionTreeCurrentLeafId = snapshot.currentLeafId;
+    } catch (error) {
+      if (sessionTreeSessionId !== runtime.sessionId) {
+        return;
+      }
+
+      sessionTreeNodes = [];
+      sessionTreeCurrentLeafId = null;
+      sessionTreeError = error instanceof Error ? error.message : String(error);
+    } finally {
+      if (sessionTreeSessionId === runtime.sessionId) {
+        sessionTreeLoading = false;
+      }
+    }
+  }
+
+  function onCloseSessionTree(): void {
+    sessionTreeOpen = false;
+    sessionTreeLoading = false;
+    sessionTreeError = null;
+    sessionTreeNavigatingNodeId = null;
+    sessionTreeNavigatingWithSummary = false;
+    sessionTreeCancellingNavigation = false;
+    sessionTreeSessionId = null;
+  }
+
+  function onSessionTreeSummarizeChange(value: boolean): void {
+    sessionTreeSummarizeOnNavigate = value;
+  }
+
+  async function onNavigateSessionTree(nodeId: string): Promise<void> {
+    if (!activeRuntime) return;
+
+    if (activeRuntime.agent.isBashRunning) {
+      activeRuntime.messages.addErrorMessage(
+        "Abort the running bash command before switching branches.",
+      );
+      return;
+    }
+
+    if (activeRuntime.agent.isLoading) {
+      activeRuntime.messages.addErrorMessage(
+        "Wait for the current response to finish before switching branches.",
+      );
+      return;
+    }
+
+    const runtime = activeRuntime;
+    const summarize = sessionTreeSummarizeOnNavigate;
+    sessionTreeNavigatingNodeId = nodeId;
+    sessionTreeNavigatingWithSummary = summarize;
+    sessionTreeCancellingNavigation = false;
+    sessionTreeError = null;
+
+    try {
+      const result = await runtime.agent.navigateSessionTree(nodeId, {
+        summarize,
+      });
+
+      if (result.cancelled) {
+        if (result.aborted) {
+          runtime.messages.addSystemMessage("Branch summarization cancelled.");
+        }
+        return;
+      }
+
+      promptDraftStore.setText(runtime.sessionId, result.editorText ?? "");
+      promptDraftStore.setAttachments(runtime.sessionId, []);
+
+      await Promise.all([loadMessages(runtime), runtime.agent.refreshState()]);
+
+      if (result.summaryCreated) {
+        scheduleSessionSidebarRefresh(280);
+      }
+
+      sessionTreeCurrentLeafId = nodeId;
+      onCloseSessionTree();
+      requestAnimationFrame(() => scrollToBottom(false, true));
+    } catch (error) {
+      sessionTreeError = error instanceof Error ? error.message : String(error);
+    } finally {
+      sessionTreeNavigatingNodeId = null;
+      sessionTreeNavigatingWithSummary = false;
+      sessionTreeCancellingNavigation = false;
+    }
+  }
+
+  async function onCancelSessionTreeNavigation(): Promise<void> {
+    if (
+      !activeRuntime ||
+      !sessionTreeNavigatingWithSummary ||
+      sessionTreeNavigatingNodeId === null ||
+      sessionTreeCancellingNavigation
+    ) {
+      return;
+    }
+
+    sessionTreeCancellingNavigation = true;
+
+    try {
+      await activeRuntime.agent.abortBranchSummary();
+    } catch (error) {
+      sessionTreeError = error instanceof Error ? error.message : String(error);
+      sessionTreeCancellingNavigation = false;
+    }
+  }
+
   // ── Settings handlers ─────────────────────────────────────────────────────
 
   async function onModelChange(
@@ -1087,6 +1228,9 @@
         await submitPromise;
         break;
       }
+      case "openTree":
+        await onOpenSessionTree();
+        break;
       case "handled":
         break;
     }
@@ -1159,6 +1303,16 @@
   $effect(() => {
     const active = sessionsStore.activeSession;
     if (active) projectDirInput = active.projectDir;
+  });
+
+  $effect(() => {
+    if (!sessionTreeOpen) {
+      return;
+    }
+
+    if (!activeRuntime || sessionTreeSessionId !== activeRuntime.sessionId) {
+      onCloseSessionTree();
+    }
   });
 
   // Use PromptDraftStore for reconciliation
@@ -1378,6 +1532,15 @@
   theme={settingsStore.theme}
   toolResultsCollapsedByDefault={settingsStore.toolResultsCollapsedByDefault}
   thinkingCollapsedByDefault={settingsStore.thinkingCollapsedByDefault}
+  {sessionTreeOpen}
+  {sessionTreeLoading}
+  {sessionTreeError}
+  {sessionTreeCurrentLeafId}
+  {sessionTreeNodes}
+  {sessionTreeNavigatingNodeId}
+  {sessionTreeNavigatingWithSummary}
+  {sessionTreeCancellingNavigation}
+  {sessionTreeSummarizeOnNavigate}
   {chatHasMessages}
   {usageIndicator}
   {extensionStatuses}
@@ -1425,4 +1588,9 @@
   onthemechange={onThemeChange}
   ontoolresultscollapsedchange={onToolResultsCollapsedChange}
   onthinkingcollapsedchange={onThinkingCollapsedChange}
+  onopensessiontree={onOpenSessionTree}
+  onclosesessiontree={onCloseSessionTree}
+  onsessiontreesummarizechange={onSessionTreeSummarizeChange}
+  onnavigatesessiontree={onNavigateSessionTree}
+  oncancelsessiontreenavigation={onCancelSessionTreeNavigation}
 />

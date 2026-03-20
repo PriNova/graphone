@@ -6,10 +6,12 @@ import {
   parseAvailableThinkingLevels,
   parseExtensionStatuses,
   parseModelSupportsImageInput,
+  parseNavigateSessionTreeResult,
   parseOAuthLoginStatus,
   parseOAuthLoginUpdates,
   parseOAuthProviders,
   parseRegisteredExtensions,
+  parseSessionTreeSnapshot,
   parseThinkingLevel,
   parseUsageIndicator,
   sortAvailableModels,
@@ -18,9 +20,11 @@ import type {
   AvailableModel,
   AvailableSlashCommand,
   ExtensionStatusEntry,
+  NavigateSessionTreeResult,
   OAuthLoginPollResult,
   OAuthProviderStatus,
   RegisteredExtensionSummary,
+  SessionTreeSnapshot,
   ThinkingLevel,
   UsageIndicatorSnapshot,
 } from "$lib/stores/agent/types";
@@ -29,6 +33,7 @@ export type {
   AvailableModel,
   AvailableSlashCommand,
   ExtensionStatusEntry,
+  NavigateSessionTreeResult,
   OAuthLoginPollResult,
   OAuthLoginStatus,
   OAuthLoginUpdate,
@@ -36,6 +41,10 @@ export type {
   RegisteredExtensionScope,
   RegisteredExtensionSummary,
   RegisteredExtensionsSnapshot,
+  SessionTreeEntryType,
+  SessionTreeNodeRole,
+  SessionTreeNodeSnapshot,
+  SessionTreeSnapshot,
   ThinkingLevel,
   UsageContextSeverity,
   UsageIndicatorSnapshot,
@@ -85,6 +94,18 @@ interface RegisteredExtensionsResponseData {
 
 interface AvailableSlashCommandsResponseData {
   commands?: unknown;
+}
+
+interface SessionTreeResponseData {
+  currentLeafId?: unknown;
+  entries?: unknown;
+}
+
+interface NavigateSessionTreeResponseData {
+  editorText?: unknown;
+  cancelled?: unknown;
+  aborted?: unknown;
+  summaryCreated?: unknown;
 }
 
 // Agent session state (session-scoped)
@@ -260,6 +281,41 @@ export class AgentStore {
       console.warn("Failed to load available slash commands:", error);
       this.availableSlashCommands = [];
     }
+  }
+
+  async getSessionTree(): Promise<SessionTreeSnapshot> {
+    if (!this.sessionStarted) {
+      throw new Error("Agent session not started");
+    }
+
+    const data = await invokeAgentRpc<SessionTreeResponseData>(
+      "get_session_tree",
+      { sessionId: this.sessionId },
+      "Failed to load session tree",
+    );
+
+    return parseSessionTreeSnapshot(data);
+  }
+
+  async navigateSessionTree(
+    targetId: string,
+    options?: { summarize?: boolean },
+  ): Promise<NavigateSessionTreeResult> {
+    if (!this.sessionStarted) {
+      throw new Error("Agent session not started");
+    }
+
+    const data = await invokeAgentRpc<NavigateSessionTreeResponseData>(
+      "navigate_session_tree",
+      {
+        sessionId: this.sessionId,
+        targetId,
+        summarize: options?.summarize === true,
+      },
+      "Failed to navigate session tree",
+    );
+
+    return parseNavigateSessionTreeResult(data);
   }
 
   async getOAuthProviders(): Promise<OAuthProviderStatus[]> {
@@ -491,6 +547,14 @@ export class AgentStore {
       "Failed to abort agent",
     ).catch(console.error);
     this.isLoading = false;
+  }
+
+  async abortBranchSummary(): Promise<void> {
+    await invokeAgentCommand(
+      "abort_branch_summary",
+      { sessionId: this.sessionId },
+      "Failed to cancel branch summary",
+    ).catch(console.error);
   }
 
   async abortBash(): Promise<void> {

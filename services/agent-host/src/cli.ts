@@ -167,9 +167,11 @@ async function runHostMode(): Promise<void> {
 
   function isOutOfBandCommand(command: HostCommand): boolean {
     // Keep normal commands serialized so session mutations stay ordered,
-    // but let bash cancellation bypass the queue. Otherwise an abort request
-    // sits behind the long-running bash command it is supposed to stop.
-    return command.type === "abort_bash";
+    // but let cancellation commands bypass the queue. Otherwise an abort request
+    // sits behind the long-running operation it is supposed to stop.
+    return (
+      command.type === "abort_bash" || command.type === "abort_branch_summary"
+    );
   }
 
   async function requestShutdown(): Promise<void> {

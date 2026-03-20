@@ -221,6 +221,437 @@ function buildFullTranscriptMessages(
   return messages;
 }
 
+interface SessionTreeDisplayNode {
+  id: string;
+  parentId: string | null;
+  entryType: "message" | "branchSummary" | "compaction" | "customMessage";
+  role?: "user" | "assistant" | "toolResult" | "bashExecution" | "custom";
+  preview: string;
+  timestamp: number;
+}
+
+interface RawSessionTreeNode {
+  entry: SessionEntry;
+  children: RawSessionTreeNode[];
+  label?: string;
+}
+
+interface TreeToolCallInfo {
+  name: string;
+  arguments: Record<string, unknown>;
+}
+
+function truncatePreview(text: string, maxLength = 180): string {
+  const normalized = text.replace(/\s+/g, " ").trim();
+  if (normalized.length <= maxLength) {
+    return normalized;
+  }
+
+  return `${normalized.slice(0, maxLength - 1).trimEnd()}…`;
+}
+
+function extractPlainTextContent(content: unknown): string {
+  if (typeof content === "string") {
+    return truncatePreview(content);
+  }
+
+  if (!Array.isArray(content)) {
+    return "";
+  }
+
+  const parts: string[] = [];
+
+  for (const block of content) {
+    if (!block || typeof block !== "object") {
+      continue;
+    }
+
+    const candidate = block as {
+      type?: unknown;
+      text?: unknown;
+      thinking?: unknown;
+      name?: unknown;
+    };
+
+    if (candidate.type === "text" && typeof candidate.text === "string") {
+      parts.push(candidate.text);
+      continue;
+    }
+
+    if (
+      candidate.type === "toolCall" &&
+      typeof candidate.name === "string" &&
+      candidate.name.trim().length > 0
+    ) {
+      parts.push(`[tool:${candidate.name}]`);
+      continue;
+    }
+
+    if (candidate.type === "image") {
+      parts.push("[image]");
+      continue;
+    }
+  }
+
+  return truncatePreview(parts.join(" "));
+}
+
+function shortenTreePath(path: string): string {
+  const home = process.env.HOME || process.env.USERPROFILE || "";
+  if (home && path.startsWith(home)) {
+    return `~${path.slice(home.length)}`;
+  }
+  return path;
+}
+
+function formatToolCallPreview(
+  name: string,
+  args: Record<string, unknown>,
+): string {
+  switch (name) {
+    case "read": {
+      const path = shortenTreePath(String(args.path || args.file_path || ""));
+      const offset = args.offset as number | undefined;
+      const limit = args.limit as number | undefined;
+      let display = path;
+      if (offset !== undefined || limit !== undefined) {
+        const start = offset ?? 1;
+        const end = limit !== undefined ? start + limit - 1 : "";
+        display += `:${start}${end ? `-${end}` : ""}`;
+      }
+      return `read: ${display}`;
+    }
+    case "write": {
+      const path = shortenTreePath(String(args.path || args.file_path || ""));
+      return `write: ${path}`;
+    }
+    case "edit": {
+      const path = shortenTreePath(String(args.path || args.file_path || ""));
+      return `edit: ${path}`;
+    }
+    case "bash": {
+      const rawCommand = String(args.command || "")
+        .replace(/[\n\t]/g, " ")
+        .trim();
+      const command = truncatePreview(rawCommand, 100);
+      return command.length > 0 ? `bash: ${command}` : "bash";
+    }
+    case "grep": {
+      const pattern = String(args.pattern || "");
+      const path = shortenTreePath(String(args.path || "."));
+      return `grep: /${pattern}/ in ${path}`;
+    }
+    case "find": {
+      const pattern = String(args.pattern || "");
+      const path = shortenTreePath(String(args.path || "."));
+      return `find: ${pattern} in ${path}`;
+    }
+    case "ls": {
+      const path = shortenTreePath(String(args.path || "."));
+      return `ls: ${path}`;
+    }
+    default:
+      return truncatePreview(name);
+  }
+}
+
+function collectToolCallsFromContent(
+  content: unknown,
+  toolCallMap: Map<string, TreeToolCallInfo>,
+): void {
+  if (!Array.isArray(content)) {
+    return;
+  }
+
+  for (const block of content) {
+    if (
+      !block ||
+      typeof block !== "object" ||
+      !("type" in block) ||
+      block.type !== "toolCall"
+    ) {
+      continue;
+    }
+
+    const toolCall = block as {
+      id?: unknown;
+      name?: unknown;
+      arguments?: unknown;
+    };
+
+    if (
+      typeof toolCall.id !== "string" ||
+      typeof toolCall.name !== "string" ||
+      !toolCall.arguments ||
+      typeof toolCall.arguments !== "object" ||
+      Array.isArray(toolCall.arguments)
+    ) {
+      continue;
+    }
+
+    toolCallMap.set(toolCall.id, {
+      name: toolCall.name,
+      arguments: toolCall.arguments as Record<string, unknown>,
+    });
+  }
+}
+
+function getMessagePreview(
+  message: SessionEntry & { type: "message" },
+  toolCallMap: Map<string, TreeToolCallInfo>,
+): {
+  role?: SessionTreeDisplayNode["role"];
+  preview: string;
+} {
+  const source = message.message as {
+    role?: unknown;
+    content?: unknown;
+    command?: unknown;
+    toolName?: unknown;
+    toolCallId?: unknown;
+  };
+
+  if (source.role === "user") {
+    return {
+      role: "user",
+      preview: extractPlainTextContent(source.content) || "User message",
+    };
+  }
+
+  if (source.role === "assistant") {
+    return {
+      role: "assistant",
+      preview: extractPlainTextContent(source.content) || "Assistant reply",
+    };
+  }
+
+  if (source.role === "toolResult") {
+    const toolCall =
+      typeof source.toolCallId === "string"
+        ? toolCallMap.get(source.toolCallId)
+        : undefined;
+    const toolName =
+      typeof source.toolName === "string" && source.toolName.trim().length > 0
+        ? source.toolName.trim()
+        : "tool";
+
+    return {
+      role: "toolResult",
+      preview: toolCall
+        ? formatToolCallPreview(toolCall.name, toolCall.arguments)
+        : toolName,
+    };
+  }
+
+  if (source.role === "bashExecution") {
+    const command =
+      typeof source.command === "string" ? source.command.trim() : "";
+    return {
+      role: "bashExecution",
+      preview: command.length > 0 ? truncatePreview(command, 100) : "bash",
+    };
+  }
+
+  return { preview: "Message" };
+}
+
+function hasTextContent(content: unknown): boolean {
+  if (typeof content === "string") {
+    return content.trim().length > 0;
+  }
+
+  if (!Array.isArray(content)) {
+    return false;
+  }
+
+  for (const block of content) {
+    if (
+      block &&
+      typeof block === "object" &&
+      "type" in block &&
+      block.type === "text"
+    ) {
+      const text = (block as { text?: unknown }).text;
+      if (typeof text === "string" && text.trim().length > 0) {
+        return true;
+      }
+    }
+  }
+
+  return false;
+}
+
+function shouldDisplaySessionTreeMessage(
+  entry: SessionEntry & { type: "message" },
+  currentLeafId: string | null,
+): boolean {
+  const source = entry.message as {
+    role?: unknown;
+    content?: unknown;
+    stopReason?: unknown;
+  };
+
+  if (source.role !== "assistant") {
+    return true;
+  }
+
+  if (entry.id === currentLeafId) {
+    return true;
+  }
+
+  const isErrorOrAborted =
+    typeof source.stopReason === "string" &&
+    source.stopReason !== "stop" &&
+    source.stopReason !== "toolUse";
+
+  return hasTextContent(source.content) || isErrorOrAborted;
+}
+
+function isVisibleSessionTreeEntry(
+  entry: SessionEntry,
+  currentLeafId: string | null,
+): boolean {
+  switch (entry.type) {
+    case "message":
+      return shouldDisplaySessionTreeMessage(entry, currentLeafId);
+    case "branch_summary":
+    case "compaction":
+      return true;
+    case "custom_message":
+      return entry.display !== false;
+    default:
+      return false;
+  }
+}
+
+function convertTreeEntryToDisplayNode(
+  entry: SessionEntry,
+  currentLeafId: string | null,
+  toolCallMap: Map<string, TreeToolCallInfo>,
+): SessionTreeDisplayNode | null {
+  if (!isVisibleSessionTreeEntry(entry, currentLeafId)) {
+    return null;
+  }
+
+  switch (entry.type) {
+    case "message": {
+      const { role, preview } = getMessagePreview(entry, toolCallMap);
+      return {
+        id: entry.id,
+        parentId: entry.parentId,
+        entryType: "message",
+        role,
+        preview,
+        timestamp: parseEntryTimestamp(entry.timestamp),
+      };
+    }
+
+    case "branch_summary":
+      return {
+        id: entry.id,
+        parentId: entry.parentId,
+        entryType: "branchSummary",
+        preview: truncatePreview(entry.summary) || "Branch summary",
+        timestamp: parseEntryTimestamp(entry.timestamp),
+      };
+
+    case "compaction":
+      return {
+        id: entry.id,
+        parentId: entry.parentId,
+        entryType: "compaction",
+        preview: truncatePreview(entry.summary) || "Compaction summary",
+        timestamp: parseEntryTimestamp(entry.timestamp),
+      };
+
+    case "custom_message":
+      return {
+        id: entry.id,
+        parentId: entry.parentId,
+        entryType: "customMessage",
+        role: "custom",
+        preview:
+          extractPlainTextContent(entry.content) ||
+          truncatePreview(entry.customType) ||
+          "Custom message",
+        timestamp: parseEntryTimestamp(entry.timestamp),
+      };
+
+    default:
+      return null;
+  }
+}
+
+function flattenSessionTreeNodes(
+  nodes: RawSessionTreeNode[],
+  currentLeafId: string | null,
+  visibleParentId: string | null = null,
+  toolCallMap: Map<string, TreeToolCallInfo> = new Map(),
+): SessionTreeDisplayNode[] {
+  const flattened: SessionTreeDisplayNode[] = [];
+
+  for (const node of nodes) {
+    if (
+      node.entry.type === "message" &&
+      node.entry.message.role === "assistant"
+    ) {
+      collectToolCallsFromContent(node.entry.message.content, toolCallMap);
+    }
+
+    const displayNode = convertTreeEntryToDisplayNode(
+      node.entry,
+      currentLeafId,
+      toolCallMap,
+    );
+
+    if (displayNode) {
+      flattened.push({ ...displayNode, parentId: visibleParentId });
+      flattened.push(
+        ...flattenSessionTreeNodes(
+          node.children,
+          currentLeafId,
+          displayNode.id,
+          toolCallMap,
+        ),
+      );
+      continue;
+    }
+
+    flattened.push(
+      ...flattenSessionTreeNodes(
+        node.children,
+        currentLeafId,
+        visibleParentId,
+        toolCallMap,
+      ),
+    );
+  }
+
+  return flattened;
+}
+
+function resolveVisibleLeafId(session: AgentSession): string | null {
+  const entries = session.sessionManager.getEntries();
+  const byId = new Map(entries.map((entry) => [entry.id, entry]));
+  const leafId = session.sessionManager.getLeafId();
+  let currentId = leafId;
+
+  while (currentId) {
+    const entry = byId.get(currentId);
+    if (!entry) {
+      return null;
+    }
+
+    if (isVisibleSessionTreeEntry(entry, leafId)) {
+      return currentId;
+    }
+
+    currentId = entry.parentId;
+  }
+
+  return null;
+}
+
 // ── HostRuntime ─────────────────────────────────────────────────────────────
 
 export class HostRuntime {
@@ -427,6 +858,11 @@ export class HostRuntime {
     await session.abort();
   }
 
+  abortBranchSummary(sessionId: string): void {
+    const session = this.requireSession(sessionId, "abort_branch_summary");
+    session.abortBranchSummary();
+  }
+
   // ── Bash execution ────────────────────────────────────────────────────────
 
   async bash(
@@ -548,6 +984,44 @@ export class HostRuntime {
   } {
     const session = this.requireSession(sessionId, "get_messages");
     return { messages: buildFullTranscriptMessages(session) };
+  }
+
+  getSessionTree(sessionId: string): {
+    currentLeafId: string | null;
+    entries: SessionTreeDisplayNode[];
+  } {
+    const session = this.requireSession(sessionId, "get_session_tree");
+    const currentLeafId = resolveVisibleLeafId(session);
+    return {
+      currentLeafId,
+      entries: flattenSessionTreeNodes(
+        session.sessionManager.getTree() as RawSessionTreeNode[],
+        currentLeafId,
+      ),
+    };
+  }
+
+  async navigateSessionTree(
+    sessionId: string,
+    targetId: string,
+    options?: { summarize?: boolean },
+  ): Promise<{
+    editorText?: string;
+    cancelled: boolean;
+    aborted?: boolean;
+    summaryCreated: boolean;
+  }> {
+    const session = this.requireSession(sessionId, "navigate_session_tree");
+    const result = await session.navigateTree(targetId, {
+      summarize: options?.summarize === true,
+    });
+
+    return {
+      editorText: result.editorText,
+      cancelled: result.cancelled,
+      aborted: result.aborted,
+      summaryCreated: result.summaryEntry !== undefined,
+    };
   }
 
   getState(sessionId: string): {

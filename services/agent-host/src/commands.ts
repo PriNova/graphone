@@ -171,12 +171,39 @@ export async function handleHostCommand(
         return success(requestId, "abort_bash");
       }
 
+      case "abort_branch_summary": {
+        const sessionId = requireSessionId(command);
+        runtime.abortBranchSummary(sessionId);
+        return success(requestId, "abort_branch_summary");
+      }
+
       case "get_messages": {
         const sessionId = requireSessionId(command);
         return success(
           requestId,
           "get_messages",
           runtime.getMessages(sessionId),
+        );
+      }
+
+      case "get_session_tree": {
+        const sessionId = requireSessionId(command);
+        return success(
+          requestId,
+          "get_session_tree",
+          runtime.getSessionTree(sessionId),
+        );
+      }
+
+      case "navigate_session_tree": {
+        const sessionId = requireSessionId(command);
+        const targetId = requireNonEmptyString(command.message, "message");
+        return success(
+          requestId,
+          "navigate_session_tree",
+          await runtime.navigateSessionTree(sessionId, targetId, {
+            summarize: command.streamingBehavior === "summarize",
+          }),
         );
       }
 

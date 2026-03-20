@@ -184,6 +184,15 @@ fn require_session_id(session_id: String, command: &str) -> Result<String, Strin
     Ok(trimmed)
 }
 
+fn require_non_empty_string(value: String, field: &str) -> Result<String, String> {
+    let trimmed = value.trim().to_string();
+    if trimmed.is_empty() {
+        return Err(format!("{} must be a non-empty string", field));
+    }
+
+    Ok(trimmed)
+}
+
 /// Send a prompt to the agent
 #[tauri::command]
 pub async fn send_prompt(
@@ -282,6 +291,31 @@ pub async fn abort_agent(
     crate::sidecar::RpcClient::send_command(state.inner(), cmd).await
 }
 
+/// Abort in-progress branch summarization for tree navigation.
+#[tauri::command]
+pub async fn abort_branch_summary(
+    state: State<'_, Arc<Mutex<SidecarState>>>,
+    session_id: String,
+) -> Result<(), String> {
+    let session_id = require_session_id(session_id, "abort_branch_summary")?;
+
+    let cmd = RpcCommand {
+        id: Some(crypto_random_uuid()),
+        r#type: "abort_branch_summary".to_string(),
+        session_id: Some(session_id),
+        cwd: None,
+        message: None,
+        provider: None,
+        model_id: None,
+        streaming_behavior: None,
+        session_file: None,
+        level: None,
+        images: None,
+    };
+
+    crate::sidecar::RpcClient::send_command(state.inner(), cmd).await
+}
+
 #[tauri::command]
 pub async fn abort_bash(
     state: State<'_, Arc<Mutex<SidecarState>>>,
@@ -329,6 +363,65 @@ pub async fn get_messages(
     };
 
     sidecar_lifecycle::send_command_with_response(state.inner(), cmd, 5).await
+}
+
+/// Get the full session tree for transcript navigation.
+#[tauri::command]
+pub async fn get_session_tree(
+    state: State<'_, Arc<Mutex<SidecarState>>>,
+    session_id: String,
+) -> Result<RpcResponse, String> {
+    let session_id = require_session_id(session_id, "get_session_tree")?;
+
+    let cmd = RpcCommand {
+        id: Some(crypto_random_uuid()),
+        r#type: "get_session_tree".to_string(),
+        session_id: Some(session_id),
+        cwd: None,
+        message: None,
+        provider: None,
+        model_id: None,
+        streaming_behavior: None,
+        session_file: None,
+        level: None,
+        images: None,
+    };
+
+    sidecar_lifecycle::send_command_with_response(state.inner(), cmd, 5).await
+}
+
+/// Navigate to a point in the session tree.
+#[tauri::command]
+pub async fn navigate_session_tree(
+    state: State<'_, Arc<Mutex<SidecarState>>>,
+    session_id: String,
+    target_id: String,
+    summarize: Option<bool>,
+) -> Result<RpcResponse, String> {
+    let session_id = require_session_id(session_id, "navigate_session_tree")?;
+    let target_id = require_non_empty_string(target_id, "target_id")?;
+
+    let summarize = summarize.unwrap_or(false);
+    let cmd = RpcCommand {
+        id: Some(crypto_random_uuid()),
+        r#type: "navigate_session_tree".to_string(),
+        session_id: Some(session_id),
+        cwd: None,
+        message: Some(target_id),
+        provider: None,
+        model_id: None,
+        streaming_behavior: if summarize {
+            Some("summarize".to_string())
+        } else {
+            None
+        },
+        session_file: None,
+        level: None,
+        images: None,
+    };
+
+    let timeout_secs = if summarize { 3600 } else { 10 };
+    sidecar_lifecycle::send_command_with_response(state.inner(), cmd, timeout_secs).await
 }
 
 /// Get current session state (including selected model/provider)

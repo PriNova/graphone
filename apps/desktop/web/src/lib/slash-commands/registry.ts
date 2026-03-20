@@ -46,8 +46,8 @@ export const UNIMPLEMENTED_COMMANDS: SlashCommand[] = [
   },
   {
     name: "tree",
-    description: "Navigate session tree",
-    handler: "unimplemented",
+    description: "Open the session tree transcript view",
+    handler: "local",
   },
   {
     name: "resume",

@@ -10,6 +10,11 @@ import type {
   UsageContextSeverity,
   UsageIndicatorSnapshot,
   ExtensionStatusEntry,
+  NavigateSessionTreeResult,
+  SessionTreeEntryType,
+  SessionTreeNodeRole,
+  SessionTreeNodeSnapshot,
+  SessionTreeSnapshot,
 } from "$lib/stores/agent/types";
 import { VALID_THINKING_LEVELS } from "$lib/stores/agent/types";
 
@@ -434,6 +439,164 @@ export function parseAvailableSlashCommands(
   }
 
   return commands;
+}
+
+function parseSessionTreeRole(value: unknown): SessionTreeNodeRole | undefined {
+  return value === "user" ||
+    value === "assistant" ||
+    value === "toolResult" ||
+    value === "bashExecution" ||
+    value === "custom"
+    ? value
+    : undefined;
+}
+
+function parseSessionTreeEntryType(
+  value: unknown,
+): SessionTreeEntryType | null {
+  return value === "message" ||
+    value === "branchSummary" ||
+    value === "compaction" ||
+    value === "customMessage"
+    ? value
+    : null;
+}
+
+function parseFlatSessionTreeNodes(value: unknown): SessionTreeNodeSnapshot[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  const nodes: SessionTreeNodeSnapshot[] = [];
+
+  for (const item of value) {
+    if (!item || typeof item !== "object") {
+      continue;
+    }
+
+    const candidate = item as {
+      id?: unknown;
+      parentId?: unknown;
+      entryType?: unknown;
+      role?: unknown;
+      preview?: unknown;
+      timestamp?: unknown;
+    };
+
+    const entryType = parseSessionTreeEntryType(candidate.entryType);
+    if (typeof candidate.id !== "string" || entryType === null) {
+      continue;
+    }
+
+    nodes.push({
+      id: candidate.id,
+      parentId:
+        typeof candidate.parentId === "string" ? candidate.parentId : null,
+      entryType,
+      role: parseSessionTreeRole(candidate.role),
+      preview:
+        typeof candidate.preview === "string" &&
+        candidate.preview.trim().length > 0
+          ? candidate.preview
+          : "Conversation step",
+      timestamp:
+        typeof candidate.timestamp === "number" &&
+        Number.isFinite(candidate.timestamp)
+          ? candidate.timestamp
+          : 0,
+      children: [],
+    });
+  }
+
+  return nodes;
+}
+
+function buildSessionTree(
+  flatNodes: SessionTreeNodeSnapshot[],
+): SessionTreeNodeSnapshot[] {
+  const nodeMap = new Map<string, SessionTreeNodeSnapshot>(
+    flatNodes.map((node) => [node.id, { ...node, children: [] }]),
+  );
+  const roots: SessionTreeNodeSnapshot[] = [];
+
+  for (const node of flatNodes) {
+    const resolved = nodeMap.get(node.id);
+    if (!resolved) {
+      continue;
+    }
+
+    if (!node.parentId) {
+      roots.push(resolved);
+      continue;
+    }
+
+    const parent = nodeMap.get(node.parentId);
+    if (!parent) {
+      roots.push(resolved);
+      continue;
+    }
+
+    parent.children.push(resolved);
+  }
+
+  const sortNodes = (nodes: SessionTreeNodeSnapshot[]): void => {
+    nodes.sort((a, b) => a.timestamp - b.timestamp || a.id.localeCompare(b.id));
+    for (const node of nodes) {
+      if (node.children.length > 0) {
+        sortNodes(node.children);
+      }
+    }
+  };
+
+  sortNodes(roots);
+  return roots;
+}
+
+export function parseSessionTreeSnapshot(value: unknown): SessionTreeSnapshot {
+  if (!value || typeof value !== "object") {
+    return { currentLeafId: null, tree: [] };
+  }
+
+  const candidate = value as {
+    currentLeafId?: unknown;
+    entries?: unknown;
+  };
+
+  return {
+    currentLeafId:
+      typeof candidate.currentLeafId === "string"
+        ? candidate.currentLeafId
+        : null,
+    tree: buildSessionTree(parseFlatSessionTreeNodes(candidate.entries)),
+  };
+}
+
+export function parseNavigateSessionTreeResult(
+  value: unknown,
+): NavigateSessionTreeResult {
+  if (!value || typeof value !== "object") {
+    return {
+      cancelled: true,
+      summaryCreated: false,
+    };
+  }
+
+  const candidate = value as {
+    editorText?: unknown;
+    cancelled?: unknown;
+    aborted?: unknown;
+    summaryCreated?: unknown;
+  };
+
+  return {
+    editorText:
+      typeof candidate.editorText === "string"
+        ? candidate.editorText
+        : undefined,
+    cancelled: candidate.cancelled === true,
+    aborted: candidate.aborted === true ? true : undefined,
+    summaryCreated: candidate.summaryCreated === true,
+  };
 }
 
 export function sortAvailableModels(
