@@ -8,6 +8,7 @@ import {
   failure,
   type HostCommand,
   type HostOutboundEnvelope,
+  type HostResponse,
 } from "./protocol.js";
 
 const GRAPHONE_HOST_FLAG = "--graphone-host";

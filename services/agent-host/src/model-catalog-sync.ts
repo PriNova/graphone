@@ -2,9 +2,17 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 
+import { getModel, type Api, type Model as PiModel } from "@mariozechner/pi-ai";
 import type { AuthStorage, ModelRegistry } from "@mariozechner/pi-coding-agent";
 
 // ── Types ───────────────────────────────────────────────────────────────────
+
+interface ModelCost {
+  input: number;
+  output: number;
+  cacheRead: number;
+  cacheWrite: number;
+}
 
 export interface ModelsJsonModelEntry {
   id: string;
@@ -12,6 +20,7 @@ export interface ModelsJsonModelEntry {
   api?: string;
   reasoning?: boolean;
   input?: Array<"text" | "image">;
+  cost?: ModelCost;
   contextWindow?: number;
   maxTokens?: number;
   [key: string]: unknown;
@@ -49,6 +58,7 @@ export interface DiscoveredModelCatalogEntry {
   api?: string;
   reasoning?: boolean;
   input?: Array<"text" | "image">;
+  cost?: ModelCost;
   contextWindow?: number;
   maxTokens?: number;
 }
@@ -66,6 +76,13 @@ const DISCOVERABLE_APIS = new Set([
   "openai-responses",
   "openai-codex-responses",
 ]);
+
+const DEFAULT_MODEL_COST: ModelCost = {
+  input: 0,
+  output: 0,
+  cacheRead: 0,
+  cacheWrite: 0,
+};
 
 // ── Public API ──────────────────────────────────────────────────────────────
 
@@ -165,7 +182,6 @@ export class ModelCatalogSync {
         const nextModels = discoveredModels.map((discovered) => {
           const existing = existingById.get(discovered.id);
           return mergeDiscoveredModelEntry(
-            this.modelRegistry,
             candidate.provider,
             existing,
             discovered,
@@ -184,7 +200,7 @@ export class ModelCatalogSync {
           fileChanged = true;
         }
 
-        if (added > 0 || removed > 0) {
+        if (providerChanged) {
           result.synced.push({
             provider: candidate.provider,
             before: existingModels.length,
@@ -323,7 +339,6 @@ function computeDiff(
 }
 
 function mergeDiscoveredModelEntry(
-  modelRegistry: ModelRegistry,
   provider: string,
   existing: ModelsJsonModelEntry | undefined,
   discovered: DiscoveredModelCatalogEntry,
@@ -332,11 +347,12 @@ function mergeDiscoveredModelEntry(
   const next: ModelsJsonModelEntry = existing
     ? { ...existing }
     : { id: discovered.id };
+  const builtInModel = findBuiltInModel(provider, discovered.id);
 
   next.id = discovered.id;
 
   if (!next.name?.trim()) {
-    next.name = discovered.name ?? discovered.id;
+    next.name = discovered.name ?? builtInModel?.name ?? discovered.id;
   }
 
   if (discovered.api?.trim() && !next.api?.trim()) {
@@ -345,31 +361,32 @@ function mergeDiscoveredModelEntry(
     next.api = defaultApi;
   }
 
-  if (typeof discovered.reasoning === "boolean") {
-    next.reasoning = discovered.reasoning;
-  } else if (typeof next.reasoning !== "boolean") {
-    const builtIn = modelRegistry.find(provider, discovered.id);
-    if (builtIn?.reasoning) {
-      next.reasoning = true;
-    }
+  if (typeof next.reasoning !== "boolean") {
+    next.reasoning =
+      typeof discovered.reasoning === "boolean"
+        ? discovered.reasoning
+        : (builtInModel?.reasoning ?? false);
   }
 
-  if (discovered.input?.length && !Array.isArray(next.input)) {
-    next.input = discovered.input;
+  if (!hasValidInputArray(next.input)) {
+    next.input = normalizeInputArray(discovered.input) ??
+      normalizeInputArray(builtInModel?.input) ?? ["text"];
   }
 
-  if (
-    typeof discovered.contextWindow === "number" &&
-    (!(typeof next.contextWindow === "number") || next.contextWindow <= 0)
-  ) {
-    next.contextWindow = discovered.contextWindow;
+  next.cost = mergeCostValues(next.cost, discovered.cost, builtInModel?.cost);
+
+  if (!isPositiveFiniteNumber(next.contextWindow)) {
+    next.contextWindow =
+      parsePositiveNumber(discovered.contextWindow) ??
+      parsePositiveNumber(builtInModel?.contextWindow) ??
+      128000;
   }
 
-  if (
-    typeof discovered.maxTokens === "number" &&
-    (!(typeof next.maxTokens === "number") || next.maxTokens <= 0)
-  ) {
-    next.maxTokens = discovered.maxTokens;
+  if (!isPositiveFiniteNumber(next.maxTokens)) {
+    next.maxTokens =
+      parsePositiveNumber(discovered.maxTokens) ??
+      parsePositiveNumber(builtInModel?.maxTokens) ??
+      16384;
   }
 
   return next;
@@ -498,7 +515,21 @@ function parseOpenAICompatibleCatalog(
   for (const entry of entries) {
     if (!entry || typeof entry !== "object") continue;
 
-    const model = entry as { id?: unknown; name?: unknown };
+    const model = entry as {
+      id?: unknown;
+      name?: unknown;
+      display_name?: unknown;
+      input?: unknown;
+      input_modalities?: unknown;
+      modalities?: unknown;
+      cost?: unknown;
+      pricing?: unknown;
+      context_window?: unknown;
+      contextWindow?: unknown;
+      max_tokens?: unknown;
+      maxTokens?: unknown;
+      reasoning?: unknown;
+    };
     const id =
       typeof model.id === "string" && model.id.trim()
         ? model.id.trim()
@@ -513,7 +544,19 @@ function parseOpenAICompatibleCatalog(
       name:
         typeof model.name === "string" && model.name.trim()
           ? model.name.trim()
-          : id,
+          : typeof model.display_name === "string" && model.display_name.trim()
+            ? model.display_name.trim()
+            : id,
+      reasoning:
+        typeof model.reasoning === "boolean" ? model.reasoning : undefined,
+      input:
+        parseCatalogInput(model.input) ??
+        parseCatalogInputModalities(model.input_modalities ?? model.modalities),
+      cost: parseCatalogCost(model.cost, model.pricing),
+      contextWindow: parsePositiveNumber(
+        model.context_window ?? model.contextWindow,
+      ),
+      maxTokens: parsePositiveNumber(model.max_tokens ?? model.maxTokens),
     });
   }
 
@@ -537,8 +580,14 @@ function parseOpenAICodexCatalog(
       slug?: unknown;
       display_name?: unknown;
       input_modalities?: unknown;
+      modalities?: unknown;
+      cost?: unknown;
+      pricing?: unknown;
       supported_reasoning_levels?: unknown;
       context_window?: unknown;
+      contextWindow?: unknown;
+      max_tokens?: unknown;
+      maxTokens?: unknown;
     };
 
     const id =
@@ -546,13 +595,6 @@ function parseOpenAICodexCatalog(
         ? model.slug.trim()
         : undefined;
     if (!id) continue;
-
-    const inputModalities = Array.isArray(model.input_modalities)
-      ? model.input_modalities.filter((v): v is string => typeof v === "string")
-      : [];
-
-    const input: Array<"text" | "image"> = ["text"];
-    if (inputModalities.includes("image")) input.push("image");
 
     models.push({
       id,
@@ -564,14 +606,15 @@ function parseOpenAICodexCatalog(
       reasoning:
         Array.isArray(model.supported_reasoning_levels) &&
         model.supported_reasoning_levels.length > 0,
-      input,
-      contextWindow:
-        typeof model.context_window === "number" &&
-        Number.isFinite(model.context_window) &&
-        model.context_window > 0
-          ? model.context_window
-          : undefined,
-      maxTokens: 128000,
+      input: parseCatalogInputModalities(
+        model.input_modalities ?? model.modalities,
+      ),
+      cost: parseCatalogCost(model.cost, model.pricing),
+      contextWindow: parsePositiveNumber(
+        model.context_window ?? model.contextWindow,
+      ),
+      maxTokens:
+        parsePositiveNumber(model.max_tokens ?? model.maxTokens) ?? 128000,
     });
   }
 
@@ -586,6 +629,232 @@ function dedupeModels(
     if (!byId.has(model.id)) byId.set(model.id, model);
   }
   return Array.from(byId.values()).sort((a, b) => a.id.localeCompare(b.id));
+}
+
+function findBuiltInModel(
+  provider: string,
+  modelId: string,
+): PiModel<Api> | undefined {
+  return getModel(provider as never, modelId as never) as
+    | PiModel<Api>
+    | undefined;
+}
+
+function normalizeInputArray(
+  value: unknown,
+): Array<"text" | "image"> | undefined {
+  if (!Array.isArray(value)) return undefined;
+
+  const input = value.filter(
+    (entry): entry is "text" | "image" => entry === "text" || entry === "image",
+  );
+
+  return input.length > 0 ? Array.from(new Set(input)) : undefined;
+}
+
+function parseCatalogInput(
+  value: unknown,
+): Array<"text" | "image"> | undefined {
+  return normalizeInputArray(value);
+}
+
+function parseCatalogInputModalities(
+  value: unknown,
+): Array<"text" | "image"> | undefined {
+  if (!Array.isArray(value)) return undefined;
+
+  const modalities = value.filter(
+    (entry): entry is string => typeof entry === "string",
+  );
+  if (modalities.length === 0) return undefined;
+
+  const input: Array<"text" | "image"> = ["text"];
+  if (modalities.some((entry) => entry === "image" || entry === "vision")) {
+    input.push("image");
+  }
+
+  return input;
+}
+
+function parsePartialCostObject(
+  value: unknown,
+): Partial<ModelCost> | undefined {
+  if (!value || typeof value !== "object") {
+    return undefined;
+  }
+
+  const candidate = value as {
+    input?: unknown;
+    output?: unknown;
+    cacheRead?: unknown;
+    cache_read?: unknown;
+    cacheWrite?: unknown;
+    cache_write?: unknown;
+  };
+
+  const input = parseNonNegativeFiniteNumber(candidate.input);
+  const output = parseNonNegativeFiniteNumber(candidate.output);
+  const cacheRead = parseNonNegativeFiniteNumber(
+    candidate.cacheRead ?? candidate.cache_read,
+  );
+  const cacheWrite = parseNonNegativeFiniteNumber(
+    candidate.cacheWrite ?? candidate.cache_write,
+  );
+
+  if (
+    input === undefined &&
+    output === undefined &&
+    cacheRead === undefined &&
+    cacheWrite === undefined
+  ) {
+    return undefined;
+  }
+
+  return {
+    ...(input !== undefined ? { input } : {}),
+    ...(output !== undefined ? { output } : {}),
+    ...(cacheRead !== undefined ? { cacheRead } : {}),
+    ...(cacheWrite !== undefined ? { cacheWrite } : {}),
+  };
+}
+
+function normalizeCostObject(value: unknown): ModelCost | undefined {
+  const partial = parsePartialCostObject(value);
+  if (!partial) {
+    return undefined;
+  }
+
+  return {
+    input: partial.input ?? 0,
+    output: partial.output ?? 0,
+    cacheRead: partial.cacheRead ?? 0,
+    cacheWrite: partial.cacheWrite ?? 0,
+  };
+}
+
+function parseCatalogCost(
+  costValue: unknown,
+  pricingValue?: unknown,
+): ModelCost | undefined {
+  const directCost = normalizeCostObject(costValue);
+  if (directCost) {
+    return directCost;
+  }
+
+  if (!pricingValue || typeof pricingValue !== "object") {
+    return undefined;
+  }
+
+  const pricing = pricingValue as {
+    prompt?: unknown;
+    completion?: unknown;
+    input?: unknown;
+    output?: unknown;
+    input_cache_read?: unknown;
+    inputCacheRead?: unknown;
+    input_cache_write?: unknown;
+    inputCacheWrite?: unknown;
+  };
+
+  const input = parsePerMillionCostNumber(pricing.input ?? pricing.prompt);
+  const output = parsePerMillionCostNumber(
+    pricing.output ?? pricing.completion,
+  );
+  const cacheRead = parsePerMillionCostNumber(
+    pricing.input_cache_read ?? pricing.inputCacheRead,
+  );
+  const cacheWrite = parsePerMillionCostNumber(
+    pricing.input_cache_write ?? pricing.inputCacheWrite,
+  );
+
+  if (
+    input === undefined &&
+    output === undefined &&
+    cacheRead === undefined &&
+    cacheWrite === undefined
+  ) {
+    return undefined;
+  }
+
+  return {
+    input: input ?? 0,
+    output: output ?? 0,
+    cacheRead: cacheRead ?? 0,
+    cacheWrite: cacheWrite ?? 0,
+  };
+}
+
+function mergeCostValues(
+  currentValue: unknown,
+  discoveredValue: unknown,
+  builtInValue: unknown,
+): ModelCost {
+  const currentCost = parsePartialCostObject(currentValue);
+  const discoveredCost = normalizeCostObject(discoveredValue);
+  const builtInCost = normalizeCostObject(builtInValue);
+
+  return {
+    input:
+      currentCost?.input ??
+      discoveredCost?.input ??
+      builtInCost?.input ??
+      DEFAULT_MODEL_COST.input,
+    output:
+      currentCost?.output ??
+      discoveredCost?.output ??
+      builtInCost?.output ??
+      DEFAULT_MODEL_COST.output,
+    cacheRead:
+      currentCost?.cacheRead ??
+      discoveredCost?.cacheRead ??
+      builtInCost?.cacheRead ??
+      DEFAULT_MODEL_COST.cacheRead,
+    cacheWrite:
+      currentCost?.cacheWrite ??
+      discoveredCost?.cacheWrite ??
+      builtInCost?.cacheWrite ??
+      DEFAULT_MODEL_COST.cacheWrite,
+  };
+}
+
+function isPositiveFiniteNumber(value: unknown): value is number {
+  return typeof value === "number" && Number.isFinite(value) && value > 0;
+}
+
+function hasValidInputArray(value: unknown): value is Array<"text" | "image"> {
+  return (
+    Array.isArray(value) &&
+    value.length > 0 &&
+    value.every((entry) => entry === "text" || entry === "image")
+  );
+}
+
+function parseNonNegativeFiniteNumber(value: unknown): number | undefined {
+  return typeof value === "number" && Number.isFinite(value) && value >= 0
+    ? value
+    : undefined;
+}
+
+function parsePerMillionCostNumber(value: unknown): number | undefined {
+  if (typeof value === "number") {
+    return Number.isFinite(value) && value >= 0 ? value * 1_000_000 : undefined;
+  }
+
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+    if (!trimmed) return undefined;
+
+    const parsed = Number.parseFloat(trimmed);
+    return Number.isFinite(parsed) && parsed >= 0
+      ? parsed * 1_000_000
+      : undefined;
+  }
+
+  return undefined;
+}
+
+function parsePositiveNumber(value: unknown): number | undefined {
+  return isPositiveFiniteNumber(value) ? value : undefined;
 }
 
 function getOpenAICodexUserAgent(): string {
