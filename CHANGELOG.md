@@ -2,6 +2,22 @@
 
 ## [Unreleased]
 
+## [0.7.0] - 2026-03-20
+
+### Added
+
+- Added a session tree view that lets you open a conversation as a branchable transcript, jump back to earlier points, and branch again from earlier prompts.
+- Added optional branch summaries when switching paths, including the ability to cancel while the summary is being created.
+
+### Changed
+
+- Updated the bundled agent runtime for the latest Graphone release.
+- Changed the session tree presentation so it opens as an attached panel in the chat area, keeps the header and tabs visible, and uses a single toolbar toggle.
+
+### Fixed
+
+- Fixed model metadata refresh so corrected model details are no longer overwritten by stale values.
+
 ## [0.6.0] - 2026-03-19
 
 ### Added
