@@ -791,11 +791,30 @@ export class HostRuntime {
     };
   }
 
+  private requestAbortInBackground(
+    session: AgentSession,
+    sessionId: string,
+    action: "abort" | "close session",
+  ): void {
+    if (!session.isStreaming) {
+      return;
+    }
+
+    void session.abort().catch((error) => {
+      const message = error instanceof Error ? error.message : String(error);
+      console.error(
+        `[pi-host-sidecar] ${action} failed for session ${sessionId}: ${message}`,
+      );
+    });
+  }
+
   async closeSession(sessionId: string): Promise<void> {
     const hosted = this.sessions.get(sessionId);
     if (!hosted) {
       throw new Error(`Unknown sessionId: ${sessionId}`);
     }
+
+    this.requestAbortInBackground(hosted.session, sessionId, "close session");
 
     hosted.unsubscribe();
     hosted.session.dispose();
@@ -855,7 +874,7 @@ export class HostRuntime {
 
   async abort(sessionId: string): Promise<void> {
     const session = this.requireSession(sessionId, "abort");
-    await session.abort();
+    this.requestAbortInBackground(session, sessionId, "abort");
   }
 
   abortBranchSummary(sessionId: string): void {
