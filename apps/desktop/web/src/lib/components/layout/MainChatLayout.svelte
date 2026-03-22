@@ -4,6 +4,7 @@
     BashExecutionMessage,
     UserMessage,
   } from "$lib/components/Messages";
+  import RightActionRail from "$lib/components/layout/RightActionRail.svelte";
   import SettingsOverlay from "$lib/components/layout/SettingsOverlay.svelte";
   import SessionTreeOverlay from "$lib/components/layout/SessionTreeOverlay.svelte";
   import { PromptInput } from "$lib/components/PromptInput";
@@ -270,102 +271,7 @@
   });
 </script>
 
-<main class="relative flex w-full h-screen overflow-hidden">
-  {#if (showSidebar && onpopoutactivesession) || showSettingsButton}
-    <div class="absolute top-3 right-4 z-20 flex flex-col gap-2">
-      {#if showSidebar && onpopoutactivesession}
-        <div class="group relative flex justify-end">
-          <button
-            type="button"
-            class="flex h-9 w-9 items-center justify-center rounded border border-border text-muted-foreground transition-colors hover:border-foreground hover:bg-secondary hover:text-foreground disabled:cursor-not-allowed disabled:opacity-40"
-            onclick={onpopoutactivesession}
-            disabled={!activeSession}
-            aria-label="Open active session in floating window"
-          >
-            <svg
-              aria-hidden="true"
-              class="h-4 w-4"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              stroke-width="2"
-            >
-              <rect x="4" y="4" width="16" height="12" rx="2"></rect>
-              <path d="M9 20h6"></path>
-            </svg>
-          </button>
-
-          <div
-            class="pointer-events-none absolute right-full top-1/2 z-30 mr-3 hidden -translate-y-1/2 whitespace-nowrap rounded-md border border-border bg-overlay px-2 py-1 text-[11px] text-foreground shadow-lg group-hover:block group-focus-within:block"
-          >
-            <span
-              class="absolute left-full top-1/2 h-2.5 w-2.5 -translate-x-[1px] -translate-y-1/2 rotate-45 border-r border-t border-border bg-overlay"
-              aria-hidden="true"
-            ></span>
-            {activeSession
-              ? "Open active session in floating window"
-              : "No active session"}
-          </div>
-        </div>
-      {/if}
-
-      {#if showSettingsButton}
-        <div class="group relative flex justify-end">
-          <button
-            type="button"
-            class={`flex h-9 w-9 items-center justify-center rounded border transition-colors ${
-              sessionTreeOpen
-                ? "border-foreground bg-secondary text-foreground shadow-xs"
-                : "border-border text-muted-foreground hover:text-foreground hover:border-foreground hover:bg-secondary"
-            }`}
-            onclick={() => {
-              if (sessionTreeOpen) {
-                onclosesessiontree?.();
-                return;
-              }
-              onopensessiontree?.();
-            }}
-            disabled={!activeRuntime}
-            aria-label={sessionTreeOpen
-              ? "Close session tree"
-              : "Open session tree"}
-            aria-expanded={sessionTreeOpen}
-          >
-            <svg
-              aria-hidden="true"
-              class="h-4 w-4"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              stroke-width="2"
-            >
-              <path d="M8 6h8"></path>
-              <path d="M8 12h4"></path>
-              <path d="M8 18h8"></path>
-              <path d="M8 6v12"></path>
-              <path d="M16 6v6"></path>
-              <path d="M16 18v0"></path>
-            </svg>
-          </button>
-
-          <div
-            class="pointer-events-none absolute right-full top-1/2 z-30 mr-3 hidden -translate-y-1/2 whitespace-nowrap rounded-md border border-border bg-overlay px-2 py-1 text-[11px] text-foreground shadow-lg group-hover:block group-focus-within:block"
-          >
-            <span
-              class="absolute left-full top-1/2 h-2.5 w-2.5 -translate-x-[1px] -translate-y-1/2 rotate-45 border-r border-t border-border bg-overlay"
-              aria-hidden="true"
-            ></span>
-            {activeRuntime
-              ? sessionTreeOpen
-                ? "Close session tree"
-                : "Open session tree"
-              : "No active session"}
-          </div>
-        </div>
-      {/if}
-    </div>
-  {/if}
-
+<main class="relative flex h-screen w-full overflow-hidden">
   {#if showSidebar}
     <SessionSidebar
       {projectScopes}
@@ -392,48 +298,8 @@
   {/if}
 
   <section
-    class="relative flex-1 min-w-0 h-full flex items-stretch justify-center overflow-hidden"
+    class="relative flex h-full min-w-0 flex-1 items-stretch justify-center overflow-hidden"
   >
-    {#if showSettingsButton}
-      <div
-        class={`absolute top-3 ${showSidebar ? "left-4" : "left-3"} z-40 flex flex-col gap-2`}
-      >
-        <div class="group relative">
-          <button
-            type="button"
-            class={`flex h-9 w-9 items-center justify-center rounded border transition-colors ${
-              settingsOpen
-                ? "border-foreground bg-secondary text-foreground shadow-xs"
-                : "border-border text-muted-foreground hover:text-foreground hover:border-foreground hover:bg-secondary"
-            }`}
-            onclick={toggleSettings}
-            aria-label={settingsOpen ? "Close settings" : "Open settings"}
-            aria-expanded={settingsOpen}
-          >
-            <svg
-              aria-hidden="true"
-              class="h-4 w-4"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              stroke-width="2"
-            >
-              <circle cx="12" cy="12" r="3" />
-              <path
-                d="M19.4 15a1.7 1.7 0 0 0 .34 1.87l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.7 1.7 0 0 0-1.87-.34 1.7 1.7 0 0 0-1.04 1.56V21a2 2 0 1 1-4 0v-.09a1.7 1.7 0 0 0-1.04-1.56 1.7 1.7 0 0 0-1.87.34l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.7 1.7 0 0 0 .34-1.87 1.7 1.7 0 0 0-1.56-1.04H3a2 2 0 1 1 0-4h.09a1.7 1.7 0 0 0 1.56-1.04 1.7 1.7 0 0 0-.34-1.87l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.7 1.7 0 0 0 1.87.34H9A1.7 1.7 0 0 0 10 3.09V3a2 2 0 1 1 4 0v.09A1.7 1.7 0 0 0 15.04 4h.01a1.7 1.7 0 0 0 1.87-.34l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.7 1.7 0 0 0-.34 1.87V8.4a1.7 1.7 0 0 0 1.56 1.04H21a2 2 0 1 1 0 4h-.09A1.7 1.7 0 0 0 19.4 15z"
-              />
-            </svg>
-          </button>
-
-          <div
-            class="pointer-events-none absolute top-full left-1/2 z-30 mt-2 hidden -translate-x-1/2 whitespace-nowrap rounded-md border border-border bg-overlay px-2 py-1 text-[11px] text-foreground shadow-lg group-hover:block group-focus-within:block"
-          >
-            {settingsOpen ? "Close settings" : "Open settings"}
-          </div>
-        </div>
-      </div>
-    {/if}
-
     <div
       class="flex flex-col w-full h-full px-4"
       class:py-4={showHeader}
@@ -442,11 +308,7 @@
     >
       {#if showHeader}
         {#if sessionTabs}
-          <div
-            class="w-full pr-6 lg:pr-8"
-            class:pl-2={showHeader || !showSettingsButton}
-            class:pl-10={showSettingsButton && !showHeader}
-          >
+          <div class="w-full pl-2 pr-6 lg:pr-8">
             <div
               class="w-full max-w-[min(95vw,1200px)] lg:max-w-[min(88vw,1360px)] mx-auto"
             >
@@ -478,11 +340,7 @@
             </div>
           </div>
         {:else}
-          <div
-            class="w-full pr-6 lg:pr-8"
-            class:pl-2={showHeader || !showSettingsButton}
-            class:pl-10={showSettingsButton && !showHeader}
-          >
+          <div class="w-full pl-2 pr-6 lg:pr-8">
             <div
               class="w-full max-w-[min(95vw,1200px)] lg:max-w-[min(88vw,1360px)] mx-auto"
             >
@@ -505,12 +363,10 @@
 
       <div class="relative flex min-h-0 flex-1 flex-col">
         <div
-          class="flex-1 min-h-0 overflow-y-auto pr-6 lg:pr-8 flex flex-col [scrollbar-gutter:stable]"
+          class="flex flex-1 min-h-0 flex-col overflow-y-auto pl-2 pr-6 lg:pr-8 [scrollbar-gutter:stable]"
           class:py-4={showHeader}
           class:pt-0={!showHeader}
           class:pb-4={!showHeader}
-          class:pl-2={showHeader || !showSettingsButton}
-          class:pl-10={showSettingsButton && !showHeader}
           bind:this={messagesContainerElement}
           onscroll={onmessagescroll}
         >
@@ -576,11 +432,7 @@
           </div>
         </div>
 
-        <section
-          class="shrink-0 w-full pb-1 pt-1 pr-6 lg:pr-8"
-          class:pl-2={showHeader || !showSettingsButton}
-          class:pl-10={showSettingsButton && !showHeader}
-        >
+        <section class="shrink-0 w-full pl-2 pb-1 pt-1 pr-6 lg:pr-8">
           <div
             class="w-full max-w-[min(95vw,1200px)] lg:max-w-[min(88vw,1360px)] mx-auto"
           >
@@ -621,11 +473,7 @@
           </div>
         </section>
 
-        <div
-          class="w-full pr-6 lg:pr-8"
-          class:pl-2={showHeader || !showSettingsButton}
-          class:pl-10={showSettingsButton && !showHeader}
-        >
+        <div class="w-full pl-2 pr-6 lg:pr-8">
           <div
             class="w-full max-w-[min(95vw,1200px)] lg:max-w-[min(88vw,1360px)] mx-auto"
           >
@@ -639,11 +487,7 @@
 
         {#if sessionTreeOpen}
           <div class="pointer-events-none absolute inset-0 z-40 flex flex-col">
-            <div
-              class="flex-1 min-h-0 w-full pr-6 lg:pr-8"
-              class:pl-2={showHeader || !showSettingsButton}
-              class:pl-10={showSettingsButton && !showHeader}
-            >
+            <div class="flex-1 min-h-0 w-full pl-2 pr-6 lg:pr-8">
               <div
                 class="mx-auto flex h-full w-full max-w-[min(95vw,1200px)] lg:max-w-[min(88vw,1360px)] pointer-events-auto"
               >
@@ -685,4 +529,18 @@
       />
     {/if}
   </section>
+
+  <RightActionRail
+    {activeSession}
+    {activeRuntime}
+    showPopOutButton={showSidebar && !!onpopoutactivesession}
+    showSessionTreeButton={showSettingsButton}
+    {showSettingsButton}
+    {sessionTreeOpen}
+    {settingsOpen}
+    {onpopoutactivesession}
+    {onopensessiontree}
+    {onclosesessiontree}
+    ontogglesettings={toggleSettings}
+  />
 </main>

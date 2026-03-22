@@ -14,25 +14,6 @@
 - **Do not start and stop dev helpers in parallel** - Startup and cleanup are separate sequential tool calls, with `take_screenshot` between them. Running `start-dev-and-wait.sh` and `stop-dev.sh` in parallel is invalid and defeats the workflow.
 - **Prefer project helper scripts for visual checks** - For Graphone, use `tooling/scripts/start-dev-and-wait.sh` and `tooling/scripts/stop-dev.sh` instead of rewriting startup/cleanup loops inline.
 
-## Visual Verification Hints (Graphone)
-
-- Use the project helper scripts instead of writing long inline readiness loops in `bash` commands.
-- Preferred sequence for visual checks:
-  1. `bash tooling/scripts/start-dev-and-wait.sh`
-  2. `take_screenshot`
-  3. `bash tooling/scripts/stop-dev.sh`
-- Never run steps 1 and 3 in parallel.
-- Startup helper artifacts:
-  - log: `/tmp/graphone-dev.log`
-  - process group: `/tmp/graphone-dev.pgid`
-  - app pid: `/tmp/graphone-dev.app.pid`
-- `tooling/scripts/start-dev-and-wait.sh` waits for these Graphone readiness signals:
-  1. Vite log contains `VITE` and `ready` (or the local URL line)
-  2. Tauri has launched `target/debug/graphone`
-  3. The debug desktop process exists
-- Avoid taking screenshots while only Vite is ready but the Tauri desktop window has not launched yet
-- If startup fails or times out, inspect `/tmp/graphone-dev.log`
-
 ## Build Commands
 
 - `npm install` - Install dependencies
