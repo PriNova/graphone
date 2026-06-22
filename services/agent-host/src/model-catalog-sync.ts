@@ -2,8 +2,15 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 
-import { getModel, type Api, type Model as PiModel } from "@mariozechner/pi-ai";
-import type { AuthStorage, ModelRegistry } from "@mariozechner/pi-coding-agent";
+import {
+  getModel,
+  type Api,
+  type Model as PiModel,
+} from "@earendil-works/pi-ai";
+import type {
+  AuthStorage,
+  ModelRegistry,
+} from "@earendil-works/pi-coding-agent";
 
 // ── Types ───────────────────────────────────────────────────────────────────
 

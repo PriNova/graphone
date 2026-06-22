@@ -1,8 +1,11 @@
 import { randomUUID } from "node:crypto";
 import { readFileSync } from "node:fs";
 
-import type { AgentMessage, ThinkingLevel } from "@mariozechner/pi-agent-core";
-import type { ImageContent } from "@mariozechner/pi-ai";
+import type {
+  AgentMessage,
+  ThinkingLevel,
+} from "@earendil-works/pi-agent-core";
+import type { ImageContent } from "@earendil-works/pi-ai";
 
 import {
   AuthStorage,
@@ -13,7 +16,7 @@ import {
   type AgentSession,
   type ExtensionUIContext,
   type SessionEntry,
-} from "@mariozechner/pi-coding-agent";
+} from "@earendil-works/pi-coding-agent";
 
 import {
   createSessionScopedBashOperations,
@@ -70,6 +73,12 @@ interface HostedExtensionUiState {
 }
 
 // ── Helpers ─────────────────────────────────────────────────────────────────
+
+function mapSourceScopeToCommandLocation(
+  scope: string | undefined,
+): AvailableSlashCommand["location"] {
+  return scope === "user" || scope === "project" ? scope : "path";
+}
 
 function expandSkillCommandForRpc(
   session: AgentSession,
@@ -661,7 +670,7 @@ export class HostRuntime {
     HostedExtensionUiState
   >();
   private readonly authStorage = AuthStorage.create();
-  private readonly modelRegistry = new ModelRegistry(this.authStorage);
+  private readonly modelRegistry = ModelRegistry.create(this.authStorage);
   private readonly oauthLoginManager = new OAuthLoginManager(
     this.authStorage,
     this.modelRegistry,
@@ -726,14 +735,8 @@ export class HostRuntime {
       uiContext: this.createExtensionUiContext(sessionId),
       commandContextActions: {
         waitForIdle: () => session.agent.waitForIdle(),
-        newSession: async (options) => {
-          const success = await session.newSession(options);
-          return { cancelled: !success };
-        },
-        fork: async (entryId) => {
-          const result = await session.fork(entryId);
-          return { cancelled: result.cancelled };
-        },
+        newSession: async () => ({ cancelled: true }),
+        fork: async () => ({ cancelled: true }),
         navigateTree: async (targetId, options) => {
           const result = await session.navigateTree(targetId, {
             summarize: options?.summarize,
@@ -743,10 +746,7 @@ export class HostRuntime {
           });
           return { cancelled: result.cancelled };
         },
-        switchSession: async (sessionPath) => {
-          const success = await session.switchSession(sessionPath);
-          return { cancelled: !success };
-        },
+        switchSession: async () => ({ cancelled: true }),
         reload: async () => {
           await session.reload();
         },
@@ -1152,13 +1152,9 @@ export class HostRuntime {
   } {
     const session = this.requireSession(sessionId, "get_registered_extensions");
     const extensionsResult = session.resourceLoader.getExtensions();
-    const pathMetadata = session.resourceLoader.getPathMetadata();
 
     const summaries = extensionsResult.extensions.map((extension) => {
-      const metadata = this.extensionNameResolver.getMetadata(
-        extension,
-        pathMetadata,
-      );
+      const metadata = extension.sourceInfo;
       const scope = this.extensionNameResolver.mapScopeToGroup(metadata?.scope);
 
       return {
@@ -1191,15 +1187,14 @@ export class HostRuntime {
     const session = this.requireSession(sessionId, "get_commands");
     const commands: AvailableSlashCommand[] = [];
 
-    for (const {
-      command,
-      extensionPath,
-    } of session.extensionRunner?.getRegisteredCommandsWithPaths() ?? []) {
+    for (const command of session.extensionRunner?.getRegisteredCommands() ??
+      []) {
       commands.push({
-        name: command.name,
+        name: command.invocationName,
         description: command.description,
         source: "extension",
-        path: extensionPath,
+        location: mapSourceScopeToCommandLocation(command.sourceInfo.scope),
+        path: command.sourceInfo.path,
       });
     }
 
@@ -1208,7 +1203,7 @@ export class HostRuntime {
         name: template.name,
         description: template.description,
         source: "prompt",
-        location: template.source as AvailableSlashCommand["location"],
+        location: mapSourceScopeToCommandLocation(template.sourceInfo.scope),
         path: template.filePath,
       });
     }
@@ -1218,7 +1213,7 @@ export class HostRuntime {
         name: `skill:${skill.name}`,
         description: skill.description,
         source: "skill",
-        location: skill.source as AvailableSlashCommand["location"],
+        location: mapSourceScopeToCommandLocation(skill.sourceInfo.scope),
         path: skill.filePath,
       });
     }
@@ -1337,6 +1332,9 @@ export class HostRuntime {
         this.applyExtensionStatusUpdate(sessionId, key, text);
       },
       setWorkingMessage: () => {},
+      setWorkingVisible: () => {},
+      setWorkingIndicator: () => {},
+      setHiddenThinkingLabel: () => {},
       setWidget: () => {},
       setFooter: () => {},
       setHeader: () => {},
@@ -1346,7 +1344,9 @@ export class HostRuntime {
       setEditorText: () => {},
       getEditorText: () => "",
       editor: async () => undefined,
+      addAutocompleteProvider: () => {},
       setEditorComponent: () => {},
+      getEditorComponent: () => undefined,
       get theme() {
         return {} as ExtensionUIContext["theme"];
       },

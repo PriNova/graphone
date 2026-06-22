@@ -845,12 +845,12 @@ fn build_sidecar() {
 
     let npm_package_path = project_root
         .join("node_modules")
-        .join("@mariozechner")
+        .join("@earendil-works")
         .join("pi-coding-agent");
 
     if !npm_package_path.exists() {
         panic!(
-            "Host backend requires @mariozechner/pi-coding-agent at {}. Run 'npm install'.",
+            "Host backend requires @earendil-works/pi-coding-agent at {}. Run 'npm install'.",
             npm_package_path.display()
         );
     }

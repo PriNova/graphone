@@ -3,7 +3,7 @@ import { spawn } from "node:child_process";
 import {
   getShellConfig,
   type BashOperations,
-} from "@mariozechner/pi-coding-agent";
+} from "@earendil-works/pi-coding-agent";
 
 // ── Types ───────────────────────────────────────────────────────────────────
 
