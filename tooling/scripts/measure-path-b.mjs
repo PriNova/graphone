@@ -261,7 +261,7 @@ async function runLegacyScenario(sessionCount) {
       const client = new JsonLineClient(
         "node",
         [
-          "node_modules/@mariozechner/pi-coding-agent/dist/cli.js",
+          "node_modules/@earendil-works/pi-coding-agent/dist/cli.js",
           "--mode",
           "rpc",
           "--no-session",

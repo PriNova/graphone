@@ -1,6 +1,6 @@
 {
   "name": "graphone",
-  "version": "0.7.0",
+  "version": "0.8.0",
   "description": "",
   "type": "module",
   "scripts": {
@@ -41,7 +41,9 @@
   },
   "license": "MIT",
   "dependencies": {
-    "@mariozechner/pi-coding-agent": "0.61.0",
+    "@earendil-works/pi-agent-core": "0.79.8",
+    "@earendil-works/pi-ai": "0.79.8",
+    "@earendil-works/pi-coding-agent": "0.79.8",
     "@tauri-apps/api": "^2",
     "@tauri-apps/plugin-dialog": "^2",
     "@tauri-apps/plugin-opener": "^2",

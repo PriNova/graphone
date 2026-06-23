@@ -1,4 +1,7 @@
-import type { AuthStorage, ModelRegistry } from "@mariozechner/pi-coding-agent";
+import type {
+  AuthStorage,
+  ModelRegistry,
+} from "@earendil-works/pi-coding-agent";
 
 export type OAuthLoginStatus =
   | "idle"
@@ -15,7 +18,7 @@ export type OAuthLoginUpdate =
       message: string;
       placeholder?: string;
       allowEmpty: boolean;
-      inputType: "prompt" | "manual_code";
+      inputType: "prompt" | "manual_code" | "select";
     }
   | { type: "progress"; message: string }
   | { type: "complete"; success: boolean; error?: string };
@@ -190,6 +193,13 @@ export class OAuthLoginManager {
                   : undefined,
             });
           },
+          onDeviceCode: (info) => {
+            flow.updates.push({
+              type: "auth",
+              url: info.verificationUri,
+              instructions: `Enter code: ${info.userCode}`,
+            });
+          },
           onPrompt: async (prompt) =>
             this.requestOAuthInput(flow, prompt, "prompt"),
           onProgress: (message) => {
@@ -206,6 +216,17 @@ export class OAuthLoginManager {
                 allowEmpty: false,
               },
               "manual_code",
+            ),
+          onSelect: async (prompt) =>
+            this.requestOAuthInput(
+              flow,
+              {
+                message: `${prompt.message}\n${prompt.options
+                  .map((option) => `${option.id}: ${option.label}`)
+                  .join("\n")}`,
+                allowEmpty: false,
+              },
+              "select",
             ),
           signal: flow.abortController.signal,
         });
@@ -243,7 +264,7 @@ export class OAuthLoginManager {
   private requestOAuthInput(
     flow: OAuthLoginFlow,
     prompt: { message: string; placeholder?: string; allowEmpty?: boolean },
-    inputType: "prompt" | "manual_code",
+    inputType: "prompt" | "manual_code" | "select",
   ): Promise<string> {
     if (flow.abortController.signal.aborted) {
       throw new Error("Login cancelled");

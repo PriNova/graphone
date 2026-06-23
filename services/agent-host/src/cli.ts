@@ -256,7 +256,8 @@ async function runHostMode(): Promise<void> {
 
 async function runPiCliMode(args: string[]): Promise<void> {
   process.title = "pi";
-  const { main: runPiCliMain } = await import("@mariozechner/pi-coding-agent");
+  const { main: runPiCliMain } =
+    await import("@earendil-works/pi-coding-agent");
   await runPiCliMain(args);
 }
 

@@ -2,6 +2,19 @@
 
 ## [Unreleased]
 
+## [0.8.0] - 2026-06-23
+
+### Changed
+
+- Moved window actions into a dedicated right rail to keep primary chat controls clearer.
+- Migrated the bundled coding agent runtime to the Earendil 0.79.8 package family.
+- Stopped externalizing the legacy Koffi runtime by default because the Earendil runtime no longer needs it.
+
+### Fixed
+
+- Made stuck session abort and close actions respond more reliably.
+- Fixed Windows portable builds after the Earendil runtime migration.
+
 ## [0.7.0] - 2026-03-20
 
 ### Added

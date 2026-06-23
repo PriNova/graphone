@@ -23,7 +23,7 @@ export PATH="$HOME/.bun/bin:$PATH"
 npm install
 
 # Verify package exists
-ls node_modules/@mariozechner/pi-coding-agent/dist/cli.js
+ls node_modules/@earendil-works/pi-coding-agent/dist/cli.js
 
 # Rebuild host sidecar path
 npm run build:linux
